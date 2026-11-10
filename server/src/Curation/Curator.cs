@@ -153,17 +153,16 @@ public sealed class Curator
 
         // 4. Because You Watched: two most recent counted watches with tags
         var used = new HashSet<Guid>(recommended);
+        var countryShares = BecauseRow.CountryShares(library.Values);
         var slot = 1;
         foreach (var seed in history.Where(m => m.IsClassified).DistinctBy(Identity).Take(Math.Clamp(Settings.BecauseRows, 0, 2)))
         {
             var mine = Pins($"because-{slot}");
-            var similar = candidates
+            var seedScores = candidates
                 .Where(m => !used.Contains(m.ItemId))
-                .Select(m => (Movie: m, Score: _similarity.CalculateSimilarity(seed, m) * 0.75 + (brief is null ? 0 : BriefScore(m, brief) * 0.25)))
-                .Where(x => x.Score > 0.15)
-                .OrderByDescending(x => x.Score)
-                .Take(Math.Max(0, perRow - mine.Count))
-                .Select(x => x.Movie.ItemId)
+                .Select(m => (Movie: m, Score: _similarity.CalculateSimilarity(seed, m) * 0.75 + (brief is null ? 0 : BriefScore(m, brief) * 0.25)));
+            var similar = BecauseRow.Pick(seed, seedScores, countryShares, Math.Max(0, perRow - mine.Count))
+                .Select(m => m.ItemId)
                 .ToList();
             if (similar.Count + mine.Count < 5) continue;
             similar = mine.Concat(similar).ToList();
