@@ -68,7 +68,7 @@ public sealed class RefreshService : BackgroundService
                 LastError = error.Message;
                 _logger.LogError("Refresh failed: {Error}", error.Message);
             }
-            State = "Idle";
+            if (_jellyfin.IsConfigured) State = "Idle";
             await _wake.WaitAsync(Tick, stoppingToken);
         }
     }

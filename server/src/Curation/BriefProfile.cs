@@ -59,7 +59,9 @@ Return a JSON object with:
 
 Output ONLY the JSON object.";
 
-        var response = await _ai.GetProvider().ChatAsync(prompt, system, cancellationToken);
+        string response;
+        using (Activity.Begin("Reading a description: waiting for the AI"))
+            response = await _ai.GetProvider().ChatAsync(prompt, system, cancellationToken);
         var json = ExtractJson(response) ?? throw new InvalidOperationException("The AI did not return JSON for the brief.");
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;

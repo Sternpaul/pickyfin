@@ -54,11 +54,15 @@ namespace Pickyfin.Server.Library
                 if (cancellationToken.IsCancellationRequested) break;
 
                 var batch = unclassified.Skip(i).Take(BatchSize).ToList();
-                _logger.LogInformation("Classifying batch {Start} to {End} of {Total}...", i + 1, i + batch.Count, unclassified.Count);
+                _logger.LogInformation("Tagging movies {Start}–{End} of {Total} ({Model})", i + 1, i + batch.Count, unclassified.Count, ServerSettings.Current.ClassificationModel);
 
                 try
                 {
-                    var jsonResponse = await provider.ClassifyMoviesAsync(batch, cancellationToken);
+                    string jsonResponse;
+                    var started = DateTime.UtcNow;
+                    using (Activity.Begin($"Tagging movies {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
+                        jsonResponse = await provider.ClassifyMoviesAsync(batch, cancellationToken);
+                    _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
                     _logger.LogDebug("Raw AI response (first 2000 chars): {Response}", jsonResponse?.Length > 2000 ? jsonResponse.Substring(0, 2000) : jsonResponse);
                     if (!string.IsNullOrEmpty(jsonResponse))
                         ProcessClassificationResult(jsonResponse, batch);
@@ -68,7 +72,7 @@ namespace Pickyfin.Server.Library
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to classify batch. Aborting the current classification run to prevent rate-limit spam.");
+                    _logger.LogError("Tagging stopped: {Error}. It continues at the next library sync.", ex.Message);
                     break;
                 }
             }

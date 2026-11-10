@@ -239,7 +239,11 @@ public sealed class Curator
         prompt.AppendLine($@"Answer with ONLY a JSON object: {{""picks"": [numbers from the list, {count} of them, best first]}}");
 
         var system = "You are a thoughtful film curator choosing for one specific person. Output only JSON.";
-        var response = await _ai.GetProvider().ChatAsync(prompt.ToString(), system, cancellationToken);
+        string response;
+        var started = DateTime.UtcNow;
+        using (Activity.Begin($"Picking for {user.Name}: waiting for the AI"))
+            response = await _ai.GetProvider().ChatAsync(prompt.ToString(), system, cancellationToken);
+        _logger.LogInformation("AI picked for {User} in {Seconds}s", user.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
         var json = BriefInterpreter.ExtractJson(response) ?? throw new InvalidOperationException("no JSON in the AI answer");
 
         using var document = JsonDocument.Parse(json);

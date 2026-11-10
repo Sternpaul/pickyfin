@@ -20,7 +20,7 @@ namespace Pickyfin.Server.Ai
         public IAIProvider GetProvider()
         {
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.Timeout = TimeSpan.FromMinutes(15);
+            httpClient.Timeout = TimeSpan.FromMinutes(5);
 
             return Config.AIProvider switch
             {

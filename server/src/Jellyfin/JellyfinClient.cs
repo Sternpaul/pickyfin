@@ -179,21 +179,6 @@ public sealed class JellyfinClient
         return ids;
     }
 
-    private sealed class PluginInfo
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = "";
-        public string? Version { get; set; }
-    }
-
-    /// <summary>The AI Movie Recommender plugin's settings, if that plugin is installed.</summary>
-    public async Task<JsonDocument?> GetRecommenderPluginConfigurationAsync(CancellationToken cancellationToken = default)
-    {
-        var plugins = await SendAsync<List<PluginInfo>>(Request(HttpMethod.Get, "/Plugins"), cancellationToken);
-        var plugin = plugins.FirstOrDefault(p => p.Name.Contains("Recommender", StringComparison.OrdinalIgnoreCase));
-        if (plugin is null) return null;
-        return await SendAsync<JsonDocument>(Request(HttpMethod.Get, $"/Plugins/{plugin.Id}/Configuration"), cancellationToken);
-    }
 
     private sealed class CreatedPlaylist
     {

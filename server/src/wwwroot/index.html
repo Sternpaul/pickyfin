@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pickyfin Server</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23aa5cc3'/%3E%3Cstop offset='1' stop-color='%2300a4dc'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ctext x='16' y='22.5' font-family='Arial' font-weight='800' font-size='18' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #0e0f11; --sidebar: #131417; --panel: #17181b; --panel-2: #202227; --panel-3: #2a2c32;
@@ -11,8 +12,37 @@
     --text: #ececef; --muted: #9a9ca3; --faint: #6b6e76;
     --accent: #00a4dc; --accent-2: #aa5cc3; --accent-ink: #00131b;
     --ok: #3ecf8e; --warn: #f0b429; --err: #ef5f5f;
+    --ok-bg: rgba(62,207,142,.1); --warn-bg: rgba(240,180,41,.1); --err-bg: rgba(239,95,95,.1);
+    --avoid-text: #f59a9a; --avoid-bg: #231718; --avoid-line: #4d2b2b;
+    --knob: #cfd0d4; --log-bg: #0a0b0c; --log-text: #b7b9bf;
     --radius: 12px;
+    color-scheme: dark;
     font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  /* Light: follows the system unless Dark is chosen, or when Light is chosen */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f5f6f8; --sidebar: #eceef2; --panel: #ffffff; --panel-2: #f1f3f6; --panel-3: #e4e7ec;
+      --line: #e2e5ea; --line-2: #d2d6dd;
+      --text: #15171c; --muted: #555b69; --faint: #858a97;
+      --accent: #0086b8; --accent-ink: #ffffff;
+      --ok: #16865a; --warn: #a96b0a; --err: #c93a3a;
+      --ok-bg: rgba(22,134,90,.1); --warn-bg: rgba(169,107,10,.1); --err-bg: rgba(201,58,58,.08);
+      --avoid-text: #b03030; --avoid-bg: #fdf0f0; --avoid-line: #f1c9c9;
+      --knob: #ffffff; --log-bg: #fbfbfc; --log-text: #3a3f4a;
+      color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+      --bg: #f5f6f8; --sidebar: #eceef2; --panel: #ffffff; --panel-2: #f1f3f6; --panel-3: #e4e7ec;
+      --line: #e2e5ea; --line-2: #d2d6dd;
+      --text: #15171c; --muted: #555b69; --faint: #858a97;
+      --accent: #0086b8; --accent-ink: #ffffff;
+      --ok: #16865a; --warn: #a96b0a; --err: #c93a3a;
+      --ok-bg: rgba(22,134,90,.1); --warn-bg: rgba(169,107,10,.1); --err-bg: rgba(201,58,58,.08);
+      --avoid-text: #b03030; --avoid-bg: #fdf0f0; --avoid-line: #f1c9c9;
+      --knob: #ffffff; --log-bg: #fbfbfc; --log-text: #3a3f4a;
+      color-scheme: light;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font-size: 14.5px; line-height: 1.5; }
@@ -30,7 +60,8 @@
   .nav svg { width: 18px; height: 18px; flex: none; opacity: .85; }
   .nav .count { margin-left: auto; font-size: 12px; color: var(--faint); }
   .aside-foot { margin-top: auto; padding: 10px; font-size: 12.5px; color: var(--faint); }
-  .aside-foot button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; font: inherit; }
+  .aside-foot > button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; font: inherit; }
+  .seg.theme { display: flex; } .seg.theme button { flex: 1; padding: 5px 0; font-size: 12px; }
   main { padding: 28px 36px 80px; max-width: 1040px; width: 100%; }
   .page-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
   .page-head h1 { font-size: 22px; margin: 0; font-weight: 650; }
@@ -56,7 +87,7 @@
     width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px; font: inherit; outline: none; }
   textarea:focus, input:focus, select:focus { border-color: var(--accent); }
   textarea { min-height: 78px; resize: vertical; line-height: 1.5; }
-  input[type=date] { width: auto; color-scheme: dark; }
+  input[type=date] { width: auto; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .grid2 .field { margin-top: 0; }
 
@@ -73,7 +104,7 @@
   .switch { position: relative; width: 38px; height: 22px; flex: none; }
   .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
   .switch span { position: absolute; inset: 0; background: var(--panel-3); border-radius: 999px; transition: .15s; cursor: pointer; border: 1px solid var(--line-2); }
-  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #cfd0d4; border-radius: 50%; transition: .15s; }
+  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--knob); border-radius: 50%; transition: .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
   .switch input:checked + span { background: var(--accent); border-color: var(--accent); }
   .switch input:checked + span::before { transform: translateX(16px); background: #fff; }
 
@@ -85,9 +116,9 @@
   /* chips, pills */
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .chip { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
-  .chip.avoid { color: #f59a9a; border-color: #4d2b2b; background: #231718; }
+  .chip.avoid { color: var(--avoid-text); border-color: var(--avoid-line); background: var(--avoid-bg); }
   .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-weight: 500; }
-  .pill.ok { color: var(--ok); background: rgba(62,207,142,.1); } .pill.warn { color: var(--warn); background: rgba(240,180,41,.1); } .pill.err { color: var(--err); background: rgba(239,95,95,.1); }
+  .pill.ok { color: var(--ok); background: var(--ok-bg); } .pill.warn { color: var(--warn); background: var(--warn-bg); } .pill.err { color: var(--err); background: var(--err-bg); }
 
   /* users */
   .user-head { display: flex; align-items: center; gap: 12px; }
@@ -117,16 +148,12 @@
   /* status */
   .bar { height: 8px; background: var(--panel-3); border-radius: 999px; overflow: hidden; margin: 10px 0 6px; }
   .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); width: 0; transition: width .4s; }
-  pre.log { background: #0a0b0c; border: 1px solid var(--line); border-radius: 10px; padding: 14px; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 460px; overflow: auto; white-space: pre-wrap; color: #b7b9bf; margin: 0; }
+  pre.log { background: var(--log-bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 460px; overflow: auto; white-space: pre-wrap; color: var(--log-text); margin: 0; }
   .log .warn { color: var(--warn); } .log .error { color: var(--err); }
   .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; font-size: 13.5px; }
   .kv div:nth-child(odd) { color: var(--faint); }
 
-  /* callout, toast, login */
-  .callout { display: flex; gap: 14px; align-items: center; background: linear-gradient(135deg, rgba(170,92,195,.12), rgba(0,164,220,.10)); border: 1px solid #343a52; border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
-  .callout .grow { flex: 1; }
-  .callout b { display: block; margin-bottom: 2px; }
-  .callout span { color: var(--muted); font-size: 13px; }
+  /* toast, login */
   .note { font-size: 13px; color: var(--muted); }
   .note.ok { color: var(--ok); } .note.err { color: var(--err); }
   #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--panel-3); border: 1px solid var(--line-2); padding: 10px 16px; border-radius: 10px; opacity: 0; transition: .2s; pointer-events: none; z-index: 9; }
@@ -167,7 +194,10 @@
     <button class="nav" data-page="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>AI</button>
     <button class="nav" data-page="rows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><path d="M3 20h12"/></svg>Rows &amp; timing</button>
     <button class="nav" data-page="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Status</button>
-    <div class="aside-foot"><div id="who"></div><button id="logout">Sign out</button></div>
+    <div class="aside-foot">
+      <div class="seg theme" id="theme-seg" title="Appearance"><button type="button" data-v="system">System</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div>
+      <div id="who" style="margin-top:12px"></div><button id="logout">Sign out</button>
+    </div>
   </aside>
 
   <main>
@@ -198,11 +228,6 @@
         <h1>AI</h1>
         <p>The AI tags every movie once, reads your descriptions, and picks the "Recommended for you" row. One call per person per refresh.</p>
       </div></div>
-
-      <div class="callout" id="import-callout">
-        <div class="grow"><b>Already using the AI Movie Recommender plugin?</b><span>Take over its provider, key and models in one click.</span></div>
-        <button class="btn" id="import-plugin">Take over settings</button>
-      </div>
 
       <form class="card" id="ai-form">
         <h2>Provider</h2>
@@ -314,6 +339,12 @@ const colors = ['#aa5cc3', '#00a4dc', '#3ecf8e', '#f0b429', '#ef5f5f', '#5c7cfa'
 const colorFor = s => colors[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length];
 let settings = null;
 
+// Appearance: follows the system unless chosen; remembered in this browser only
+function applyTheme(t) { if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
+let theme = 'system';
+try { theme = localStorage.getItem('pickyfin-theme') || 'system'; } catch {}
+applyTheme(theme);
+
 function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200); }
 
 async function call(method, url, body) {
@@ -396,12 +427,6 @@ $('#test-ai').addEventListener('click', async e => {
   const r = await call('POST', '/api/settings/test-ai').catch(err => ({ Ok: false, Message: err.message }));
   note.textContent = r.Message; note.className = 'note ' + (r.Ok ? 'ok' : 'err'); e.target.disabled = false;
 });
-$('#import-plugin').addEventListener('click', async e => {
-  e.target.disabled = true;
-  const r = await call('POST', '/api/settings/import-plugin').catch(err => ({ Ok: false, Message: err.message }));
-  toast(r.Message); if (r.Ok) await loadSettings(); e.target.disabled = false;
-});
-
 // ---------- libraries ----------
 async function loadLibraries() {
   const box = $('#libraries');
@@ -499,13 +524,16 @@ async function loadUsers() {
   users.sort((a, b) => (b.Enabled - a.Enabled) || a.Name.localeCompare(b.Name)).forEach(u => box.appendChild(userCard(u)));
 }
 
+seg($('#theme-seg'), theme, v => { applyTheme(v); try { localStorage.setItem('pickyfin-theme', v); } catch {} });
+
 // ---------- status ----------
 async function loadStatus() {
   try {
     const s = await call('GET', '/api/status');
     const busy = s.State !== 'Idle';
-    const tagging = s.State.startsWith('Syncing') && s.Movies ? ` · ${s.Classified} of ${s.Movies} movies tagged` : '';
-    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + '…' + tagging : `Idle · ${s.Classified} of ${s.Movies} movies tagged`;
+    const wait = s.Waiting ? ` · ${Math.floor(s.Waiting / 60)}:${String(s.Waiting % 60).padStart(2, '0')}` : '';
+    const tagging = busy && s.Movies && s.Classified < s.Movies ? ` · ${s.Classified} of ${s.Movies} tagged` : '';
+    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + tagging : `Idle · ${s.Classified} of ${s.Movies} movies tagged`;
     $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : busy ? 'busy' : 'ok');
     $('#lib-count').textContent = `${s.Classified} of ${s.Movies}`;
     $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';

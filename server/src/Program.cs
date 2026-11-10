@@ -18,11 +18,25 @@ var dataDirectory = Environment.GetEnvironmentVariable("PICKYFIN_DATA") ?? Path.
 Directory.CreateDirectory(dataDirectory);
 ServerSettings.Load(dataDirectory);
 
+// Container log: one line per event, our own messages only; ASP.NET's per-request
+// chatter stays off unless something goes wrong
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(o =>
+{
+    o.SingleLine = true;
+    o.IncludeScopes = false;
+    o.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+});
+builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
+builder.Logging.AddFilter("System", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Error);
+builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection", LogLevel.Error);
 var logBuffer = new LogBuffer();
 builder.Logging.AddProvider(logBuffer);
 builder.Services.AddSingleton(logBuffer);
 
 builder.Services.AddHttpClient();
+builder.Services.ConfigureHttpClientDefaults(http => http.ConfigurePrimaryHttpMessageHandler(Net.CreateHandler));
 // The page reads PascalCase names, exactly as the C# properties are called
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = null);
 builder.Services.AddSingleton(new Database(dataDirectory));
@@ -109,9 +123,11 @@ api.MapGet("/me", (HttpContext http) =>
 admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, LogBuffer log, CancellationToken ct) =>
 {
     var (total, classified) = await store.GetStatsAsync(ct);
+    var (waitingFor, seconds) = Activity.Current;
     return Results.Ok(new
     {
-        worker.State,
+        State = waitingFor ?? worker.State,
+        Waiting = waitingFor is null ? 0 : seconds,
         worker.LastError,
         LibrarySynced = library.LastSync,
         Movies = total,
@@ -177,29 +193,6 @@ admin.MapPost("/settings/test-ai", async (AIProviderFactory ai, CancellationToke
     }
 });
 
-// Take over provider, key and models from the AI Movie Recommender plugin, if installed
-admin.MapPost("/settings/import-plugin", async (JellyfinClient jellyfin, CancellationToken ct) =>
-{
-    using var config = await jellyfin.GetRecommenderPluginConfigurationAsync(ct);
-    if (config is null) return Results.Ok(new { Ok = false, Message = "The AI Movie Recommender plugin isn't installed on this Jellyfin." });
-
-    string? Text(string name) => config.RootElement.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() : null;
-    var settings = ServerSettings.Current.Clone();
-    if (config.RootElement.TryGetProperty("AIProvider", out var provider))
-    {
-        if (provider.ValueKind == System.Text.Json.JsonValueKind.Number && Enum.IsDefined(typeof(AIProviderType), provider.GetInt32()))
-            settings.AIProvider = (AIProviderType)provider.GetInt32();
-        else if (provider.ValueKind == System.Text.Json.JsonValueKind.String && Enum.TryParse<AIProviderType>(provider.GetString(), out var parsed))
-            settings.AIProvider = parsed;
-    }
-    if (!string.IsNullOrWhiteSpace(Text("ApiKey"))) settings.ApiKey = Text("ApiKey")!;
-    if (!string.IsNullOrWhiteSpace(Text("ClassificationModel"))) settings.ClassificationModel = Text("ClassificationModel")!;
-    if (!string.IsNullOrWhiteSpace(Text("ChatModel"))) settings.ChatModel = Text("ChatModel")!;
-    settings.CustomEndpoint = Text("CustomEndpoint") ?? "";
-    if (!string.IsNullOrWhiteSpace(Text("TmdbApiKey"))) settings.TmdbApiKey = Text("TmdbApiKey")!;
-    ServerSettings.Save(settings);
-    return Results.Ok(new { Ok = true, Message = $"Taken over from the plugin: {settings.AIProvider}, {settings.ChatModel}." });
-});
 
 // ---------- users ----------
 
@@ -268,6 +261,9 @@ admin.MapGet("/users/{id:guid}/rows", async (Guid id, Database database, MovieSt
 });
 
 app.MapGet("/health", () => Results.Ok("ok"));
+
+app.Lifetime.ApplicationStarted.Register(() =>
+    app.Logger.LogInformation("Pickyfin Server started. Jellyfin: {Url}", string.IsNullOrEmpty(ServerSettings.Current.JellyfinUrl) ? "not set" : ServerSettings.Current.JellyfinUrl));
 
 app.Run();
 
