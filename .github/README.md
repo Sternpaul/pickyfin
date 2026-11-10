@@ -24,8 +24,8 @@ release automatically.
 On a Fire TV or Android TV device:
 
 1. Install the **Downloader** app from the app store.
-2. Download the newest `pickyfin-tv-v….apk` from
-   [Releases](https://github.com/Sternpaul/pickyfin/releases/latest) and install it.
+2. In Downloader, enter this address. It always gives the newest version:
+   `https://github.com/Sternpaul/pickyfin/releases/latest/download/pickyfin-tv.apk`
 3. Open Pickyfin, enter your server address and, if your server owner gave you one,
    the access header.
 

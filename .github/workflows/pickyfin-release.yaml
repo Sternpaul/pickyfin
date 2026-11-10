@@ -116,6 +116,9 @@ jobs:
           # Refuse to publish an unsigned build: installed apps could not update to it
           if [[ "$apk" == *unsigned* ]]; then echo "APK is unsigned, check the signing secrets"; exit 1; fi
           cp "$apk" "$RUNNER_TEMP/pickyfin-tv-v${JELLYFIN_VERSION}.apk"
+          # Same APK under a fixed name, so .../releases/latest/download/pickyfin-tv.apk
+          # always gives the newest version (for Downloader codes and links)
+          cp "$apk" "$RUNNER_TEMP/pickyfin-tv.apk"
 
       - name: Publish release
         if: steps.version.outputs.name
@@ -123,7 +126,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.name }}
         run: |
-          gh release create "tv-v$VERSION" "$RUNNER_TEMP/pickyfin-tv-v$VERSION.apk" \
+          gh release create "tv-v$VERSION" "$RUNNER_TEMP/pickyfin-tv-v$VERSION.apk" "$RUNNER_TEMP/pickyfin-tv.apk" \
             --target "$(git rev-parse HEAD)" \
             --title "Pickyfin TV $VERSION" \
             --notes "Pickyfin for Android TV and Fire TV. Based on the official Jellyfin Android TV release v${VERSION%-pickyfin.*}."
