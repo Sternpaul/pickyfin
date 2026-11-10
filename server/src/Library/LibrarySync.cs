@@ -79,16 +79,18 @@ public sealed class LibrarySync
         var removed = await _store.DeleteMoviesNotInAsync(items.Select(i => i.Id).ToHashSet(), cancellationToken);
         _logger.LogInformation("Library: {Total} movies, {Changed} new or changed, {Removed} removed", items.Count, changed.Count, removed);
 
+        // TMDB keywords first: quick, free, and the AI tagging can use them
+        if (!string.IsNullOrWhiteSpace(ServerSettings.Current.TmdbApiKey))
+        {
+            var missing = (await _store.GetAllMoviesAsync(cancellationToken)).Where(m => m.Keywords is null && !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+            if (missing.Count > 0) await _tmdb.EnrichKeywordsAsync(ServerSettings.Current.TmdbApiKey, missing, cancellationToken);
+        }
+
         if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey))
             await _classifier.ClassifyPendingMoviesAsync(cancellationToken);
         else
             _logger.LogWarning("No AI key set: movies are not classified, recommendations fall back to ratings");
 
-        if (!string.IsNullOrWhiteSpace(ServerSettings.Current.TmdbApiKey))
-        {
-            var missing = (await _store.GetAllMoviesAsync(cancellationToken)).Where(m => m.Keywords is null).ToList();
-            if (missing.Count > 0) await _tmdb.EnrichKeywordsAsync(ServerSettings.Current.TmdbApiKey, missing, cancellationToken);
-        }
 
         LastSync = DateTime.UtcNow;
     }

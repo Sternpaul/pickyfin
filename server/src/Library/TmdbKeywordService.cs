@@ -54,6 +54,8 @@ namespace Pickyfin.Server.Library
 
             var cache = await LoadCacheAsync();
             var changed = new List<MovieMetadata>();
+            var saved = 0;
+            _logger.LogInformation("TMDB keywords: fetching for {Count} movies", movies.Count);
 
             foreach (var movie in movies)
             {
@@ -110,13 +112,23 @@ namespace Pickyfin.Server.Library
                 cache[tmdbId.Value] = entry;
                 await SaveCacheAsync(cache);
 
+                // Save as we go, so a restart doesn't lose the work
+                if (changed.Count >= 100)
+                {
+                    await _movieStore.SaveMoviesAsync(changed.Distinct().ToList(), CancellationToken.None);
+                    saved += changed.Distinct().Count();
+                    changed.Clear();
+                    _logger.LogInformation("TMDB keywords: {Saved} movies so far", saved);
+                }
+
                 await Task.Delay(50, CancellationToken.None); // be polite to TMDB
             }
 
             if (changed.Any())
-                await _movieStore.SaveMoviesAsync(changed, CancellationToken.None);
+                await _movieStore.SaveMoviesAsync(changed.Distinct().ToList(), CancellationToken.None);
+            saved += changed.Distinct().Count();
 
-            _logger.LogInformation("TMDB keyword enrichment complete: {Count} movies updated.", changed.Count);
+            _logger.LogInformation("TMDB keywords: done, {Count} movies updated", saved);
         }
 
         private async Task<double?> FetchPopularityAsync(string apiKey, string? imdbId, int tmdbId, CancellationToken cancellationToken)

@@ -30,9 +30,9 @@ How the picks are made:
 5. **One AI call per user** picks the "Recommended for you" row from that
    shortlist. "Because You Watched" rows come from similarity to the seed movie.
 
-**Letterboxd** (optional, per person): their public diary feed via username
-(read twice a day), the full Letterboxd export (ZIP upload: all ratings, watched
-films and the watchlist), or JSON links as in the old plugin. Films they've
+**Letterboxd** (optional, per person): their public diary via the username
+(read twice a day), and the full Letterboxd export (ZIP upload: all ratings,
+watched films and the watchlist). Films they've
 watched there are never recommended, good ratings shape their taste, films close
 to ones they disliked move down, and watchlist films move up.
 

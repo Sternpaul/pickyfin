@@ -54,4 +54,13 @@ public class LetterboxdTests
     [InlineData("Ψωμί για έναν Δραπέτη", "ψωμι για εναν δραπετη")]
     public void Titles_normalize_for_matching(string title, string expected) =>
         Assert.Equal(expected, LetterboxdSync.Normalize(title));
+
+    [Theory]
+    [InlineData("dave", "dave")]
+    [InlineData(" @dave ", "dave")]
+    [InlineData("https://letterboxd.com/dave/", "dave")]
+    [InlineData("letterboxd.com/dave/films/diary", "dave")]
+    [InlineData("", null)]
+    public void Usernames_are_cleaned(string input, string? expected) =>
+        Assert.Equal(expected, LetterboxdSync.CleanUsername(input));
 }

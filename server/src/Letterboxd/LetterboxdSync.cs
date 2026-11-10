@@ -10,12 +10,11 @@ using Pickyfin.Server.Data.Models;
 namespace Pickyfin.Server.Letterboxd;
 
 /// <summary>
-/// Brings in a person's Letterboxd films from up to three sources:
+/// Brings in a person's Letterboxd films from two sources:
 /// - "feed": their public diary feed (letterboxd.com/USER/rss), recent watches with
-///   ratings and TMDB ids; fetched daily and merged, so it grows over time
+///   ratings and TMDB ids; fetched twice a day and merged, so it grows over time
 /// - "export": the ZIP from letterboxd.com → Settings → Data (all ratings, watched
 ///   films and the watchlist); replaced on each upload
-/// - "link": JSON links as used by the AI Movie Recommender plugin
 /// Each film is then matched to a movie in the library, if there is one.
 /// </summary>
 public sealed class LetterboxdSync
@@ -36,8 +35,17 @@ public sealed class LetterboxdSync
         _logger = logger;
     }
 
-    public static bool HasOnlineSource(UserProfile u) =>
-        !string.IsNullOrWhiteSpace(u.LetterboxdUsername) || !string.IsNullOrWhiteSpace(u.LetterboxdWatchlistUrl) || !string.IsNullOrWhiteSpace(u.LetterboxdRatingsUrl);
+    public static bool HasOnlineSource(UserProfile u) => !string.IsNullOrWhiteSpace(u.LetterboxdUsername);
+
+    /// <summary>"dave", "@dave" or "https://letterboxd.com/dave/films/" all become "dave".</summary>
+    public static string? CleanUsername(string? input)
+    {
+        var name = (input ?? "").Trim();
+        var at = name.IndexOf("letterboxd.com/", StringComparison.OrdinalIgnoreCase);
+        if (at >= 0) name = name[(at + 15)..];
+        name = name.Trim('/', '@', ' ').Split('/')[0];
+        return name.Length == 0 ? null : name;
+    }
 
     /// <summary>Fetches the feed and links, re-matches everything. Returns how many films are new.</summary>
     public async Task<int> SyncAsync(UserProfile user, CancellationToken cancellationToken)
@@ -49,16 +57,6 @@ public sealed class LetterboxdSync
         {
             try { added += await MergeFeedAsync(user, cancellationToken); }
             catch (Exception error) when (error is not OperationCanceledException) { problems.Add("diary feed: " + error.Message); }
-        }
-        if (!string.IsNullOrWhiteSpace(user.LetterboxdRatingsUrl))
-        {
-            try { added += await ReplaceAsync(user.UserId, "link", "watched", await FetchJsonAsync(user.LetterboxdRatingsUrl!, "watched", cancellationToken), cancellationToken); }
-            catch (Exception error) when (error is not OperationCanceledException) { problems.Add("ratings link: " + error.Message); }
-        }
-        if (!string.IsNullOrWhiteSpace(user.LetterboxdWatchlistUrl))
-        {
-            try { added += await ReplaceAsync(user.UserId, "link", "watchlist", await FetchJsonAsync(user.LetterboxdWatchlistUrl!, "watchlist", cancellationToken), cancellationToken); }
-            catch (Exception error) when (error is not OperationCanceledException) { problems.Add("watchlist link: " + error.Message); }
         }
 
         var (watched, watchlist, matched) = await MatchAsync(user.UserId, cancellationToken);
@@ -84,9 +82,7 @@ public sealed class LetterboxdSync
 
     private async Task<int> MergeFeedAsync(UserProfile user, CancellationToken cancellationToken)
     {
-        var name = user.LetterboxdUsername!.Trim().Trim('/');
-        if (name.Contains("letterboxd.com/", StringComparison.OrdinalIgnoreCase))
-            name = name[(name.IndexOf("letterboxd.com/", StringComparison.OrdinalIgnoreCase) + 15)..].Split('/')[0];
+        var name = CleanUsername(user.LetterboxdUsername)!;
 
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://letterboxd.com/{Uri.EscapeDataString(name)}/rss/");
         request.Headers.UserAgent.ParseAdd("PickyfinServer/1.0 (+https://github.com/Sternpaul/pickyfin)");
@@ -150,33 +146,6 @@ public sealed class LetterboxdSync
         a.TmdbId is not null && b.TmdbId is not null
             ? a.TmdbId == b.TmdbId
             : Normalize(a.Title) == Normalize(b.Title) && a.Year == b.Year;
-
-    // ---------- JSON links (plugin format) ----------
-
-    private async Task<List<LetterboxdFilm>> FetchJsonAsync(string url, string kind, CancellationToken cancellationToken)
-    {
-        var json = await _http.GetStringAsync(url.Trim(), cancellationToken);
-        using var document = JsonDocument.Parse(json);
-        var films = new List<LetterboxdFilm>();
-        foreach (var e in document.RootElement.EnumerateArray())
-        {
-            string? Text(string n) => e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-            var title = Text("title") ?? Text("name");
-            if (string.IsNullOrWhiteSpace(title)) continue;
-            var yearText = Text("release_year") ?? Text("year") ?? (e.TryGetProperty("year", out var yn) && yn.ValueKind == JsonValueKind.Number ? yn.GetInt32().ToString() : null);
-            double? rating = e.TryGetProperty("rating", out var rv) && rv.ValueKind == JsonValueKind.Number && rv.GetDouble() > 0 ? rv.GetDouble() : null;
-            films.Add(new LetterboxdFilm
-            {
-                Kind = kind,
-                Title = title,
-                Year = int.TryParse(yearText, out var y) ? y : null,
-                ImdbId = Text("imdb_id"),
-                TmdbId = e.TryGetProperty("tmdb_id", out var tv) && tv.ValueKind == JsonValueKind.Number ? tv.GetInt32() : null,
-                Rating = rating,
-            });
-        }
-        return films;
-    }
 
     // ---------- export upload ----------
 

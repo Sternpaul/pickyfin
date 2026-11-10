@@ -17,7 +17,7 @@ public static class BrowserApi
         List<string>? Subcategories, List<string>? Moods, List<string>? Themes,
         string? NarrativeStyle, string? Accessibility, string? Intensity, int CriticalAcclaimScore);
 
-    public sealed record LetterboxdSettings(bool Use, string? Username, string? WatchlistUrl, string? RatingsUrl);
+    public sealed record LetterboxdSettings(bool Use, string? Username);
 
     private static List<string> Tags(TagSet set) => set.Items.ToList();
 
@@ -55,6 +55,7 @@ public static class BrowserApi
         m.Cast,
         Themes = Tags(m.ThemeSet),
         Keywords = Tags(m.KeywordSet),
+        KeywordsFetched = m.Keywords is not null,
         m.NarrativeStyle,
         m.Accessibility,
         m.Intensity,
@@ -230,8 +231,6 @@ public static class BrowserApi
                 {
                     Use = user.UseLetterboxd,
                     Username = user.LetterboxdUsername,
-                    WatchlistUrl = user.LetterboxdWatchlistUrl,
-                    RatingsUrl = user.LetterboxdRatingsUrl,
                     Synced = user.LetterboxdSynced,
                     Status = user.LetterboxdStatus,
                     Watched = films.Where(f => f.Kind == "watched")
@@ -261,11 +260,11 @@ public static class BrowserApi
             {
                 user = await db.Users.FindAsync(new object[] { id }, ct);
                 if (user is null) return Results.NotFound();
-                static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
                 user.UseLetterboxd = body.Use;
-                user.LetterboxdUsername = Clean(body.Username);
-                user.LetterboxdWatchlistUrl = Clean(body.WatchlistUrl);
-                user.LetterboxdRatingsUrl = Clean(body.RatingsUrl);
+                user.LetterboxdUsername = LetterboxdSync.CleanUsername(body.Username);
+                // Links from the old plugin are no longer used
+                user.LetterboxdWatchlistUrl = null;
+                user.LetterboxdRatingsUrl = null;
                 user.RefreshRequested = true;
                 await db.SaveChangesAsync(ct);
             }
