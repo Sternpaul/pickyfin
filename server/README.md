@@ -55,9 +55,9 @@ Tags can be wrong, especially for lesser-known films. Pickyfin catches that in t
 - **A genre check.** Subcategories that don't fit any of Jellyfin's genres (a "Slasher" with only Crime and Drama) are flagged. Nothing is changed; you decide.
 - **A second opinion** (AI page, off by default). A different model reviews every movie's tags, 40 per call, and names only what looks wrong. A free OpenRouter model works.
 
-With an [Exa](https://exa.ai) key, flagged films are looked up on the web (Wikipedia, Letterboxd, TMDB, …) and described again from what was found. That costs about one cent per film; the free plan includes $10 a month, and a monthly limit on the AI page stops lookups before that.
+With an [Exa](https://exa.ai) key, flagged films are looked up on the web (Wikipedia, Letterboxd, TMDB, …) and described again from what was found. That costs under one cent per film; the free plan includes $10 a month, and a monthly limit on the AI page stops lookups before that.
 
-On the Issues page, each movie can be opened and fixed by hand, looked up again, or marked as fine. Movies you edit or mark as fine are never flagged again.
+On the Issues page, each movie can be opened and fixed by hand, looked up again, or marked as fine. Any movie can be looked up by hand from its page under Movies ("Look up on the web, then describe"). Movies you edit or mark as fine are never flagged again.
 
 ## Run it
 

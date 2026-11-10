@@ -433,7 +433,7 @@
         </div>
         <datalist id="check-models"><option value="openai/gpt-oss-120b:free"><option value="nvidia/nemotron-3-super-120b-a12b:free"><option value="google/gemma-4-31b-it:free"><option value="openai/gpt-oss-20b:free"><option value="google/gemini-2.5-flash"></datalist>
         <div class="setting">
-          <div><h3>Web lookups with Exa <span class="state" id="exa-state"></span></h3><p class="why">For films the AI doesn't know: a web search finds a real description (Wikipedia, Letterboxd, TMDB…), and the film is described again with it. About one cent per film. A key comes from dashboard.exa.ai.</p></div>
+          <div><h3>Web lookups with Exa <span class="state" id="exa-state"></span></h3><p class="why">For films the AI doesn't know: a web search finds a real description (Wikipedia, Letterboxd, TMDB…), and the film is described again with it. Under one cent per film. Any movie can also be looked up by hand from its page under Movies. A key comes from dashboard.exa.ai.</p></div>
           <div class="control"><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
         </div>
         <div class="setting">
@@ -769,7 +769,7 @@ async function openMovie(id) {
   const who = !m.Tagged ? 'Not described yet' : m.Edited ? 'Described by you; the AI leaves it alone' : 'Described by the AI';
   $('#d-body').innerHTML = `
     ${d.Issue ? `<div class="issue-box"><b>These tags may be wrong</b><ul>${d.Issue.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
-      <div class="actions"><button class="btn" id="i-fine">They're fine</button><button class="btn" id="i-look">Look up on the web and describe again</button><span class="note" id="i-note"></span></div></div>` : ''}
+      <div class="actions"><button class="btn" id="i-fine">They're fine</button><span class="note" id="i-note"></span></div></div>` : ''}
     <div class="film-top">${poster(m.Id, m.Title)}
       <div class="facts">
         <div class="label" style="margin-bottom:6px">${who}</div>
@@ -799,7 +799,12 @@ async function openMovie(id) {
   checkPosters($('#d-body'));
   $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
   $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));
-  $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button><span class="note" id="e-note"></span>`;
+  $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button>${settings?.HasExaApiKey ? '<button class="btn" id="e-look">Look up on the web, then describe</button>' : ''}<span class="note" id="e-note"></span>`;
+  if ($('#e-look')) $('#e-look').onclick = async e => {
+    e.target.disabled = true; $('#e-note').className = 'note'; $('#e-note').textContent = 'Searching the web, then asking the AI… free models can take a few minutes.';
+    try { await call('POST', `/api/movies/${id}/lookup`); toast('Looked up and described again'); openMovie(id); afterIssueChange(); }
+    catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; e.target.disabled = false; }
+  };
   $('#e-save').onclick = async () => {
     try {
       await call('PUT', `/api/movies/${id}`, {
@@ -812,11 +817,6 @@ async function openMovie(id) {
     } catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; }
   };
   if ($('#i-fine')) $('#i-fine').onclick = async () => { await call('POST', `/api/movies/${id}/fine`); toast('Marked as fine'); openMovie(id); afterIssueChange(); };
-  if ($('#i-look')) $('#i-look').onclick = async e => {
-    e.target.disabled = true; $('#i-note').className = 'note'; $('#i-note').textContent = 'Searching the web, then asking the AI…';
-    try { await call('POST', `/api/movies/${id}/lookup`); toast('Looked up and described again'); openMovie(id); afterIssueChange(); }
-    catch (err) { $('#i-note').textContent = err.message; $('#i-note').className = 'note err'; e.target.disabled = false; }
-  };
   $('#e-retag').onclick = async e => {
     e.target.disabled = true; $('#e-note').className = 'note'; $('#e-note').textContent = 'Asking the AI… free models can take a few minutes.';
     try { await call('POST', `/api/movies/${id}/retag`); toast('Described again by the AI'); openMovie(id); refreshMovieList(); }

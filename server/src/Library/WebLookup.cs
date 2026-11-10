@@ -6,7 +6,7 @@ using Pickyfin.Server.Data.Models;
 namespace Pickyfin.Server.Library;
 
 /// <summary>
-/// Looks a film up on the web with Exa (about one cent per film), so the AI can tag
+/// Looks a film up on the web with Exa (under one cent per film), so the AI can tag
 /// films it doesn't know from real descriptions instead of guessing. Spending is
 /// counted per month and stops at the budget set on the AI page.
 /// </summary>
@@ -90,7 +90,8 @@ public sealed class WebLookup
             ["type"] = "auto",
             ["numResults"] = 3,
             ["includeDomains"] = sites,
-            ["contents"] = new { text = new { maxCharacters = 1200 } },
+            // Only the passages that say what the film is like, not the whole page
+            ["contents"] = new { highlights = new { query = "What is this film about: plot, genre, tone, mood, themes, style and critical reception", maxCharacters = 1200 } },
         }.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value));
 
         using var response = await client.SendAsync(request, cancellationToken);
@@ -99,13 +100,15 @@ public sealed class WebLookup
             throw new InvalidOperationException($"Exa: HTTP {(int)response.StatusCode} {(body.Length > 200 ? body[..200] : body)}");
 
         using var json = JsonDocument.Parse(body);
-        var cost = json.RootElement.TryGetProperty("costDollars", out var c) && c.TryGetProperty("total", out var t) ? t.GetDouble() : 0.01;
+        var cost = json.RootElement.TryGetProperty("costDollars", out var c) && c.TryGetProperty("total", out var t) ? t.GetDouble() : 0.007;
         Count(cost);
         var results = new List<(string, string, string)>();
         if (json.RootElement.TryGetProperty("results", out var list))
             foreach (var r in list.EnumerateArray())
             {
-                var text = r.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
+                var text = r.TryGetProperty("highlights", out var hl) && hl.ValueKind == JsonValueKind.Array
+                    ? string.Join(" … ", hl.EnumerateArray().Where(h => h.ValueKind == JsonValueKind.String).Select(h => h.GetString()!.Trim()))
+                    : r.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
                 if (text.Length < 80) continue;
                 results.Add((r.TryGetProperty("title", out var ti) ? ti.GetString() ?? "" : "", r.GetProperty("url").GetString() ?? "", text.Replace('\n', ' ')));
             }
