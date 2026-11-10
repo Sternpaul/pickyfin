@@ -47,6 +47,10 @@ public sealed class ServerSettings
     public List<Guid> ExcludedLibraries { get; set; } = new();
     /// <summary>"Because You Watched …" rows per user, 0 to 2.</summary>
     public int BecauseRows { get; set; } = 2;
+    /// <summary>"Because You Watched" rows, 0..100 (50 default): same director/lead actors, uncommon country, nearby years.</summary>
+    public int BecausePeople { get; set; } = 50;
+    public int BecauseCountry { get; set; } = 50;
+    public int BecauseEra { get; set; } = 50;
 
     public bool IsLibraryExcluded(string? libraries) =>
         ExcludedLibraries.Count > 0 && !string.IsNullOrEmpty(libraries)

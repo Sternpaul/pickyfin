@@ -187,6 +187,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     var picksChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g))
         || before.BecauseRows != settings.BecauseRows || before.PicksPerRow != settings.PicksPerRow
         || before.BriefWeight != settings.BriefWeight || before.Discovery != settings.Discovery || before.Variety != settings.Variety
+        || before.BecausePeople != settings.BecausePeople || before.BecauseCountry != settings.BecauseCountry || before.BecauseEra != settings.BecauseEra
         || before.NewArrivals != settings.NewArrivals || before.Rotation != settings.Rotation || before.MinRating != settings.MinRating;
     if (picksChanged)
     {
@@ -325,6 +326,9 @@ record SettingsView
     public int RefreshHours { get; init; }
     public int PicksPerRow { get; init; }
     public int BecauseRows { get; init; }
+    public int BecausePeople { get; init; } = 50;
+    public int BecauseCountry { get; init; } = 50;
+    public int BecauseEra { get; init; } = 50;
     public List<Guid> ExcludedLibraries { get; init; } = new();
     public int BriefWeight { get; init; }
     public int Discovery { get; init; }
@@ -354,6 +358,9 @@ record SettingsView
         RefreshHours = s.RefreshHours,
         PicksPerRow = s.PicksPerRow,
         BecauseRows = s.BecauseRows,
+        BecausePeople = s.BecausePeople,
+        BecauseCountry = s.BecauseCountry,
+        BecauseEra = s.BecauseEra,
         ExcludedLibraries = s.ExcludedLibraries,
         BriefWeight = s.BriefWeight,
         Discovery = s.Discovery,
@@ -392,6 +399,9 @@ record SettingsView
         s.RefreshHours = Math.Clamp(RefreshHours, 1, 168);
         s.PicksPerRow = Math.Clamp(PicksPerRow, 5, 50);
         s.BecauseRows = Math.Clamp(BecauseRows, 0, 2);
+        s.BecausePeople = Math.Clamp(BecausePeople, 0, 100);
+        s.BecauseCountry = Math.Clamp(BecauseCountry, 0, 100);
+        s.BecauseEra = Math.Clamp(BecauseEra, 0, 100);
         s.ExcludedLibraries = ExcludedLibraries.Distinct().ToList();
         s.BriefWeight = Math.Clamp(BriefWeight, 0, 100);
         s.Discovery = Math.Clamp(Discovery, 0, 100);

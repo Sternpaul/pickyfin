@@ -161,10 +161,13 @@ public sealed class Curator
             var seedScores = candidates
                 .Where(m => !used.Contains(m.ItemId))
                 .Select(m => (Movie: m, Score: _similarity.CalculateSimilarity(seed, m) * 0.75 + (brief is null ? 0 : BriefScore(m, brief) * 0.25)));
-            var similar = BecauseRow.Pick(seed, seedScores, countryShares, Math.Max(0, perRow - mine.Count))
-                .Select(m => m.ItemId)
-                .ToList();
+            var picked = BecauseRow.Pick(seed, seedScores, countryShares, Math.Max(0, perRow - mine.Count), BecauseRow.Strengths.FromSettings(Settings));
+            var similar = picked.Select(p => p.Movie.ItemId).ToList();
             if (similar.Count + mine.Count < 5) continue;
+            var reasons = picked.Where(p => p.Reason is not null).GroupBy(p => p.Reason!)
+                .Select(g => $"{g.Count()} for {g.Key} ({string.Join(", ", g.Select(p => p.Movie.Title))})").ToList();
+            _logger.LogInformation("{User}, because of {Seed}: {Tags} by tags{Extra}", user.Name, seed.Title,
+                picked.Count(p => p.Reason is null), reasons.Count == 0 ? "" : "; " + string.Join("; ", reasons));
             similar = mine.Concat(similar).ToList();
             used.UnionWith(similar);
             rows.Add(new($"because-{slot++}", BecausePrefix + seed.Title, similar));

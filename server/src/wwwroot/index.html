@@ -515,6 +515,22 @@
             <div class="control"><select id="RefreshHours" style="width:auto"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">day</option><option value="48">2 days</option><option value="168">week</option></select></div>
           </div>
         </div>
+        <h2 class="group-title">"Because You Watched …" rows</h2>
+        <p class="why" style="margin:0 0 6px;max-width:68ch">These only change the two "Because You Watched" rows; "Recommended for you" isn't affected. Films are ordered by how well their tags match the film they watched (a close match scores about 40–60 of 100 points). These sliders add a push on top. The middle is the default; turned up too far, the row fills with films that share an actor or a country but not much else.</p>
+        <div class="settings">
+          <div class="setting">
+            <div><h3>Same director or actors</h3><p class="why" id="hint-people"></p></div>
+            <div class="control"><div class="ends"><span>Ignore</span><span>Strong</span></div><input type="range" id="BecausePeople" min="0" max="100" step="10"></div>
+          </div>
+          <div class="setting">
+            <div><h3>Same country</h3><p class="why" id="hint-country"></p></div>
+            <div class="control"><div class="ends"><span>Ignore</span><span>Strong</span></div><input type="range" id="BecauseCountry" min="0" max="100" step="10"></div>
+          </div>
+          <div class="setting">
+            <div><h3>Same era</h3><p class="why" id="hint-era"></p></div>
+            <div class="control"><div class="ends"><span>Ignore</span><span>Strong</span></div><input type="range" id="BecauseEra" min="0" max="100" step="10"></div>
+          </div>
+        </div>
         <div class="setting-foot"><button class="btn primary" type="submit">Save</button><button class="btn quiet" type="button" id="tuning-defaults">Back to defaults</button><span class="note" id="rows-note"></span></div>
       </form>
     </section>
@@ -645,6 +661,8 @@ async function loadSettings() {
   $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery;
   seg($('#Variety'), settings.Variety); seg($('#NewArrivals'), settings.NewArrivals); seg($('#Rotation'), settings.Rotation);
   const mr = $('#MinRating'); mr.value = [...mr.options].some(o => Number(o.value) === settings.MinRating) ? String(settings.MinRating) : '0';
+  for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).value = settings[k] ?? 50;
+  becauseHints();
   $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
@@ -654,6 +672,18 @@ async function loadSettings() {
   $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
   $('#WebLookupsPerDay').value = settings.WebLookupsPerDay;
 }
+function becauseHints() {
+  const pts = (base, v) => Math.round(base * v / 50);
+  const p = Number($('#BecausePeople').value), c = Number($('#BecauseCountry').value), e = Number($('#BecauseEra').value);
+  const tag = v => v === 50 ? ' (default)' : '';
+  $('#hint-people').textContent = !p ? 'Off: shared people make no difference.'
+    : `Films with the same director get +${pts(10, p)} points, the same lead actor +${pts(8, p)} (both: at most +${pts(15, p)}). Up to ${Math.round(p / 25)} place(s) in the row are kept for such films, if their tags fit at least a little${tag(p)}. Uses the director and the first three actors of the film they watched.`;
+  $('#hint-country').textContent = !c ? 'Off: the country makes no difference.'
+    : `Only when the film they watched comes from a country that's uncommon in your library (less than a quarter of it), e.g. a French comedy. Then films from that country get +${pts(8, c)} points and up to ${Math.round(c * 0.06)} place(s) are kept for them${tag(c)}. Country stands in for language.`;
+  $('#hint-era').textContent = !e ? 'Off: the release year makes no difference.'
+    : `Released within 5 years of the film they watched: +${pts(5, e)} points, within 12 years: +${pts(3, e)}, more than 30 years apart: −${pts(3, e)}${tag(e)}. Classics that fit well still show up.`;
+}
+for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).addEventListener('input', becauseHints);
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
@@ -669,14 +699,15 @@ $('#check-form').addEventListener('submit', async e => { e.preventDefault(); if 
   WebLookupAuto: $('#WebLookupAuto').checked, WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0 }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts with the next library sync, which starts now.'); });
 $('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
 const tuningValues = () => ({
-  BecauseRows: Number(segValue($('#because-seg'))), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
+  BecauseRows: Number(segValue($('#because-seg'))),
+  BecausePeople: Number($('#BecausePeople').value), BecauseCountry: Number($('#BecauseCountry').value), BecauseEra: Number($('#BecauseEra').value), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
   BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value),
   Variety: segValue($('#Variety')), NewArrivals: segValue($('#NewArrivals')), Rotation: segValue($('#Rotation')), MinRating: Number($('#MinRating').value),
 });
 $('#rows-form').addEventListener('submit', async e => { e.preventDefault(); if (await save(tuningValues(), $('#rows-note'))) toast('Saved. Everyone gets fresh picks shortly.'); });
 $('#tuning-defaults').addEventListener('click', async () => {
   if (!confirm('Set all tuning back to the defaults?')) return;
-  if (await save({ BecauseRows: 2, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, Discovery: 40, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
+  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, Discovery: 40, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
 });
 $('#test-ai').addEventListener('click', async e => {
   const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';
