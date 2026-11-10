@@ -89,6 +89,7 @@
   input[type=date] { width: auto; }
   input::placeholder, textarea::placeholder { color: var(--faint); }
   input[type=range] { width: 100%; accent-color: var(--accent); }
+  .slider-value { align-self: flex-start; font: 600 13.5px/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--text); background: var(--accent-soft); padding: 5px 10px; border-radius: 999px; margin-top: -4px; }
   .ends { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: -4px; }
 
   .btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line-strong);
@@ -662,7 +663,7 @@ async function loadSettings() {
   seg($('#Variety'), settings.Variety); seg($('#NewArrivals'), settings.NewArrivals); seg($('#Rotation'), settings.Rotation);
   const mr = $('#MinRating'); mr.value = [...mr.options].some(o => Number(o.value) === settings.MinRating) ? String(settings.MinRating) : '0';
   for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).value = settings[k] ?? 50;
-  becauseHints();
+  becauseHints(); showSliderValues();
   $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
@@ -672,6 +673,21 @@ async function loadSettings() {
   $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
   $('#WebLookupsPerDay').value = settings.WebLookupsPerDay;
 }
+// A number under each Tuning slider, so it's clear where it stands
+const sliderText = {
+  BriefWeight: v => v == 50 ? 'Half and half' : v > 50 ? `${v}% description · ${100 - v}% history` : `${100 - v}% history · ${v}% description`,
+  Discovery: v => `${v} of 100${v == 40 ? ' · default' : ''}`,
+  BecausePeople: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
+  BecauseCountry: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
+  BecauseEra: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
+};
+for (const [id, text] of Object.entries(sliderText)) {
+  const input = $('#' + id), out = document.createElement('span');
+  out.className = 'slider-value'; input.after(out);
+  const show = () => { out.textContent = text(Number(input.value)); };
+  input.addEventListener('input', show); input.showValue = show;
+}
+const showSliderValues = () => Object.keys(sliderText).forEach(id => $('#' + id).showValue());
 function becauseHints() {
   const pts = (base, v) => Math.round(base * v / 50);
   const p = Number($('#BecausePeople').value), c = Number($('#BecauseCountry').value), e = Number($('#BecauseEra').value);
