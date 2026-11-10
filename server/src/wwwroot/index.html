@@ -547,12 +547,6 @@
         <div><div class="label">Jellyfin</div><div id="jf-url">–</div></div>
         <div><div class="label">Signed in as</div><div id="who">–</div></div>
       </div>
-      <div id="leftovers" class="hidden" style="margin:0 0 28px">
-        <div class="label" style="margin-bottom:6px">Rows Pickyfin didn't make</div>
-        <p class="why" style="margin:0 0 10px">These playlists have row names, so the TV shows them as rows, but Pickyfin didn't make them (probably the old plugin). The TV shows at most three rows, so they can push Pickyfin's rows off.</p>
-        <div id="leftover-list"></div>
-        <div class="inline" style="margin-top:10px"><button class="btn" id="leftover-all">Remove all</button><span class="note" id="leftover-note"></span></div>
-      </div>
       <div class="label" style="margin-bottom:10px">Log</div>
       <pre class="log" id="log"></pre>
     </section>
@@ -633,7 +627,7 @@ function go(page) {
   if (page === 'movies') loadMovies(true);
   if (page === 'issues') loadIssues();
   if (page === 'ai') loadExaUsage();
-  if (page === 'status') { loadStatus(); loadLeftovers(); }
+  if (page === 'status') loadStatus();
   if (page === 'users') loadUsers();
   history.replaceState(null, '', '#' + page);
   window.scrollTo(0, 0);
@@ -1280,20 +1274,6 @@ async function loadStatus() {
     }
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
   } catch {}
-}
-async function loadLeftovers() {
-  let list = [];
-  try { list = await call('GET', '/api/playlists/leftovers'); } catch {}
-  $('#leftovers').classList.toggle('hidden', !list.length);
-  $('#leftover-list').innerHTML = list.map(p => `<div class="inline" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><span><b>${esc(p.Name)}</b> <span class="note">for ${esc(p.User)}</span></span><button class="btn quiet" data-id="${p.Id}">Remove</button></div>`).join('');
-  $$('#leftover-list button').forEach(b => b.onclick = () => removeLeftovers([b.dataset.id]));
-  $('#leftover-all').onclick = () => removeLeftovers(list.map(p => p.Id));
-}
-async function removeLeftovers(ids) {
-  if (!confirm(ids.length === 1 ? 'Remove this playlist from Jellyfin?' : `Remove these ${ids.length} playlists from Jellyfin?`)) return;
-  try { const r = await call('POST', '/api/playlists/leftovers/remove', ids); toast(`Removed ${r.Removed}`); }
-  catch (err) { $('#leftover-note').textContent = err.message; }
-  loadLeftovers(); loadStatus();
 }
 $('#sync').addEventListener('click', async e => { e.target.disabled = true; await call('POST', '/api/library/sync'); toast('Library sync started'); setTimeout(() => { e.target.disabled = false; loadStatus(); }, 1500); });
 setInterval(() => { if (!$('#app').classList.contains('hidden')) loadStatus(); }, 4000);

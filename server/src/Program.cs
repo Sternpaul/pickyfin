@@ -270,40 +270,6 @@ admin.MapPut("/users/{id:guid}", async (Guid id, UserUpdate update, Database dat
     return Results.Ok();
 });
 
-// ---------- leftover row playlists (e.g. from the old plugin) ----------
-// Playlists the TV app would show as rows, but that Pickyfin didn't make
-static bool LooksLikeRow(string? name) => name is not null
-    && (name.Equals(Curator.RecommendedName, StringComparison.OrdinalIgnoreCase) || name.Equals("For You", StringComparison.OrdinalIgnoreCase)
-        || name.StartsWith("Because You Watched", StringComparison.OrdinalIgnoreCase));
-
-async Task<List<(Guid Id, string Name, string User)>> FindLeftoversAsync(JellyfinClient jellyfin, Database database, CancellationToken ct)
-{
-    HashSet<Guid> ours;
-    await using (var db = database.Open())
-        ours = (await db.Playlists.Select(p => p.PlaylistId).ToListAsync(ct)).ToHashSet();
-    var found = new Dictionary<Guid, (Guid Id, string Name, string User)>();
-    foreach (var user in await jellyfin.GetUsersAsync(ct))
-        foreach (var playlist in await jellyfin.GetPlaylistsAsync(user.Id, ct))
-            if (LooksLikeRow(playlist.Name) && !ours.Contains(playlist.Id) && !found.ContainsKey(playlist.Id))
-                found[playlist.Id] = (playlist.Id, playlist.Name!, user.Name);
-    return found.Values.OrderBy(p => p.User).ThenBy(p => p.Name).ToList();
-}
-
-admin.MapGet("/playlists/leftovers", async (JellyfinClient jellyfin, Database database, CancellationToken ct) =>
-    Results.Ok((await FindLeftoversAsync(jellyfin, database, ct)).Select(p => new { p.Id, p.Name, p.User })));
-
-// Removes leftovers: only ids that are still leftovers right now, never Pickyfin's own rows
-admin.MapPost("/playlists/leftovers/remove", async (List<Guid> ids, JellyfinClient jellyfin, Database database, ILoggerFactory logs, CancellationToken ct) =>
-{
-    var leftovers = await FindLeftoversAsync(jellyfin, database, ct);
-    var targets = leftovers.Where(p => ids.Contains(p.Id)).ToList();
-    foreach (var p in targets) await jellyfin.DeleteItemAsync(p.Id, ct);
-    if (targets.Count > 0)
-        logs.CreateLogger("Pickyfin.Server.Playlists").LogInformation("Removed {Count} leftover playlist(s): {Names}", targets.Count,
-            string.Join(", ", targets.Select(p => $"{p.Name} ({p.User})")));
-    return Results.Ok(new { Removed = targets.Count });
-});
-
 admin.MapPost("/users/{id:guid}/refresh", async (Guid id, Database database, RefreshService worker, CancellationToken ct) =>
 {
     await using var db = database.Open();
