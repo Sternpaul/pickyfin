@@ -143,6 +143,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     {
         State = waitingFor ?? worker.State,
         Waiting = waitingFor is null ? 0 : seconds,
+        TaggingLeft = TaggingEta.SecondsLeft,
         worker.LastError,
         LibrarySynced = library.LastSync,
         Movies = total,

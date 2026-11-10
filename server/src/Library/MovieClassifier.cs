@@ -61,7 +61,9 @@ namespace Pickyfin.Server.Library
             _logger.LogInformation("Tagging {Count} movies, 20 per AI call", unclassified.Count);
             
             var provider = _aiProviderFactory.GetProvider();
-            
+            TaggingEta.Start(unclassified.Count, BatchSize);
+            try
+            {
             // Process in batches
             for (int i = 0; i < unclassified.Count; i += BatchSize)
             {
@@ -74,6 +76,7 @@ namespace Pickyfin.Server.Library
                 {
                     string jsonResponse;
                     var started = DateTime.UtcNow;
+                    TaggingEta.BatchStarted(unclassified.Count - i);
                     using (Activity.Begin($"Tagging movies {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
                         jsonResponse = await provider.ClassifyMoviesAsync(batch, cancellationToken);
                     _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
@@ -83,6 +86,7 @@ namespace Pickyfin.Server.Library
                     
                     // Save batch to DB
                     await _movieStore.SaveMoviesAsync(batch, cancellationToken);
+                    TaggingEta.BatchDone();
                 }
                 catch (Exception ex)
                 {
@@ -90,6 +94,8 @@ namespace Pickyfin.Server.Library
                     break;
                 }
             }
+            }
+            finally { TaggingEta.Stop(); }
             
             _logger.LogInformation("Tagging finished");
         }

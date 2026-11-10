@@ -893,16 +893,24 @@ async function loadUsers() {
 }
 
 // ---------- status ----------
+function dur(sec) {
+  if (sec < 90) return 'a minute';
+  const m = Math.round(sec / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} h ${r} min` : `${h} h`;
+}
 async function loadStatus() {
   try {
     const s = await call('GET', '/api/status');
     const busy = s.State !== 'Idle';
     const wait = s.Waiting ? ` · ${Math.floor(s.Waiting / 60)}:${String(s.Waiting % 60).padStart(2, '0')}` : '';
-    const progress = busy && s.Movies && s.Classified < s.Movies ? ` · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} described` : '';
+    const eta = s.TaggingLeft ? ` · about ${dur(s.TaggingLeft)} left` : '';
+    const progress = busy && s.Movies && s.Classified < s.Movies ? ` · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} described${eta}` : '';
     $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + progress : `Idle · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} movies described`;
     $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : busy ? 'busy' : 'ok');
     $('#lib-count').textContent = s.Classified.toLocaleString();
-    $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described`;
+    $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described${eta}`;
     $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';
     $('#lib-synced').textContent = ago(s.LibrarySynced);
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
