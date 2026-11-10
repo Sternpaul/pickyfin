@@ -3,19 +3,21 @@
 #
 #   scripts/update-official.sh v0.19.11
 #
-# How: the code becomes exactly the official release, then our own changes (everything
-# that differs from the official release we were on) are applied on top again.
-# This is safer than a plain merge: upstream's release branches carry copies of
-# the same fixes, which a merge can silently duplicate. The result is committed
-# as a merge of the official tag, so `git tag --merged` keeps working.
+# .github/official-version holds the official release we're based on. This repo
+# doesn't carry the official git history, so updating works on file contents:
+# the code becomes exactly the new official release, then our own changes
+# (everything that differs from the official release we were on) are applied on
+# top again. That's also safer than a merge: upstream's release branches carry
+# copies of the same fixes, which a merge can silently duplicate.
 #
-# Exit codes: 0 = updated (or already up to date), 1 = our changes don't apply
-# cleanly (conflict markers are left in the files; fix them, then `git add` and
+# Exit codes: 0 = updated (or nothing to do), 1 = our changes don't apply cleanly
+# (conflict markers are left in the files; fix them, then `git add -A` and
 # `git commit`), 2 = usage error.
 set -euo pipefail
 
 target=${1:?usage: scripts/update-official.sh <official tag, e.g. v0.19.11>}
 upstream=https://github.com/jellyfin/jellyfin-androidtv.git
+version_file=.github/official-version
 
 cd "$(git rev-parse --show-toplevel)"
 if [ -n "$(git status --porcelain)" ]; then
@@ -23,28 +25,32 @@ if [ -n "$(git status --porcelain)" ]; then
 	exit 2
 fi
 
-git rev-parse -q --verify "refs/tags/$target" >/dev/null ||
-	git fetch --quiet --no-tags "$upstream" "refs/tags/$target:refs/tags/$target"
-
-# The official release we're currently based on
-current=$(git tag --merged HEAD --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-if git merge-base --is-ancestor "$target" HEAD; then
-	echo "Already contains $target."
+current=$(tr -d '[:space:]' < "$version_file")
+if [ "$current" = "$target" ] || [ "$(printf '%s\n%s\n' "$current" "$target" | sort -V | tail -1)" = "$current" ]; then
+	echo "Already on $current; nothing to do for $target."
 	exit 0
 fi
 echo "Updating from $current to $target"
+
+for tag in "$current" "$target"; do
+	git rev-parse -q --verify "refs/tags/$tag" >/dev/null ||
+		git fetch --quiet --no-tags --depth=1 "$upstream" "refs/tags/$tag:refs/tags/$tag"
+done
 
 # Our changes, relative to the official release we're on
 patch=$(mktemp)
 trap 'rm -f "$patch"' EXIT
 git diff --binary "$current" HEAD > "$patch"
 
-# Record the merge, then replace everything with the official release
-git merge --quiet -s ours --no-commit "$target" >/dev/null
+# Replace everything with the official release, then re-apply our changes
 git read-tree -u --reset "$target"
-
-# Re-apply our changes
+status=0
 if [ -s "$patch" ] && ! git apply --3way --whitespace=nowarn "$patch"; then
+	status=1
+fi
+echo "$target" > "$version_file"
+
+if [ $status -ne 0 ]; then
 	echo
 	echo "Our changes conflict with $target in:" >&2
 	git diff --name-only --diff-filter=U >&2

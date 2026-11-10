@@ -1,42 +1,80 @@
 # Pickyfin
 
-The official [Jellyfin Android TV app](https://github.com/jellyfin/jellyfin-androidtv)
-for Android TV and Fire TV, with a few additions for small, private servers.
-Everything else is unchanged and follows the official stable releases automatically.
+[![Latest release](https://img.shields.io/github/v/release/Sternpaul/pickyfin?label=release)](https://github.com/Sternpaul/pickyfin/releases)
+[![License: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-blue.svg)](../LICENSE)
+[![Based on Jellyfin Android TV](https://img.shields.io/badge/based%20on-Jellyfin%20Android%20TV-00a4dc.svg)](https://github.com/jellyfin/jellyfin-androidtv)
 
-Pickyfin is not affiliated with the Jellyfin project.
+**The official Jellyfin Android TV app, a little pickier.** Same look, same player,
+same features, plus three things for small private servers:
 
-## What's different
+- 🔑 **Access header.** For servers behind a reverse proxy that only lets requests
+  with a secret header through. Enter it once when adding the server.
+- ✨ **"Recommended for you" on the home screen.** Personal rows for each user, right
+  after Continue Watching. No playlists to open, no settings.
+- 🔄 **In-app updates.** New versions are offered inside the app and install with
+  one click, also on Fire TV.
 
-| Addition | Where |
+Everything else is the official app, kept in step with every official stable
+release automatically.
+
+> Pickyfin is an independent project and not affiliated with the Jellyfin project.
+
+## Install
+
+On a Fire TV or Android TV device:
+
+1. Install the **Downloader** app from the app store.
+2. Download the newest `pickyfin-tv-v….apk` from
+   [Releases](https://github.com/Sternpaul/pickyfin/releases/latest) and install it.
+3. Open Pickyfin, enter your server address and, if your server owner gave you one,
+   the access header.
+
+Pickyfin installs next to the official Jellyfin app; you can keep both.
+
+## Recommendations need a server plugin
+
+The app shows the recommendations, but doesn't compute them. That's done on the
+server by the [AI Movie Recommender](https://github.com/Sternpaul/jellyfin-smart-playlists)
+plugin, which writes private playlists for each user. Pickyfin shows these as rows:
+
+| Playlist written by the plugin | Row in Pickyfin |
 | --- | --- |
-| **Access header.** The "add server" screen has optional fields for a header name and value. It's sent on every request to that server (API, images, video), and never to anything else. For servers behind a reverse proxy that only lets requests with that header through. | `pickyfin/AccessHeader.kt`, wired in `di/AppModule.kt` and `ServerAddFragment.kt` |
-| **"Recommended for you" rows on the home screen**, after Continue Watching / Next Up. They show the user's private recommendation playlists written by a server plugin ("For You", "Because You Watched …"), up to three rows. No playlists, no rows. | `pickyfin/RecommendationRows.kt`, wired in `HomeRowsFragment.kt` |
-| **Own app identity.** Package `io.github.sternpaul.pickyfin.tv`, name "Pickyfin", so it installs next to the official app. | `app/build.gradle.kts` |
-| **In-app updates.** On start (at most every 6 hours) it checks this repository's newest `tv-v…` release and offers to install it. The system asks the user to confirm; the first time it also asks to allow this app to install updates. | `pickyfin/Updater.kt` |
+| **For You** (or **Recommended for you**) | Recommended for you |
+| **Because You Watched …** | Because You Watched … |
 
-All new code lives in `org.jellyfin.androidtv.pickyfin` (under `app/src/main/java/org/jellyfin/androidtv/`).
-Official files are touched only in a few lines marked `// Pickyfin:`.
+At most three rows in total, in this order.
 
-## Install on a Fire TV
+Install the plugin in Jellyfin under *Dashboard → Plugins → Repositories* with
+`https://sternpaul.github.io/jellyfin-smart-playlists/repo/manifest.json`.
+Without it, Pickyfin works like the official app, just without these rows.
 
-Download the newest `pickyfin-tv-v….apk` from [Releases](../../releases), for example
-with the Downloader app, and install it. Later updates are offered inside the app.
+## What's changed compared to the official app
 
-## Releases
+| Addition | Code |
+| --- | --- |
+| Access header: optional header name and value on the "add server" screen, sent on every request to that server (API, images, video, live updates) and never anywhere else | `pickyfin/AccessHeader.kt`, wired in `di/AppModule.kt` and `ServerAddFragment.kt` |
+| Recommendation rows after Continue Watching / Next Up, up to three; watched items drop out | `pickyfin/RecommendationRows.kt`, wired in `HomeRowsFragment.kt` |
+| Own identity: package `io.github.sternpaul.pickyfin.tv`, name "Pickyfin" | `app/build.gradle.kts` |
+| Updater: checks this repository's newest `tv-v…` release at most every 6 hours and hands the APK to the system installer | `pickyfin/Updater.kt` |
 
-`.github/workflows/pickyfin-release.yaml` runs daily and on demand:
+New code lives in `app/src/main/java/org/jellyfin/androidtv/pickyfin/`. Official
+files are touched only in a few lines marked `// Pickyfin:`.
 
-- moves the app to a new official stable release, if there is one, and re-applies our
-  changes (`scripts/update-official.sh`)
-- builds a signed APK and publishes it as release `tv-v<official version>-pickyfin.<n>`
-- if our changes don't apply cleanly, it opens an issue instead of publishing
+## How releases work
 
-Repository secrets it needs: `PICKYFIN_KEYSTORE_BASE64`, `PICKYFIN_KEYSTORE_PASSWORD`,
-`PICKYFIN_KEY_ALIAS`, `PICKYFIN_KEY_PASSWORD`. The signing key must never change:
-installed apps only accept updates signed with the same key.
+[`pickyfin-release.yaml`](workflows/pickyfin-release.yaml) runs daily:
 
-## Building locally
+1. If Jellyfin published a new stable Android TV release, the code becomes that
+   release and our changes are applied on top again
+   ([`scripts/update-official.sh`](../scripts/update-official.sh)). The official
+   release we're based on is recorded in [`official-version`](official-version).
+2. It builds a signed APK and publishes it as `tv-v<official version>-pickyfin.<n>`.
+3. If our changes don't fit the new release, it opens an issue instead.
+
+It can also be started by hand (Actions → Pickyfin release → Run workflow) to
+publish changes of our own.
+
+## Building
 
 Needs JDK 21 and the Android SDK.
 
@@ -46,6 +84,8 @@ Needs JDK 21 and the Android SDK.
 
 Local builds don't check for updates unless `PICKYFIN_UPDATE_REPOSITORY=owner/name` is set.
 
-## License
+## Credits and license
 
-GPL-2.0, like the official app.
+Pickyfin is built on the [Jellyfin Android TV app](https://github.com/jellyfin/jellyfin-androidtv)
+by the Jellyfin contributors (see [CONTRIBUTORS.md](../CONTRIBUTORS.md)). Like the
+official app, it's licensed under [GPL-2.0](../LICENSE).
