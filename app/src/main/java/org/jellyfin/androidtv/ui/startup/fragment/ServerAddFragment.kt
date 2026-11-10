@@ -20,6 +20,7 @@ import org.jellyfin.androidtv.auth.model.UnableToConnectState
 import org.jellyfin.androidtv.databinding.FragmentServerAddBinding
 import org.jellyfin.androidtv.ui.startup.ServerAddViewModel
 import org.jellyfin.androidtv.util.getSummary
+import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 class ServerAddFragment : Fragment() {
@@ -28,6 +29,7 @@ class ServerAddFragment : Fragment() {
 	}
 
 	private val startupViewModel: ServerAddViewModel by viewModel()
+	private val accessHeaderStore: org.jellyfin.androidtv.pickyfin.AccessHeaderStore by inject()
 	private var _binding: FragmentServerAddBinding? = null
 	private val binding get() = _binding!!
 
@@ -51,6 +53,18 @@ class ServerAddFragment : Fragment() {
 
 		with(binding.confirm) {
 			setOnClickListener { submitAddress() }
+		}
+
+		// Pickyfin: prefill the access header entered last time
+		accessHeaderStore.current?.let { header ->
+			binding.pickyfinHeaderName.setText(header.name)
+			binding.pickyfinHeaderValue.setText(header.value)
+		}
+		binding.pickyfinHeaderValue.setOnEditorActionListener { _, actionId, _ ->
+			if (actionId == EditorInfo.IME_ACTION_DONE) {
+				submitAddress()
+				true
+			} else false
 		}
 
 		return binding.root
@@ -114,7 +128,15 @@ class ServerAddFragment : Fragment() {
 	}
 
 	private fun submitAddress() = when {
-		binding.address.text.isNotBlank() -> startupViewModel.addServer(binding.address.text.toString())
+		binding.address.text.isNotBlank() -> {
+			// Pickyfin: store the header before the first request to the server goes out
+			accessHeaderStore.save(
+				name = binding.pickyfinHeaderName.text.toString(),
+				value = binding.pickyfinHeaderValue.text.toString(),
+				serverAddress = binding.address.text.toString(),
+			)
+			startupViewModel.addServer(binding.address.text.toString())
+		}
 		else -> binding.error.setText(R.string.server_field_empty)
 	}
 }

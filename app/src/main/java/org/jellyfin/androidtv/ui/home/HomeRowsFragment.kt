@@ -102,8 +102,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
+			// Pickyfin: personal recommendation rows, placed after Continue Watching / Next Up
+			val recommendationRows = org.jellyfin.androidtv.pickyfin.RecommendationRows.load(requireContext(), api)
+			var recommendationIndex = 0
+
 			// Actually add the sections
-			for (section in homesections) when (section) {
+			for (section in homesections) {
+				when (section) {
 				HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(userViewsRepository.views.first()))
 				HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = false))
 				HomeSectionType.LIBRARY_BUTTONS -> rows.add(HomeFragmentViewsRow(small = true))
@@ -118,7 +123,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 
 				HomeSectionType.NONE -> Unit
+				}
+				if (section == HomeSectionType.RESUME || section == HomeSectionType.NEXT_UP) recommendationIndex = rows.size
 			}
+			rows.addAll(recommendationIndex, recommendationRows)
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pickyfin additions, kept apart from strings.xml so upstream merges never touch them. -->
+<resources>
+    <string name="pickyfin_access_header_label">Access header (only if your server owner gave you one)</string>
+    <string name="pickyfin_access_header_name_hint">Header name</string>
+    <string name="pickyfin_access_header_value_hint">Header value</string>
+    <string name="pickyfin_row_recommended">Recommended for you</string>
+    <string name="pickyfin_update_title">Update available</string>
+    <string name="pickyfin_update_message">Version %1$s is available (you have %2$s). Install it now?</string>
+    <string name="pickyfin_update_install">Install</string>
+    <string name="pickyfin_update_later">Later</string>
+    <string name="pickyfin_update_skip">Skip this version</string>
+    <string name="pickyfin_update_downloading">Downloading update…</string>
+    <string name="pickyfin_update_failed">The update could not be downloaded or installed. Try again later.</string>
+    <string name="pickyfin_update_allow">Allow this app to install updates, then go back. The update is offered again next time.</string>
+</resources>

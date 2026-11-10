@@ -8,6 +8,8 @@
 
     <!-- Generic permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Pickyfin: in-app updater -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission
         android:name="android.permission.ACCESS_WIFI_STATE"
@@ -104,6 +106,17 @@
             android:authorities="${applicationId}.integration.provider.ImageProvider"
             android:exported="true"
             android:initOrder="10" />
+
+        <!-- Pickyfin: hands downloaded updates to the system installer -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.pickyfin.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/pickyfin_update_paths" />
+        </provider>
 
         <!-- Authentication -->
         <activity

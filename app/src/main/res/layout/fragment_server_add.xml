@@ -47,12 +47,54 @@
         android:layout_marginTop="8dp"
         android:imeOptions="actionDone"
         android:inputType="textUri"
-        android:nextFocusDown="@id/confirm"
-        android:nextFocusForward="@id/confirm"
+        android:nextFocusDown="@id/pickyfin_header_name"
+        android:nextFocusForward="@id/pickyfin_header_name"
         android:privateImeOptions="horizontalAlignment=right"
         app:layout_constraintEnd_toStartOf="@id/center"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/address_label" />
+
+
+    <!-- Pickyfin: optional access header for a reverse proxy in front of the server -->
+    <TextView
+        android:id="@+id/pickyfin_header_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/pickyfin_access_header_label"
+        app:layout_constraintEnd_toStartOf="@id/center"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/address" />
+
+    <EditText
+        android:id="@+id/pickyfin_header_name"
+        style="@style/Input.Default"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/pickyfin_access_header_name_hint"
+        android:imeOptions="actionNext"
+        android:inputType="text"
+        android:nextFocusDown="@id/pickyfin_header_value"
+        android:nextFocusForward="@id/pickyfin_header_value"
+        app:layout_constraintEnd_toStartOf="@id/center"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/pickyfin_header_label" />
+
+    <EditText
+        android:id="@+id/pickyfin_header_value"
+        style="@style/Input.Default"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/pickyfin_access_header_value_hint"
+        android:imeOptions="actionDone"
+        android:inputType="textVisiblePassword"
+        android:nextFocusDown="@id/confirm"
+        android:nextFocusForward="@id/confirm"
+        app:layout_constraintEnd_toStartOf="@id/center"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/pickyfin_header_name" />
 
     <Button
         android:id="@+id/confirm"
@@ -62,7 +104,7 @@
         android:layout_marginTop="16dp"
         android:text="@string/action_connect"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/address" />
+        app:layout_constraintTop_toBottomOf="@id/pickyfin_header_value" />
 
     <TextView
         android:id="@+id/error"

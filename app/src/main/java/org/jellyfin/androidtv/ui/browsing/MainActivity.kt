@@ -56,6 +56,9 @@ class MainActivity : FragmentActivity() {
 
 		if (!validateAuthentication()) return
 
+		// Pickyfin: offer new versions of this app
+		org.jellyfin.androidtv.pickyfin.Updater.checkInBackground(this, lifecycleScope)
+
 		interactionTrackerViewModel.keepScreenOn.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
 			.onEach { keepScreenOn ->
 				if (keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

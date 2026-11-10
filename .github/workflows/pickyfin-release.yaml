@@ -1,0 +1,129 @@
+# Pickyfin: follow official releases and publish signed builds for the in-app updater.
+#
+# This is the official jellyfin/jellyfin-androidtv app plus our changes.
+# scripts/update-official.sh moves it to a new official release and re-applies our
+# changes on top.
+#
+# - Daily: if a new official stable release exists, merge it into main, build, and
+#   publish a release.
+# - Manually (Actions -> Pickyfin TV release -> Run workflow): publish a build of
+#   the current main, e.g. after changing our own code.
+#
+# Release tags look like tv-v0.19.10-pickyfin.2 (official version, then our own
+# build number). The "tv-" prefix keeps room for other Pickyfin apps later (the
+# updater only looks at tv-v* releases), and keeps the official publish workflow,
+# which runs on v* tags, from firing.
+#
+# Secrets needed: PICKYFIN_KEYSTORE_BASE64, PICKYFIN_KEYSTORE_PASSWORD,
+# PICKYFIN_KEY_ALIAS, PICKYFIN_KEY_PASSWORD. The key must never change, or installed
+# apps can't be updated. Optional: PICKYFIN_PUSH_TOKEN (see the checkout step).
+name: Pickyfin release
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: pickyfin-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          # GitHub's own token may not push merges that change workflow files;
+          # a personal token with the "workflow" scope can, if one is set.
+          token: ${{ secrets.PICKYFIN_PUSH_TOKEN || github.token }}
+
+      - name: Update to new official release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --quiet --no-tags https://github.com/jellyfin/jellyfin-androidtv.git 'refs/tags/v*:refs/tags/v*'
+
+          # Newest stable official release (vX.Y.Z, no -beta/-rc)
+          latest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "Newest official release: $latest"
+
+          if git merge-base --is-ancestor "$latest" HEAD; then
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+          elif scripts/update-official.sh "$latest"; then
+            git push origin main
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+          else
+            title="Official release $latest conflicts with the Pickyfin changes"
+            if ! gh issue list --state open --search "$title in:title" --json number --jq '.[].number' | grep -q .; then
+              gh issue create --title "$title" --body "Our changes don't apply cleanly on \`$latest\`. Locally run \`scripts/update-official.sh $latest\`, fix the conflicts it lists, \`git add\` + \`git commit\`, push \`main\`, and run this workflow manually."
+            fi
+            exit 1
+          fi
+
+          base=$(git tag --merged HEAD --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "base=${base#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Decide version
+        id: version
+        if: steps.upstream.outputs.merged == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.upstream.outputs.base }}
+        run: |
+          # Our build number counts up per official version: 0.19.10-pickyfin.1, .2, ...
+          last=$(gh release list --limit 200 --json tagName --jq '.[].tagName' \
+            | grep -E "^tv-v${BASE//./\\.}-pickyfin\.[0-9]+$" \
+            | sed 's/.*-pickyfin\.//' | sort -n | tail -1)
+          next=$(( ${last:-0} + 1 ))
+          if [ "$next" -gt 98 ]; then echo "Build number would exceed 98 for $BASE"; exit 1; fi
+          echo "name=$BASE-pickyfin.$next" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        if: steps.version.outputs.name
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        if: steps.version.outputs.name
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build signed APK
+        if: steps.version.outputs.name
+        env:
+          JELLYFIN_VERSION: ${{ steps.version.outputs.name }}
+          PICKYFIN_UPDATE_REPOSITORY: ${{ github.repository }}
+          KEYSTORE_PASSWORD: ${{ secrets.PICKYFIN_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.PICKYFIN_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.PICKYFIN_KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.PICKYFIN_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/pickyfin.jks"
+          export KEYSTORE_FILE="$RUNNER_TEMP/pickyfin.jks"
+          ./gradlew --no-daemon assembleRelease
+          apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          # Refuse to publish an unsigned build: installed apps could not update to it
+          if [[ "$apk" == *unsigned* ]]; then echo "APK is unsigned, check the signing secrets"; exit 1; fi
+          cp "$apk" "$RUNNER_TEMP/pickyfin-tv-v${JELLYFIN_VERSION}.apk"
+
+      - name: Publish release
+        if: steps.version.outputs.name
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          gh release create "tv-v$VERSION" "$RUNNER_TEMP/pickyfin-tv-v$VERSION.apk" \
+            --target "$(git rev-parse HEAD)" \
+            --title "Pickyfin TV $VERSION" \
+            --notes "Pickyfin for Android TV and Fire TV. Based on the official Jellyfin Android TV release v${VERSION%-pickyfin.*}."

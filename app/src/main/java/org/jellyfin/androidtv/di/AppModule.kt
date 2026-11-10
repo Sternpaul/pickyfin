@@ -69,7 +69,15 @@ val defaultDeviceInfo = named("defaultDeviceInfo")
 val appModule = module {
 	// SDK
 	single(defaultDeviceInfo) { androidDevice(get()) }
-	single { OkHttpFactory() }
+	// Pickyfin: every request (API, images, playback, socket) goes through this one client
+	single { org.jellyfin.androidtv.pickyfin.AccessHeaderStore(androidContext()) }
+	single {
+		OkHttpFactory(
+			okhttp3.OkHttpClient.Builder()
+				.addInterceptor(org.jellyfin.androidtv.pickyfin.AccessHeaderInterceptor(get()))
+				.build()
+		)
+	}
 	single { HttpClientOptions() }
 	single {
 		createJellyfin {
