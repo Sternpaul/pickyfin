@@ -50,6 +50,10 @@ builder.Services.AddSingleton<LibrarySync>();
 builder.Services.AddSingleton<BriefInterpreter>();
 builder.Services.AddSingleton<Curator>();
 builder.Services.AddSingleton<PlaylistWriter>();
+builder.Services.AddSingleton(sp => new Pickyfin.Server.Letterboxd.LetterboxdSync(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("letterboxd"),
+    sp.GetRequiredService<Database>(), sp.GetRequiredService<MovieStore>(),
+    sp.GetRequiredService<ILogger<Pickyfin.Server.Letterboxd.LetterboxdSync>>()));
 builder.Services.AddSingleton<RefreshService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RefreshService>());
 
@@ -72,6 +76,21 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+// Jellyfin unreachable or refusing: answer with a clear message instead of a crash page
+app.Use(async (context, next) =>
+{
+    try { await next(); }
+    catch (JellyfinException error) when (!context.Response.HasStarted)
+    {
+        context.Response.StatusCode = StatusCodes.Status502BadGateway;
+        await context.Response.WriteAsJsonAsync(new { title = "Jellyfin", detail = error.Message });
+    }
+    catch (HttpRequestException error) when (!context.Response.HasStarted && context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.StatusCode = StatusCodes.Status502BadGateway;
+        await context.Response.WriteAsJsonAsync(new { title = "Network", detail = "Can't reach Jellyfin: " + error.Message });
+    }
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
@@ -255,6 +274,8 @@ admin.MapGet("/users/{id:guid}/rows", async (Guid id, Database database, MovieSt
             .Select(itemId => movies.TryGetValue(itemId, out var m) ? $"{m.Title} ({m.ReleaseYear})" : "(removed)"),
     }));
 });
+
+admin.MapBrowserApi();
 
 app.MapGet("/health", () => Results.Ok("ok"));
 

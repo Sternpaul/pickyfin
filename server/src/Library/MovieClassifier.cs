@@ -30,6 +30,20 @@ namespace Pickyfin.Server.Library
             _logger = logger;
         }
 
+        /// <summary>Tags the given movies right away (from the movie browser). True if all got tags.</summary>
+        public async Task<bool> TagNowAsync(List<MovieMetadata> movies, CancellationToken cancellationToken = default)
+        {
+            var provider = _aiProviderFactory.GetProvider();
+            string json;
+            using (Activity.Begin($"Tagging {movies.Count} movie(s): waiting for {provider.Name}"))
+                json = await provider.ClassifyMoviesAsync(movies, cancellationToken);
+            if (string.IsNullOrEmpty(json)) return false;
+            foreach (var movie in movies) movie.IsClassified = false;
+            ProcessClassificationResult(json, movies);
+            await _movieStore.SaveMoviesAsync(movies, cancellationToken);
+            return movies.All(m => m.IsClassified);
+        }
+
         public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default)
         {
             // Re-tagging movies classified under an older vocabulary costs one AI call

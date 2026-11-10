@@ -24,12 +24,13 @@ public sealed class RefreshService : BackgroundService
     private readonly BriefInterpreter _briefs;
     private readonly Curator _curator;
     private readonly PlaylistWriter _writer;
+    private readonly Letterboxd.LetterboxdSync _letterboxd;
     private readonly ILogger<RefreshService> _logger;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -37,6 +38,7 @@ public sealed class RefreshService : BackgroundService
         _briefs = briefs;
         _curator = curator;
         _writer = writer;
+        _letterboxd = letterboxd;
         _logger = logger;
     }
 
@@ -90,6 +92,11 @@ public sealed class RefreshService : BackgroundService
             _logger.LogInformation("Library sync started");
             await _library.SyncAsync(cancellationToken);
             _logger.LogInformation("Library sync finished in {Duration}", Pretty(DateTime.UtcNow - started));
+
+            // New movies may now match someone's Letterboxd films
+            await using var db = _database.Open();
+            foreach (var userId in await db.Letterboxd.Select(f => f.UserId).Distinct().ToListAsync(cancellationToken))
+                await _letterboxd.MatchAsync(userId, cancellationToken);
         }
 
         State = "Checking users";
@@ -175,15 +182,24 @@ public sealed class RefreshService : BackgroundService
 
     private async Task RefreshIfDueAsync(UserProfile user, CancellationToken cancellationToken)
     {
+        // Letterboxd: feed and links twice a day; new films mean fresh picks
+        var letterboxdNews = false;
+        if (user.UseLetterboxd && Letterboxd.LetterboxdSync.HasOnlineSource(user)
+            && (user.LetterboxdSynced is null || DateTime.UtcNow - user.LetterboxdSynced > TimeSpan.FromHours(12)))
+        {
+            State = $"Reading Letterboxd for {user.Name}";
+            letterboxdNews = await _letterboxd.SyncAsync(user, cancellationToken) > 0;
+        }
+
         var lastPlayed = await _jellyfin.GetLastPlayedAsync(user.UserId, cancellationToken);
         var briefChanged = (user.Brief ?? "") != (user.BriefProfileFor ?? "");
         var newWatch = lastPlayed is not null && lastPlayed != user.LastSeenPlay;
         var stale = user.LastRefresh is null || DateTime.UtcNow - user.LastRefresh > TimeSpan.FromHours(Math.Max(1, ServerSettings.Current.RefreshHours));
-        if (!user.RefreshRequested && !briefChanged && !newWatch && !stale) return;
+        if (!user.RefreshRequested && !briefChanged && !newWatch && !stale && !letterboxdNews) return;
 
         State = $"Picking for {user.Name}";
         _logger.LogInformation("Refreshing picks for {User} ({Reason})", user.Name,
-            user.RefreshRequested ? "asked" : briefChanged ? "brief changed" : newWatch ? "new watch" : "scheduled");
+            user.RefreshRequested ? "asked" : briefChanged ? "brief changed" : newWatch ? "new watch" : letterboxdNews ? "new on Letterboxd" : "scheduled");
 
         var profile = BriefProfile.FromJson(user.BriefProfile);
         if (briefChanged)

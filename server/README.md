@@ -30,6 +30,15 @@ How the picks are made:
 5. **One AI call per user** picks the "Recommended for you" row from that
    shortlist. "Because You Watched" rows come from similarity to the seed movie.
 
+**Letterboxd** (optional, per person): their public diary feed via username
+(read twice a day), the full Letterboxd export (ZIP upload: all ratings, watched
+films and the watchlist), or JSON links as in the old plugin. Films they've
+watched there are never recommended, good ratings shape their taste, films close
+to ones they disliked move down, and watchlist films move up.
+
+**Movies page**: browse everything the AI tagged, filter by tag or library, and
+correct tags by hand. Movies you edit are never re-tagged by the AI.
+
 Picks are refreshed daily, soon after the user finishes a movie, and when you
 change their description. Each refresh is one AI call per user; classifying a new
 movie costs a share of one call per 20 movies.

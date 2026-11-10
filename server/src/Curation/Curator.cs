@@ -5,6 +5,7 @@ using Pickyfin.Server.Data;
 using Pickyfin.Server.Data.Models;
 using Pickyfin.Server.Jellyfin;
 using Pickyfin.Server.Library;
+using Microsoft.EntityFrameworkCore;
 
 namespace Pickyfin.Server.Curation;
 
@@ -32,10 +33,12 @@ public sealed class Curator
     private readonly MovieStore _store;
     private readonly AIProviderFactory _ai;
     private readonly ILogger<Curator> _logger;
+    private readonly Database _database;
     private readonly SimilarityEngine _similarity = new() { KeywordWeight = 0.10 };
 
-    public Curator(JellyfinClient jellyfin, MovieStore store, AIProviderFactory ai, ILogger<Curator> logger)
+    public Curator(JellyfinClient jellyfin, MovieStore store, AIProviderFactory ai, Database database, ILogger<Curator> logger)
     {
+        _database = database;
         _jellyfin = jellyfin;
         _store = store;
         _ai = ai;
@@ -69,9 +72,12 @@ public sealed class Curator
         if (brief is not null)
             candidates = candidates.Where(m => !IsAvoided(m, brief)).ToList();
 
+        // Letterboxd: their own account, so it counts in full (unlike a shared TV's history)
+        var lb = await LoadLetterboxdAsync(user, library, cancellationToken);
+
         // The same film can sit in several libraries (e.g. "Movies" and "Greek Movies");
-        // recommend it once, and not at all if any copy was watched
-        var seen = history.Select(Identity).ToHashSet();
+        // recommend it once, and not at all if any copy was watched, here or on Letterboxd
+        var seen = history.Concat(lb.Watched).Select(Identity).ToHashSet();
         candidates = candidates
             .Where(m => !seen.Contains(Identity(m)))
             .GroupBy(Identity)
@@ -83,8 +89,10 @@ public sealed class Curator
 
         // 2. Shortlist
         var recentHistory = history.Take(30).ToList();
+        // Taste: recent watches here plus films they rated well on Letterboxd
+        var taste = recentHistory.Concat(lb.Liked.Take(20)).DistinctBy(Identity).ToList();
         var scored = candidates
-            .Select(m => (Movie: m, Score: Score(m, brief, recentHistory)))
+            .Select(m => (Movie: m, Score: Score(m, brief, taste) + LetterboxdNudge(m, lb)))
             .OrderByDescending(x => x.Score)
             .ToList();
         var shortlist = Diversify(scored.Select(x => x.Movie), Settings.ShortlistSize);
@@ -95,7 +103,7 @@ public sealed class Curator
         string how;
         try
         {
-            recommended = await AskAiAsync(user, brief, recentHistory, shortlist, perRow, cancellationToken);
+            recommended = await AskAiAsync(user, brief, recentHistory, lb, shortlist, perRow, cancellationToken);
             how = "AI picked from a shortlist of " + shortlist.Count;
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -131,8 +139,51 @@ public sealed class Curator
             rows.Add(new($"because-{slot++}", BecausePrefix + seed.Title, similar));
         }
 
-        var summary = $"{rows.Count} row(s); {history.Count} counted watch(es); brief {(brief is null || brief.IsEmpty ? "not set" : "used")}; {how}.";
+        var lbText = lb.Any ? $"; Letterboxd {lb.Watched.Count} watched, {lb.Watchlist.Count} on watchlist in library" : "";
+        var summary = $"{rows.Count} row(s); {history.Count} counted watch(es); brief {(brief is null || brief.IsEmpty ? "not set" : "used")}{lbText}; {how}.";
         return new CurationResult(rows, summary);
+    }
+
+    /// <summary>What someone's Letterboxd says, resolved to library movies.</summary>
+    internal sealed record LetterboxdTaste(
+        List<MovieMetadata> Watched, List<MovieMetadata> Liked, List<MovieMetadata> Disliked,
+        List<MovieMetadata> Watchlist, HashSet<Guid> WatchlistIds, List<string> RatedTitles)
+    {
+        public bool Any => Watched.Count > 0 || Watchlist.Count > 0;
+        public static readonly LetterboxdTaste None = new(new(), new(), new(), new(), new(), new());
+    }
+
+    private async Task<LetterboxdTaste> LoadLetterboxdAsync(UserProfile user, Dictionary<Guid, MovieMetadata> library, CancellationToken cancellationToken)
+    {
+        if (!user.UseLetterboxd) return LetterboxdTaste.None;
+        List<LetterboxdFilm> films;
+        await using (var db = _database.Open())
+            films = await db.Letterboxd.AsNoTracking().Where(f => f.UserId == user.UserId).ToListAsync(cancellationToken);
+        if (films.Count == 0) return LetterboxdTaste.None;
+
+        MovieMetadata? Movie(LetterboxdFilm f) => f.ItemId is { } id ? library.GetValueOrDefault(id) : null;
+        var watchedFilms = films.Where(f => f.Kind == "watched").ToList();
+        var watched = watchedFilms.Select(Movie).Where(m => m is not null).Select(m => m!).DistinctBy(m => m.ItemId).ToList();
+        var liked = watchedFilms.Where(f => f.Rating >= 3.5).OrderByDescending(f => f.Rating).ThenByDescending(f => f.Date)
+            .Select(Movie).Where(m => m is not null).Select(m => m!).DistinctBy(m => m.ItemId).ToList();
+        var disliked = watchedFilms.Where(f => f.Rating is <= 2).Select(Movie).Where(m => m is not null).Select(m => m!).DistinctBy(m => m.ItemId).ToList();
+        var watchlist = films.Where(f => f.Kind == "watchlist").Select(Movie).Where(m => m is not null).Select(m => m!).DistinctBy(m => m.ItemId).ToList();
+        // For the AI: ratings of any film, in the library or not; extremes first
+        var rated = watchedFilms.Where(f => f.Rating is not null)
+            .GroupBy(f => $"{f.Title}|{f.Year}").Select(g => g.OrderByDescending(f => f.Date).First())
+            .OrderByDescending(f => Math.Abs(f.Rating!.Value - 3)).ThenByDescending(f => f.Date)
+            .Select(f => $"{f.Title} ({f.Year}): {f.Rating:0.#}")
+            .ToList();
+        return new LetterboxdTaste(watched, liked, disliked, watchlist, watchlist.Select(m => m.ItemId).ToHashSet(), rated);
+    }
+
+    /// <summary>Watchlist films move up; films close to ones they disliked move down.</summary>
+    private double LetterboxdNudge(MovieMetadata movie, LetterboxdTaste lb)
+    {
+        var nudge = lb.WatchlistIds.Contains(movie.ItemId) ? 0.25 : 0;
+        if (lb.Disliked.Count > 0 && movie.IsClassified)
+            nudge -= 0.25 * lb.Disliked.Max(d => _similarity.CalculateSimilarity(d, movie));
+        return nudge;
     }
 
     /// <summary>What makes two library entries the same film: IMDb id, or else title and year.</summary>
@@ -217,7 +268,7 @@ public sealed class Curator
     // ---------- AI choice ----------
 
     private async Task<List<Guid>> AskAiAsync(
-        UserProfile user, BriefProfile? brief, List<MovieMetadata> history, List<MovieMetadata> shortlist, int count, CancellationToken cancellationToken)
+        UserProfile user, BriefProfile? brief, List<MovieMetadata> history, LetterboxdTaste lb, List<MovieMetadata> shortlist, int count, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Settings.ApiKey)) throw new InvalidOperationException("no AI key set");
 
@@ -231,9 +282,15 @@ public sealed class Curator
             ? "Recently finished: nothing yet."
             : "Recently finished, newest first (a shared TV may also show others' viewing; trust the description above more):");
         foreach (var movie in history.Take(25)) prompt.AppendLine($"- {movie.Title} ({movie.ReleaseYear})");
+        if (lb.RatedTitles.Count > 0)
+        {
+            prompt.AppendLine();
+            prompt.AppendLine("Their own Letterboxd ratings (reliable; 5 = loved, 1 = hated):");
+            foreach (var line in lb.RatedTitles.Take(30)) prompt.AppendLine("- " + line);
+        }
         prompt.AppendLine();
-        prompt.AppendLine("Candidates:");
-        for (var i = 0; i < shortlist.Count; i++) prompt.AppendLine($"{i + 1}. {Line(shortlist[i])}");
+        prompt.AppendLine("Candidates (★ = on their Letterboxd watchlist, a strong hint they want to see it):");
+        for (var i = 0; i < shortlist.Count; i++) prompt.AppendLine($"{i + 1}. {(lb.WatchlistIds.Contains(shortlist[i].ItemId) ? "★ " : "")}{Line(shortlist[i])}");
         prompt.AppendLine();
         prompt.AppendLine("Rules: follow the description first; mix well-known and lesser-known films; avoid near-duplicates (several films of one franchise or the same niche); never invent numbers.");
         prompt.AppendLine($@"Answer with ONLY a JSON object: {{""picks"": [numbers from the list, {count} of them, best first]}}");

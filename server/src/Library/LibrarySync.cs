@@ -71,7 +71,7 @@ public sealed class LibrarySync
             movie.Director = item.People?.FirstOrDefault(p => p.Type == "Director")?.Name;
             movie.Cast = string.Join(", ", (item.People ?? new()).Where(p => p.Type == "Actor").Take(5).Select(p => p.Name));
             // A changed plot means the old tags may be wrong; classify again
-            if (plotChanged) movie.IsClassified = false;
+            if (plotChanged && !movie.ManuallyEdited) movie.IsClassified = false;
             changed.Add(movie);
         }
 

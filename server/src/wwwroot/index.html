@@ -83,7 +83,7 @@
   .field:first-of-type { margin-top: 0; }
   .field > label { display: flex; align-items: center; gap: 8px; font-weight: 550; margin-bottom: 6px; }
   .field .help { color: var(--faint); font-size: 12.5px; margin-top: 5px; }
-  textarea, input[type=text], input[type=password], input[type=date], input[type=number], select {
+  textarea, input[type=text], input[type=search], input[type=password], input[type=date], input[type=number], select {
     width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px; font: inherit; outline: none; }
   textarea:focus, input:focus, select:focus { border-color: var(--accent); }
   textarea { min-height: 78px; resize: vertical; line-height: 1.5; }
@@ -163,6 +163,56 @@
   .login .brand { padding: 0 0 18px; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 
+
+  /* movies */
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .toolbar input[type=search] { flex: 1 1 240px; width: auto; }
+  .toolbar select { width: auto; }
+  .count-note { color: var(--faint); font-size: 13px; margin: -6px 0 12px; }
+  .movies { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+  .movie { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; text-align: left; padding: 0; color: inherit; font: inherit; display: flex; flex-direction: column; }
+  .movie:hover { border-color: var(--line-2); transform: translateY(-1px); }
+  .poster { aspect-ratio: 2 / 3; background: var(--panel-2) center / cover no-repeat; position: relative; }
+  .poster .badge { position: absolute; top: 6px; left: 6px; }
+  .movie .meta-box { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 3px; min-height: 64px; }
+  .movie .t { font-weight: 600; font-size: 13.5px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .movie .y { color: var(--faint); font-size: 12px; }
+  .movie .mini { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .more { display: flex; justify-content: center; margin-top: 18px; }
+
+  /* drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 5; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, 100vw); background: var(--bg); border-left: 1px solid var(--line); z-index: 6; display: flex; flex-direction: column; box-shadow: -10px 0 40px rgba(0,0,0,.25); }
+  .drawer-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .drawer-head h2 { margin: 0; font-size: 17px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
+  .drawer-foot:empty { display: none; }
+  .drawer-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .x { background: none; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; padding: 4px 8px; border-radius: 8px; }
+  .x:hover { background: var(--panel-2); color: var(--text); }
+  .movie-top { display: grid; grid-template-columns: 140px 1fr; gap: 18px; margin-bottom: 18px; }
+  .movie-top .poster { border-radius: 9px; }
+  .facts { font-size: 13.5px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  .facts b { color: var(--text); font-weight: 560; }
+  .plot { font-size: 13.5px; line-height: 1.55; margin: 8px 0 0; color: var(--text); }
+  .chip.on { color: var(--text); background: var(--panel-3); }
+  .chip .rm { background: none; border: 0; color: var(--faint); cursor: pointer; padding: 0 0 0 4px; font: inherit; }
+  .chip .rm:hover { color: var(--err); }
+  .add-select { width: auto; padding: 4px 8px; font-size: 12.5px; border-radius: 999px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 18px; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px; font: inherit; cursor: pointer; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  table.list { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.list td, table.list th { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  table.list th { color: var(--faint); font-weight: 500; font-size: 12px; }
+  table.list .dim td { color: var(--faint); }
+  .stars { color: var(--warn); letter-spacing: 1px; white-space: nowrap; }
+  .file-btn { position: relative; overflow: hidden; }
+  .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .row-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+  .row-strip .poster { width: 84px; flex: none; border-radius: 6px; }
+  @media (max-width: 640px) { .movie-top { grid-template-columns: 96px 1fr; } .movies { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+
   @media (max-width: 820px) {
     .shell { grid-template-columns: 1fr; background: var(--bg); }
     aside { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 10px; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -190,6 +240,7 @@
   <aside>
     <div class="brand"><div class="mark">P</div>Pickyfin</div>
     <button class="nav active" data-page="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5.5"/></svg>Users<span class="count" id="count-users"></span></button>
+    <button class="nav" data-page="movies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4M3 12h18"/></svg>Movies</button>
     <button class="nav" data-page="libraries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Libraries</button>
     <button class="nav" data-page="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>AI</button>
     <button class="nav" data-page="rows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><path d="M3 20h12"/></svg>Rows &amp; timing</button>
@@ -210,6 +261,24 @@
         <p>Describe what each person likes in a sentence or two. That's what the picks follow most; watch history adds to it. Picks show up as rows in Pickyfin on the TV, and as playlists in every other Jellyfin app.</p>
       </div></div>
       <div id="users"></div>
+    </section>
+
+    <!-- MOVIES -->
+    <section data-page="movies" class="hidden">
+      <div class="page-head"><div>
+        <h1>Movies</h1>
+        <p>Everything the AI tagged, and how. Open a movie to correct its tags; movies you edit are never re-tagged by the AI.</p>
+      </div></div>
+      <div class="toolbar">
+        <input type="search" id="m-q" placeholder="Search title, director or year">
+        <div class="seg" id="m-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited by you</button></div>
+        <select id="m-tag"><option value="">Any tag</option></select>
+        <select id="m-lib"><option value="">All libraries</option></select>
+        <select id="m-sort"><option value="title">A–Z</option><option value="added">Newest added</option><option value="acclaim">Best rated</option><option value="year">Newest film</option></select>
+      </div>
+      <div class="count-note" id="m-count"></div>
+      <div class="movies" id="movies"></div>
+      <div class="more"><button class="btn hidden" id="m-more">Show more</button></div>
     </section>
 
     <!-- LIBRARIES -->
@@ -322,6 +391,13 @@
   </main>
 </div>
 
+<div class="scrim hidden" id="scrim"></div>
+<aside class="drawer hidden" id="drawer" aria-modal="true" role="dialog">
+  <div class="drawer-head"><h2 id="d-title"></h2><button class="x" id="d-close" title="Close">×</button></div>
+  <div class="drawer-body" id="d-body"></div>
+  <div class="drawer-foot" id="d-foot"></div>
+</aside>
+
 <div id="toast"></div>
 
 <script>
@@ -372,6 +448,7 @@ function go(page) {
   $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.page === page));
   $$('main section').forEach(s => s.classList.toggle('hidden', s.dataset.page !== page));
   if (page === 'libraries') loadLibraries();
+  if (page === 'movies') loadMovies(true);
   if (page === 'status') loadStatus();
   if (page === 'users') loadUsers();
   history.replaceState(null, '', '#' + page);
@@ -427,6 +504,197 @@ $('#test-ai').addEventListener('click', async e => {
   const r = await call('POST', '/api/settings/test-ai').catch(err => ({ Ok: false, Message: err.message }));
   note.textContent = r.Message; note.className = 'note ' + (r.Ok ? 'ok' : 'err'); e.target.disabled = false;
 });
+
+// ---------- drawer ----------
+function openDrawer(title) {
+  $('#d-title').textContent = title; $('#d-body').innerHTML = '<p class="note">Loading…</p>'; $('#d-foot').innerHTML = '';
+  $('#scrim').classList.remove('hidden'); $('#drawer').classList.remove('hidden');
+}
+function closeDrawer() { $('#scrim').classList.add('hidden'); $('#drawer').classList.add('hidden'); }
+$('#d-close').addEventListener('click', closeDrawer);
+$('#scrim').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+const posterUrl = id => `/api/movies/${id}/poster`;
+const poster = (id, cls = '') => `<div class="poster ${cls}" style="background-image:url('${posterUrl(id)}')"></div>`;
+const starText = r => r == null ? '' : '★'.repeat(Math.floor(r)) + (r % 1 ? '½' : '');
+const day = d => d ? new Date(d).toLocaleDateString() : '';
+
+// ---------- movies ----------
+let vocab = null, moviePage = 0, movieTimer = null;
+const PAGE = 60;
+async function ensureVocab() {
+  if (vocab) return vocab;
+  vocab = await call('GET', '/api/vocabulary');
+  const sel = $('#m-tag');
+  sel.innerHTML = '<option value="">Any tag</option>'
+    + `<optgroup label="Subcategories">${vocab.Subcategories.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>`
+    + `<optgroup label="Moods">${vocab.Moods.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>`;
+  return vocab;
+}
+async function fillLibraryFilter() {
+  try {
+    const libs = await call('GET', '/api/libraries');
+    const sel = $('#m-lib'), keep = sel.value;
+    sel.innerHTML = '<option value="">All libraries</option>' + libs.map(l => `<option value="${l.Id}">${esc(l.Name)}${l.Enabled ? '' : ' (off)'}</option>`).join('');
+    sel.value = keep;
+  } catch {}
+}
+function movieCard(m) {
+  const badge = !m.Tagged ? '<span class="pill warn badge">not tagged yet</span>' : m.Edited ? '<span class="pill ok badge">edited</span>' : m.Excluded ? '<span class="pill badge">library off</span>' : '';
+  const tags = [...m.Subcategories, ...m.Moods].slice(0, 3).join(' · ');
+  const el = document.createElement('button');
+  el.className = 'movie';
+  el.innerHTML = `<div class="poster" style="background-image:url('${posterUrl(m.Id)}')">${badge}</div>
+    <div class="meta-box"><div class="t">${esc(m.Title)}</div><div class="y">${m.Year ?? ''}</div><div class="mini">${esc(tags)}</div></div>`;
+  el.addEventListener('click', () => openMovie(m.Id));
+  return el;
+}
+async function loadMovies(reset) {
+  await ensureVocab(); if (reset) { moviePage = 0; fillLibraryFilter(); }
+  const params = new URLSearchParams({ q: $('#m-q').value, state: segValue($('#m-state')) || 'all', tag: $('#m-tag').value, sort: $('#m-sort').value, skip: moviePage * PAGE, take: PAGE });
+  if ($('#m-lib').value) params.set('library', $('#m-lib').value);
+  const r = await call('GET', '/api/movies?' + params);
+  const box = $('#movies'); if (reset) box.innerHTML = '';
+  r.Items.forEach(m => box.appendChild(movieCard(m)));
+  $('#m-count').textContent = r.Total === 1 ? '1 movie' : `${r.Total.toLocaleString()} movies`;
+  if (!r.Total) box.innerHTML = '<div class="empty" style="grid-column:1/-1">No movies match.</div>';
+  $('#m-more').classList.toggle('hidden', (moviePage + 1) * PAGE >= r.Total);
+}
+seg($('#m-state'), 'all', () => loadMovies(true));
+$('#m-q').addEventListener('input', () => { clearTimeout(movieTimer); movieTimer = setTimeout(() => loadMovies(true), 250); });
+for (const id of ['#m-tag', '#m-lib', '#m-sort']) $(id).addEventListener('change', () => loadMovies(true));
+$('#m-more').addEventListener('click', () => { moviePage++; loadMovies(false); });
+
+function chipEditor(selected, options, label) {
+  const box = document.createElement('div');
+  const draw = () => {
+    box.innerHTML = `<div class="chips">${selected.map((v, i) => `<span class="chip on">${esc(v)}<button class="rm" data-i="${i}" title="Remove">×</button></span>`).join('')}
+      <select class="add-select"><option value="">+ ${esc(label)}</option>${options.filter(o => !selected.includes(o)).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>`;
+    $$('.rm', box).forEach(b => b.onclick = () => { selected.splice(Number(b.dataset.i), 1); draw(); });
+    $('select', box).onchange = e => { if (e.target.value) { selected.push(e.target.value); draw(); } };
+  };
+  draw();
+  return box;
+}
+const options = (list, value) => `<option value="">–</option>` + list.map(o => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('');
+
+async function openMovie(id) {
+  await ensureVocab();
+  openDrawer('Movie');
+  const d = await call('GET', `/api/movies/${id}`);
+  const m = d.Summary;
+  $('#d-title').textContent = `${m.Title}${m.Year ? ' (' + m.Year + ')' : ''}`;
+  const subs = [...m.Subcategories], moods = [...m.Moods];
+  const status = !m.Tagged ? '<span class="pill warn">not tagged yet</span>' : m.Edited ? '<span class="pill ok">edited by you; the AI leaves it alone</span>' : '<span class="pill">tagged by the AI</span>';
+  $('#d-body').innerHTML = `
+    <div class="movie-top">${poster(m.Id)}
+      <div class="facts">
+        <div>${status}</div>
+        ${d.Director ? `<div>Director <b>${esc(d.Director)}</b></div>` : ''}
+        ${d.Cast ? `<div>With <b>${esc(d.Cast)}</b></div>` : ''}
+        <div>Library <b>${esc(m.Libraries.join(', ') || '–')}</b>${m.Excluded ? ' · <span class="pill">switched off</span>' : ''}</div>
+        <div>Rating <b>${m.Acclaim || '–'}</b> / 10${d.CommunityRating ? ` · audience ${d.CommunityRating.toFixed(1)}` : ''}${d.CriticRating ? ` · critics ${Math.round(d.CriticRating)}%` : ''}</div>
+        ${d.Plot ? `<p class="plot">${esc(d.Plot)}</p>` : ''}
+      </div>
+    </div>
+    <div class="field"><label>Subcategories</label><div id="e-subs"></div><div class="help">The first one counts most.</div></div>
+    <div class="field"><label>Moods</label><div id="e-moods"></div></div>
+    <div class="field"><label for="e-themes">Themes</label><input type="text" id="e-themes" value="${esc(d.Themes.join(', '))}"><div class="help">Free text, separated by commas.</div></div>
+    <div class="grid2" style="margin-top:16px">
+      <div class="field"><label for="e-narr">Storytelling</label><select id="e-narr">${options(vocab.NarrativeStyles, d.NarrativeStyle)}</select></div>
+      <div class="field"><label for="e-acc">Accessibility</label><select id="e-acc">${options(vocab.Accessibility, d.Accessibility)}</select></div>
+      <div class="field"><label for="e-int">Intensity</label><select id="e-int">${options(vocab.Intensity, d.Intensity)}</select></div>
+      <div class="field"><label for="e-score">Critical acclaim (AI's estimate, 1–10)</label><input type="number" id="e-score" min="0" max="10" value="${d.CriticalAcclaimScore || ''}"></div>
+    </div>
+    ${d.Keywords.length ? `<div class="field"><label>TMDB keywords</label><div class="chips">${d.Keywords.map(k => `<span class="chip">${esc(k)}</span>`).join('')}</div></div>` : ''}`;
+  $('#e-subs').appendChild(chipEditor(subs, vocab.Subcategories, 'subcategory'));
+  $('#e-moods').appendChild(chipEditor(moods, vocab.Moods, 'mood'));
+  $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Tag again with AI</button><span class="note" id="e-note"></span>`;
+  $('#e-save').onclick = async () => {
+    try {
+      await call('PUT', `/api/movies/${id}`, {
+        Subcategories: subs, Moods: moods,
+        Themes: $('#e-themes').value.split(',').map(t => t.trim()).filter(Boolean),
+        NarrativeStyle: $('#e-narr').value, Accessibility: $('#e-acc').value, Intensity: $('#e-int').value,
+        CriticalAcclaimScore: Number($('#e-score').value) || 0,
+      });
+      toast('Saved. The AI will leave these tags alone.'); openMovie(id); refreshMovieList();
+    } catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; }
+  };
+  $('#e-retag').onclick = async e => {
+    e.target.disabled = true; $('#e-note').className = 'note'; $('#e-note').textContent = 'Asking the AI… (free models can take a few minutes)';
+    try { await call('POST', `/api/movies/${id}/retag`); toast('Tagged again by the AI'); openMovie(id); refreshMovieList(); }
+    catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; e.target.disabled = false; }
+  };
+}
+function refreshMovieList() { if (!$('section[data-page="movies"]').classList.contains('hidden')) loadMovies(true); }
+
+// ---------- one person: history, Letterboxd, rows ----------
+async function openUser(id, name, tab = 'letterboxd') {
+  openDrawer(name);
+  const d = await call('GET', `/api/users/${id}/details`);
+  const lb = d.Letterboxd;
+  const counted = d.History.filter(h => h.Counted).length;
+  $('#d-body').innerHTML = `
+    <div class="tabs"><button data-t="letterboxd">Letterboxd</button><button data-t="history">Watch history <span class="note">${counted}/${d.History.length}</span></button><button data-t="rows">Rows</button><button data-t="brief">Description</button></div>
+    <div data-tab="letterboxd">
+      <div class="card">
+        <div class="row" style="display:flex;align-items:center;gap:12px"><div style="flex:1"><b>Use Letterboxd for ${esc(name)}</b><div class="help">Watched films are never recommended; ratings shape taste; watchlist films move up.</div></div>
+          <label class="switch"><input type="checkbox" id="lb-use" ${lb.Use ? 'checked' : ''}><span></span></label></div>
+        <div class="field" style="margin-top:16px"><label for="lb-user">Letterboxd username</label>
+          <input type="text" id="lb-user" value="${esc(lb.Username || '')}" placeholder="e.g. dave">
+          <div class="help">Their public diary (recent watches and ratings) is read twice a day.</div></div>
+        <div class="field"><label>Full history and watchlist</label>
+          <div class="actions" style="margin-top:0"><span class="btn file-btn">Upload Letterboxd export<input type="file" id="lb-file" accept=".zip,.csv"></span><span class="note" id="lb-up"></span></div>
+          <div class="help">On letterboxd.com: Settings → Data → Export your data, then upload the ZIP here. The diary feed only covers recent films; the export has everything, including the watchlist.</div></div>
+        <details class="field" style="margin-top:14px"><summary class="note" style="cursor:pointer">JSON links (as in the old plugin)</summary>
+          <div class="field" style="margin-top:12px"><label for="lb-wl">Watchlist JSON link</label><input type="text" id="lb-wl" value="${esc(lb.WatchlistUrl || '')}"></div>
+          <div class="field"><label for="lb-rt">Ratings JSON link</label><input type="text" id="lb-rt" value="${esc(lb.RatingsUrl || '')}"></div>
+        </details>
+        <div class="actions"><button class="btn primary" id="lb-save">Save and read now</button><button class="btn ghost" id="lb-clear">Forget all Letterboxd data</button></div>
+        <p class="note" style="margin:12px 0 0">${lb.Status ? esc(lb.Status) + ' · ' + ago(lb.Synced) : 'Nothing read yet.'}</p>
+      </div>
+      ${listTable('Watched', lb.Watched, true)}
+      ${listTable('Watchlist', lb.Watchlist, false)}
+    </div>
+    <div data-tab="history" class="hidden">
+      <p class="note">Movies ${esc(name)} finished in Jellyfin, newest first. Greyed out = before the "count from" date, so not used for taste.</p>
+      ${d.History.length ? `<table class="list"><tr><th>Movie</th><th>Last watched</th><th></th></tr>${d.History.map(h => `<tr class="${h.Counted ? '' : 'dim'}"><td>${esc(h.Title)} <span class="note">${h.Year ?? ''}</span></td><td>${day(h.LastPlayed)}</td><td>${h.Counted ? '<span class="pill ok">counts</span>' : '<span class="pill">ignored</span>'}</td></tr>`).join('')}</table>` : '<p class="empty">Nothing watched yet.</p>'}
+    </div>
+    <div data-tab="rows" class="hidden">
+      ${d.Rows.length ? d.Rows.map(r => `<div class="row-title">${esc(r.Name)}</div><div class="row-strip">${r.Movies.map(m => `<div title="${esc(m.Title)}">${poster(m.Id)}</div>`).join('')}</div>`).join('') : '<p class="empty">No rows yet. They appear after the first picks.</p>'}
+    </div>
+    <div data-tab="brief" class="hidden">
+      ${d.BriefTags ? chips(d.BriefTags) : '<p class="empty">No description yet, or it hasn\'t been read by the AI yet.</p>'}
+      ${d.BriefTags && d.BriefTags.Themes?.length ? `<div class="help" style="margin-top:12px">Themes</div><div class="chips">${d.BriefTags.Themes.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
+      ${d.BriefTags && d.BriefTags.Keywords?.length ? `<div class="help" style="margin-top:12px">Keywords</div><div class="chips">${d.BriefTags.Keywords.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
+    </div>`;
+  const show = t => { $$('.tabs button', $('#d-body')).forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('[data-tab]', $('#d-body')).forEach(p => p.classList.toggle('hidden', p.dataset.tab !== t)); };
+  $$('.tabs button', $('#d-body')).forEach(b => b.onclick = () => show(b.dataset.t)); show(tab);
+
+  const saveLb = async () => call('PUT', `/api/users/${id}/letterboxd`, { Use: $('#lb-use').checked, Username: $('#lb-user').value, WatchlistUrl: $('#lb-wl').value, RatingsUrl: $('#lb-rt').value });
+  $('#lb-save').onclick = async e => { e.target.disabled = true; try { await saveLb(); toast('Letterboxd read'); openUser(id, name); } catch (err) { toast(err.message); e.target.disabled = false; } };
+  $('#lb-use').onchange = async () => { await saveLb(); toast($('#lb-use').checked ? 'Letterboxd on' : 'Letterboxd off for picks'); };
+  $('#lb-clear').onclick = async () => { if (!confirm(`Forget all Letterboxd data for ${name}?`)) return; await call('DELETE', `/api/users/${id}/letterboxd`); toast('Forgotten'); openUser(id, name); };
+  $('#lb-file').onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    $('#lb-up').className = 'note'; $('#lb-up').textContent = 'Reading ' + file.name + '…';
+    const form = new FormData(); form.append('file', file);
+    const res = await fetch(`/api/users/${id}/letterboxd/import`, { method: 'POST', body: form });
+    if (res.ok) { toast('Letterboxd export imported'); openUser(id, name); }
+    else { let m = res.statusText; try { m = (await res.json()).detail || m; } catch {} $('#lb-up').textContent = m; $('#lb-up').className = 'note err'; }
+  };
+}
+
+function listTable(title, films, watched) {
+  if (!films.length) return '';
+  const inLib = films.filter(f => f.ItemId).length;
+  return `<div class="row-title" style="margin-top:20px">${title} <span class="note">${films.length} · ${inLib} in your library</span></div>
+    <table class="list"><tr><th>Film</th>${watched ? '<th>Rating</th><th>Watched</th>' : ''}<th>In your library</th></tr>
+    ${films.slice(0, 400).map(f => `<tr class="${f.ItemId ? '' : 'dim'}"><td>${esc(f.Title)} <span class="note">${f.Year ?? ''}</span></td>${watched ? `<td class="stars">${starText(f.Rating)}</td><td>${day(f.Date)}</td>` : ''}<td>${f.ItemId ? esc(f.InLibrary) : '–'}</td></tr>`).join('')}
+    </table>${films.length > 400 ? `<p class="note">and ${films.length - 400} more</p>` : ''}`;
+}
+
 // ---------- libraries ----------
 async function loadLibraries() {
   const box = $('#libraries');
@@ -490,9 +758,10 @@ function userCard(u) {
       <div class="actions">
         <button class="btn primary save">Save</button>
         <button class="btn refresh">Pick again now</button>
+        <button class="btn details">Details &amp; Letterboxd</button>
         ${u.LastResult ? `<span class="note">${esc(u.LastResult)}</span>` : ''}
       </div>
-      ${u.Rows.length ? `<details class="rows-preview"><summary>${u.Rows.length} row${u.Rows.length > 1 ? 's' : ''} on the home screen</summary><div class="rows-body note">Loading…</div></details>` : ''}
+
     </div>`;
 
   seg($('.hist', el), from ? 'from' : 'all', v => $('.from', el).classList.toggle('hidden', v !== 'from'));
@@ -506,12 +775,7 @@ function userCard(u) {
   $('.enabled', el).addEventListener('change', async () => { await persist(); toast($('.enabled', el).checked ? `Recommendations on for ${u.Name}` : `Off for ${u.Name}; their rows are removed`); loadUsers(); });
   $('.save', el).addEventListener('click', async e => { e.target.disabled = true; try { await persist(); toast('Saved. New picks in a moment.'); setTimeout(loadUsers, 600); } catch (err) { toast(err.message); e.target.disabled = false; } });
   $('.refresh', el).addEventListener('click', async e => { e.target.disabled = true; await call('POST', `/api/users/${u.UserId}/refresh`); toast(`Picking again for ${u.Name}`); setTimeout(loadUsers, 600); });
-  const details = $('details', el);
-  if (details) details.addEventListener('toggle', async () => {
-    if (!details.open) return;
-    const rows = await call('GET', `/api/users/${u.UserId}/rows`);
-    $('.rows-body', el).innerHTML = rows.map(r => `<div class="row-title">${esc(r.Name)}</div><div class="posters">${r.Movies.map(m => `<span>${esc(m)}</span>`).join('')}</div>`).join('');
-  });
+  $('.details', el).addEventListener('click', () => openUser(u.UserId, u.Name));
   return el;
 }
 

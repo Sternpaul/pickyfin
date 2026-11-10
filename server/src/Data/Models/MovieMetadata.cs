@@ -40,6 +40,8 @@ namespace Pickyfin.Server.Data.Models
         public bool IsClassified { get; set; } = false;
         // v2.0: ClassificationVocabulary.Version the tags were produced under; 0 = free-form legacy tags.
         public int VocabularyVersion { get; set; } = 0;
+        /// <summary>Pickyfin: tags were set by hand on the admin page; the AI never overwrites them.</summary>
+        public bool ManuallyEdited { get; set; }
         /// <summary>Pickyfin: ids of the Jellyfin libraries this movie is in, comma separated.</summary>
         public string? Libraries { get; set; }
         public DateTime DateAdded { get; set; }

@@ -202,6 +202,13 @@ public sealed class JellyfinClient
         return created.Id;
     }
 
+    /// <summary>A movie's poster, for the admin page (which can't reach Jellyfin itself).</summary>
+    public async Task<HttpResponseMessage> GetPosterAsync(Guid itemId, CancellationToken cancellationToken = default)
+    {
+        var request = Request(HttpMethod.Get, $"/Items/{itemId}/Images/Primary?fillHeight=360&quality=85");
+        return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+    }
+
     /// <summary>Deletes an item (here: one of our playlists). A playlist already gone is fine.</summary>
     public async Task DeleteItemAsync(Guid itemId, CancellationToken cancellationToken = default)
     {

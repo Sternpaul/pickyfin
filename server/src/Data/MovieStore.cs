@@ -21,7 +21,7 @@ public sealed class MovieStore
     {
         await using var db = _database.Open();
         var pending = await db.Movies.AsNoTracking()
-            .Where(m => !m.IsClassified || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version))
+            .Where(m => !m.ManuallyEdited && (!m.IsClassified || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
             .ToListAsync(cancellationToken);
         // Movies only in switched-off libraries are never recommended, so don't pay to classify them
         return pending.Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
@@ -42,9 +42,13 @@ public sealed class MovieStore
         await using var db = _database.Open();
         var list = movies.ToList();
         var ids = list.Select(m => m.ItemId).ToList();
-        var existing = await db.Movies.Where(m => ids.Contains(m.ItemId)).Select(m => m.ItemId).ToHashSetAsync(cancellationToken);
+        var rows = await db.Movies.AsNoTracking().Where(m => ids.Contains(m.ItemId)).Select(m => new { m.ItemId, m.ManuallyEdited }).ToListAsync(cancellationToken);
+        var existing = rows.Select(r => r.ItemId).ToHashSet();
+        // A background job holding an older copy must not overwrite a hand edit made meanwhile
+        var handEdited = rows.Where(r => r.ManuallyEdited).Select(r => r.ItemId).ToHashSet();
         foreach (var movie in list)
         {
+            if (handEdited.Contains(movie.ItemId) && !movie.ManuallyEdited) continue;
             movie.LastUpdated = DateTime.UtcNow;
             if (existing.Contains(movie.ItemId)) db.Movies.Update(movie);
             else db.Movies.Add(movie);
