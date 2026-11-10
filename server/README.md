@@ -50,6 +50,43 @@ services:
       - ./pickyfin-data:/data
 ```
 
+### With Portainer
+
+**Easiest: add it to the stack Jellyfin is in**, so it can reach Jellyfin by its
+service name.
+
+1. Portainer → *Stacks* → your Jellyfin stack → *Editor*.
+2. Add this under `services:` (same indentation as the Jellyfin service). Replace
+   `jellyfin` in `JELLYFIN_URL` with the name of the Jellyfin service in that
+   file, if it's different, and paste your API key:
+
+   ```yaml
+     pickyfin-server:
+       image: ghcr.io/sternpaul/pickyfin-server:latest
+       restart: unless-stopped
+       ports:
+         - "8097:8097"
+       environment:
+         JELLYFIN_URL: http://jellyfin:8096
+         JELLYFIN_API_KEY: "..."
+       volumes:
+         - pickyfin-data:/data
+   ```
+
+3. At the bottom of the file add (or extend an existing `volumes:` section):
+
+   ```yaml
+   volumes:
+     pickyfin-data:
+   ```
+
+4. *Update the stack*. Jellyfin isn't restarted unless its own part changed.
+
+**Or as its own stack:** same service, but `JELLYFIN_URL` then has to be an
+address the container can reach, e.g. `http://<home server IP>:8096`.
+
+**Updating later:** Stack → *Update the stack* with *Re-pull image* switched on.
+
 Then open `http://<server>:8097` and sign in with a Jellyfin administrator account:
 
 1. **AI**: choose a provider (OpenRouter, Google AI, OpenAI or Anthropic) and enter
