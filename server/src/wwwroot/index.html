@@ -3,281 +3,340 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pickyfin Server</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23aa5cc3'/%3E%3Cstop offset='1' stop-color='%2300a4dc'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ctext x='16' y='22.5' font-family='Arial' font-weight='800' font-size='18' fill='white' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
+<title>Pickyfin</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#14120f">
 <style>
+  /* ---------- type ---------- */
+  @font-face { font-family: "Instrument Serif"; font-style: normal; font-weight: 400; font-display: swap;
+    src: url(/fonts/instrument-serif-latin-400-normal.woff2) format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Instrument Serif"; font-style: normal; font-weight: 400; font-display: swap;
+    src: url(/fonts/instrument-serif-latin-ext-400-normal.woff2) format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+  @font-face { font-family: "Instrument Serif"; font-style: italic; font-weight: 400; font-display: swap;
+    src: url(/fonts/instrument-serif-latin-400-italic.woff2) format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Instrument Serif"; font-style: italic; font-weight: 400; font-display: swap;
+    src: url(/fonts/instrument-serif-latin-ext-400-italic.woff2) format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+  @font-face { font-family: "Schibsted Grotesk"; font-style: normal; font-weight: 400 900; font-display: swap;
+    src: url(/fonts/schibsted-grotesk-latin-wght-normal.woff2) format("woff2-variations");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Schibsted Grotesk"; font-style: normal; font-weight: 400 900; font-display: swap;
+    src: url(/fonts/schibsted-grotesk-latin-ext-wght-normal.woff2) format("woff2-variations");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+  /* ---------- colour: a dark cinema by default, paper in light ---------- */
   :root {
-    --bg: #0e0f11; --sidebar: #131417; --panel: #17181b; --panel-2: #202227; --panel-3: #2a2c32;
-    --line: #2a2c31; --line-2: #383b42;
-    --text: #ececef; --muted: #9a9ca3; --faint: #6b6e76;
-    --accent: #00a4dc; --accent-2: #aa5cc3; --accent-ink: #00131b;
-    --ok: #3ecf8e; --warn: #f0b429; --err: #ef5f5f;
-    --ok-bg: rgba(62,207,142,.1); --warn-bg: rgba(240,180,41,.1); --err-bg: rgba(239,95,95,.1);
-    --avoid-text: #f59a9a; --avoid-bg: #231718; --avoid-line: #4d2b2b;
-    --knob: #cfd0d4; --log-bg: #0a0b0c; --log-text: #b7b9bf;
-    --radius: 12px;
+    --bg: #14120f; --surface: #1b1915; --raised: #24211c; --line: #2f2b25; --line-strong: #433d34;
+    --text: #efe9de; --muted: #aaa294; --faint: #7a7368;
+    --accent: #e6a43c; --accent-ink: #1b1306; --accent-soft: rgba(230,164,60,.14);
+    --ok: #9cc58f; --warn: #e6a43c; --err: #ec7d68;
+    --avoid: #ec7d68;
+    --scrim: rgba(8,7,5,.6); --log: #0f0d0b;
+    --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+    --sans: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
     color-scheme: dark;
-    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  /* Light: follows the system unless Dark is chosen, or when Light is chosen */
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg: #f5f6f8; --sidebar: #eceef2; --panel: #ffffff; --panel-2: #f1f3f6; --panel-3: #e4e7ec;
-      --line: #e2e5ea; --line-2: #d2d6dd;
-      --text: #15171c; --muted: #555b69; --faint: #858a97;
-      --accent: #0086b8; --accent-ink: #ffffff;
-      --ok: #16865a; --warn: #a96b0a; --err: #c93a3a;
-      --ok-bg: rgba(22,134,90,.1); --warn-bg: rgba(169,107,10,.1); --err-bg: rgba(201,58,58,.08);
-      --avoid-text: #b03030; --avoid-bg: #fdf0f0; --avoid-line: #f1c9c9;
-      --knob: #ffffff; --log-bg: #fbfbfc; --log-text: #3a3f4a;
+      --bg: #f3efe6; --surface: #f9f6ef; --raised: #e9e3d6; --line: #ddd5c5; --line-strong: #c4baa6;
+      --text: #1d1a15; --muted: #5f584c; --faint: #8b8476;
+      --accent: #9a5a00; --accent-ink: #fff8ec; --accent-soft: rgba(154,90,0,.10);
+      --ok: #3f6f3a; --warn: #9a5a00; --err: #b23f2b; --avoid: #b23f2b;
+      --scrim: rgba(40,32,20,.35); --log: #f9f6ef;
       color-scheme: light;
     }
   }
   :root[data-theme="light"] {
-      --bg: #f5f6f8; --sidebar: #eceef2; --panel: #ffffff; --panel-2: #f1f3f6; --panel-3: #e4e7ec;
-      --line: #e2e5ea; --line-2: #d2d6dd;
-      --text: #15171c; --muted: #555b69; --faint: #858a97;
-      --accent: #0086b8; --accent-ink: #ffffff;
-      --ok: #16865a; --warn: #a96b0a; --err: #c93a3a;
-      --ok-bg: rgba(22,134,90,.1); --warn-bg: rgba(169,107,10,.1); --err-bg: rgba(201,58,58,.08);
-      --avoid-text: #b03030; --avoid-bg: #fdf0f0; --avoid-line: #f1c9c9;
-      --knob: #ffffff; --log-bg: #fbfbfc; --log-text: #3a3f4a;
-      color-scheme: light;
+    --bg: #f3efe6; --surface: #f9f6ef; --raised: #e9e3d6; --line: #ddd5c5; --line-strong: #c4baa6;
+    --text: #1d1a15; --muted: #5f584c; --faint: #8b8476;
+    --accent: #9a5a00; --accent-ink: #fff8ec; --accent-soft: rgba(154,90,0,.10);
+    --ok: #3f6f3a; --warn: #9a5a00; --err: #b23f2b; --avoid: #b23f2b;
+    --scrim: rgba(40,32,20,.35); --log: #f9f6ef;
+    color-scheme: light;
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font-size: 14.5px; line-height: 1.5; }
-  a { color: var(--accent); }
-  .hidden { display: none !important; }
 
-  /* layout */
-  .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; background: linear-gradient(to right, var(--sidebar) 232px, var(--bg) 232px); }
-  aside { background: var(--sidebar); border-right: 1px solid var(--line); padding: 20px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; font-weight: 650; font-size: 17px; letter-spacing: .2px; }
-  .mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent-2), var(--accent)); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; }
-  .nav { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; color: var(--muted); cursor: pointer; border: 0; background: none; font: inherit; text-align: left; width: 100%; }
-  .nav:hover { background: var(--panel-2); color: var(--text); }
-  .nav.active { background: var(--panel-3); color: var(--text); }
-  .nav svg { width: 18px; height: 18px; flex: none; opacity: .85; }
-  .nav .count { margin-left: auto; font-size: 12px; color: var(--faint); }
-  .aside-foot { margin-top: auto; padding: 10px; font-size: 12.5px; color: var(--faint); }
-  .aside-foot > button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; font: inherit; }
-  .seg.theme { display: flex; } .seg.theme button { flex: 1; padding: 5px 0; font-size: 12px; }
-  main { padding: 28px 36px 80px; max-width: 1040px; width: 100%; }
-  .page-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
-  .page-head h1 { font-size: 22px; margin: 0; font-weight: 650; }
-  .page-head p { margin: 4px 0 0; color: var(--muted); max-width: 640px; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); font-feature-settings: "ss01"; -webkit-font-smoothing: antialiased; }
+  .hidden { display: none !important; }
+  a { color: inherit; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- masthead ---------- */
+  .masthead { position: sticky; top: 0; z-index: 4; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .masthead-in { max-width: 1180px; margin: 0 auto; padding: 0 28px; display: flex; align-items: center; gap: 32px; height: 64px; }
+  .wordmark { font: italic 30px/1 var(--serif); letter-spacing: -.01em; display: flex; align-items: baseline; gap: 2px; white-space: nowrap; }
+  .wordmark i { width: 7px; height: 7px; background: var(--accent); border-radius: 50%; display: inline-block; transform: translateY(-2px); }
+  nav.primary { display: flex; gap: 22px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+  nav.primary::-webkit-scrollbar { display: none; }
+  .nav { background: none; border: 0; padding: 21px 0 19px; color: var(--muted); font: 500 14.5px var(--sans); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .nav:hover { color: var(--text); }
+  .nav.active { color: var(--text); border-bottom-color: var(--accent); }
+  .nav sup { font-size: 10.5px; color: var(--faint); margin-left: 3px; font-variant-numeric: tabular-nums; }
+  .tools { display: flex; align-items: center; gap: 6px; }
+  .icon-btn { background: none; border: 1px solid transparent; color: var(--muted); width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; cursor: pointer; }
+  .icon-btn:hover { border-color: var(--line); color: var(--text); }
+  .icon-btn svg { width: 17px; height: 17px; }
+  .statusline { border-bottom: 1px solid var(--line); }
+  .statusline-in { max-width: 1180px; margin: 0 auto; padding: 7px 28px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 9px; font-variant-numeric: tabular-nums; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.busy { background: var(--accent); animation: blink 1.4s ease-in-out infinite; }
+  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 44px 28px 120px; }
+  .page-head { display: flex; align-items: flex-end; gap: 24px; margin-bottom: 30px; flex-wrap: wrap; }
+  .page-head h1 { font: 400 52px/1 var(--serif); letter-spacing: -.015em; margin: 0; }
+  .page-head p { margin: 12px 0 0; color: var(--muted); max-width: 620px; font-size: 15.5px; }
   .page-head .spacer { flex: 1; }
 
-  /* status strip */
-  .strip { display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 22px; color: var(--muted); font-size: 13px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
-  .dot.busy { background: var(--accent); box-shadow: 0 0 0 4px rgba(0,164,220,.15); animation: pulse 1.6s infinite; }
-  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
-  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(0,164,220,0); } }
-
-  /* cards and fields */
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
-  .card h2 { font-size: 15.5px; margin: 0 0 4px; font-weight: 620; }
-  .card > .desc { color: var(--muted); margin: 0 0 16px; font-size: 13.5px; }
-  .field { margin-top: 16px; }
-  .field:first-of-type { margin-top: 0; }
-  .field > label { display: flex; align-items: center; gap: 8px; font-weight: 550; margin-bottom: 6px; }
-  .field .help { color: var(--faint); font-size: 12.5px; margin-top: 5px; }
+  /* ---------- controls ---------- */
   textarea, input[type=text], input[type=search], input[type=password], input[type=date], input[type=number], select {
-    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px; font: inherit; outline: none; }
-  textarea:focus, input:focus, select:focus { border-color: var(--accent); }
-  textarea { min-height: 78px; resize: vertical; line-height: 1.5; }
+    width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 9px 11px; font: 15px/1.4 var(--sans); outline: none; transition: border-color .12s; }
+  textarea:hover, input:hover, select:hover { border-color: var(--line-strong); }
+  textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  textarea { min-height: 84px; resize: vertical; line-height: 1.55; }
+  select { appearance: none; padding-right: 30px; cursor: pointer;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
   input[type=date] { width: auto; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .grid2 .field { margin-top: 0; }
+  input::placeholder, textarea::placeholder { color: var(--faint); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
 
-  /* buttons */
-  .btn { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 14px; font: inherit; font-weight: 550; cursor: pointer; white-space: nowrap; }
-  .btn:hover { background: var(--panel-3); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .btn.primary:hover { filter: brightness(1.08); }
-  .btn.ghost { background: none; border-color: transparent; color: var(--muted); }
-  .btn:disabled { opacity: .5; cursor: default; }
-  .actions { display: flex; gap: 10px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line-strong);
+    background: transparent; color: var(--text); font: 550 14px var(--sans); cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s; }
+  .btn:hover { background: var(--raised); }
+  .btn.primary { background: var(--text); border-color: var(--text); color: var(--bg); }
+  .btn.primary:hover { opacity: .88; background: var(--text); }
+  .btn.quiet { border-color: transparent; color: var(--muted); padding: 0 8px; }
+  .btn.quiet:hover { color: var(--text); background: none; text-decoration: underline; text-underline-offset: 4px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 22px; }
 
-  /* switch */
-  .switch { position: relative; width: 38px; height: 22px; flex: none; }
-  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
-  .switch span { position: absolute; inset: 0; background: var(--panel-3); border-radius: 999px; transition: .15s; cursor: pointer; border: 1px solid var(--line-2); }
-  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--knob); border-radius: 50%; transition: .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  .switch { position: relative; width: 36px; height: 20px; flex: none; display: inline-block; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--raised); border: 1px solid var(--line-strong); cursor: pointer; transition: .15s; }
+  .switch span::before { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; border-radius: 50%; background: var(--muted); transition: .15s; }
   .switch input:checked + span { background: var(--accent); border-color: var(--accent); }
-  .switch input:checked + span::before { transform: translateX(16px); background: #fff; }
+  .switch input:checked + span::before { transform: translateX(16px); background: var(--accent-ink); }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* segmented */
-  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 9px; padding: 3px; gap: 2px; }
-  .seg button { background: none; border: 0; color: var(--muted); padding: 6px 12px; border-radius: 7px; font: inherit; cursor: pointer; }
-  .seg button.on { background: var(--panel-3); color: var(--text); }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden; }
+  .seg button { background: none; border: 0; border-left: 1px solid var(--line-strong); color: var(--muted); padding: 7px 13px; font: 500 13.5px var(--sans); cursor: pointer; }
+  .seg button:first-child { border-left: 0; }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: var(--text); color: var(--bg); }
 
-  /* chips, pills */
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .chip { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
-  .chip.avoid { color: var(--avoid-text); border-color: var(--avoid-line); background: var(--avoid-bg); }
-  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-weight: 500; }
-  .pill.ok { color: var(--ok); background: var(--ok-bg); } .pill.warn { color: var(--warn); background: var(--warn-bg); } .pill.err { color: var(--err); background: var(--err-bg); }
+  .tag { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-strong); border-radius: 4px; padding: 1px 7px; font-size: 12.5px; color: var(--muted); }
+  .tag.avoid { color: var(--avoid); border-color: currentColor; text-decoration: line-through; text-decoration-thickness: 1px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag .rm { background: none; border: 0; color: var(--faint); cursor: pointer; padding: 0 0 0 2px; font: inherit; font-size: 14px; line-height: 1; }
+  .tag .rm:hover { color: var(--err); }
+  .add-select { width: auto; height: 25px; padding: 0 26px 0 8px; font-size: 12.5px; border-style: dashed; background-color: transparent; }
 
-  /* users */
-  .user-head { display: flex; align-items: center; gap: 12px; }
-  .avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-weight: 650; color: #fff; flex: none; }
-  .user-name { font-weight: 620; font-size: 15.5px; }
-  .user-sub { color: var(--faint); font-size: 12.5px; }
-  .user-head .grow { flex: 1; min-width: 0; }
-  .user-body { margin-top: 16px; }
-  .card.off .user-body { display: none; }
-  .card.off { padding-bottom: 20px; }
-  .history { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .rows-preview { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
-  .rows-preview summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; display: flex; gap: 8px; align-items: center; }
-  .rows-preview summary::before { content: "▸"; transition: .15s; }
-  .rows-preview[open] summary::before { transform: rotate(90deg); }
-  .row-title { font-weight: 600; margin: 14px 0 6px; font-size: 13.5px; }
-  .posters { display: flex; flex-wrap: wrap; gap: 6px; }
-  .posters span { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px; font-size: 12.5px; color: var(--muted); }
-
-  /* libraries */
-  .lib { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
-  .lib:first-of-type { border-top: 0; padding-top: 0; }
-  .lib .grow { flex: 1; }
-  .lib-name { font-weight: 560; }
-  .lib-sub { color: var(--faint); font-size: 12.5px; }
-
-  /* status */
-  .bar { height: 8px; background: var(--panel-3); border-radius: 999px; overflow: hidden; margin: 10px 0 6px; }
-  .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); width: 0; transition: width .4s; }
-  pre.log { background: var(--log-bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 460px; overflow: auto; white-space: pre-wrap; color: var(--log-text); margin: 0; }
-  .log .warn { color: var(--warn); } .log .error { color: var(--err); }
-  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; font-size: 13.5px; }
-  .kv div:nth-child(odd) { color: var(--faint); }
-
-  /* toast, login */
+  .label { font: 600 11.5px var(--sans); letter-spacing: .09em; text-transform: uppercase; color: var(--faint); }
   .note { font-size: 13px; color: var(--muted); }
   .note.ok { color: var(--ok); } .note.err { color: var(--err); }
-  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--panel-3); border: 1px solid var(--line-2); padding: 10px 16px; border-radius: 10px; opacity: 0; transition: .2s; pointer-events: none; z-index: 9; }
-  #toast.show { opacity: 1; transform: translateX(-50%); }
-  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-  .login { width: 100%; max-width: 380px; }
-  .login .brand { padding: 0 0 18px; }
-  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .state { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .empty { color: var(--muted); padding: 48px 0; text-align: center; font-family: var(--serif); font-size: 22px; font-style: italic; }
 
+  /* ---------- settings layout: why on the left, what on the right ---------- */
+  .settings { border-top: 1px solid var(--line); }
+  .setting { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 1.6fr); gap: 16px 48px; padding: 26px 0; border-bottom: 1px solid var(--line); }
+  .setting h3 { font: 600 15px var(--sans); margin: 0 0 4px; display: flex; gap: 10px; align-items: baseline; }
+  .setting h3 .state { font-weight: 400; }
+  .setting .why { color: var(--muted); font-size: 14px; margin: 0; }
+  .setting .control { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .two, .setting .control.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .sub { font-size: 12.5px; color: var(--faint); margin-top: 5px; }
+  .setting-foot { padding: 22px 0 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .group-title { font: 400 30px/1.1 var(--serif); margin: 52px 0 14px; }
+  .group-title:first-child { margin-top: 0; }
 
-  /* movies */
-  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
-  .toolbar input[type=search] { flex: 1 1 240px; width: auto; }
-  .toolbar select { width: auto; }
-  .count-note { color: var(--faint); font-size: 13px; margin: -6px 0 12px; }
-  .movies { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
-  .movie { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; text-align: left; padding: 0; color: inherit; font: inherit; display: flex; flex-direction: column; }
-  .movie:hover { border-color: var(--line-2); transform: translateY(-1px); }
-  .poster { aspect-ratio: 2 / 3; background: var(--panel-2) center / cover no-repeat; position: relative; }
-  .poster .badge { position: absolute; top: 6px; left: 6px; }
-  .movie .meta-box { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 3px; min-height: 64px; }
-  .movie .t { font-weight: 600; font-size: 13.5px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .movie .y { color: var(--faint); font-size: 12px; }
-  .movie .mini { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .more { display: flex; justify-content: center; margin-top: 18px; }
+  /* ---------- people ---------- */
+  .people { border-top: 1px solid var(--line); }
+  .person { border-bottom: 1px solid var(--line); padding: 28px 0; }
+  .person-head { display: flex; align-items: center; gap: 18px; }
+  .person-name { font: 400 32px/1 var(--serif); letter-spacing: -.01em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person-body { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px 48px; margin-top: 22px; }
+  .person.off { padding: 16px 0; }
+  .person.off .person-name { font-size: 22px; color: var(--muted); }
+  .person.off .person-body { display: none; }
+  .field-label { font-weight: 600; font-size: 14px; margin-bottom: 8px; display: block; }
+  .understood { margin-top: 12px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .side { display: flex; flex-direction: column; gap: 20px; }
+  .last { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 12px; }
+  .others { margin-top: 36px; }
+  .others summary { cursor: pointer; color: var(--muted); list-style: none; display: flex; gap: 10px; align-items: baseline; padding: 6px 0; }
+  .others summary::-webkit-details-marker { display: none; }
+  .others summary .label { color: var(--muted); }
+  .others summary::after { content: "Show"; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+  .others[open] summary::after { content: "Hide"; }
 
-  /* drawer */
-  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 5; }
-  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, 100vw); background: var(--bg); border-left: 1px solid var(--line); z-index: 6; display: flex; flex-direction: column; box-shadow: -10px 0 40px rgba(0,0,0,.25); }
-  .drawer-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
-  .drawer-head h2 { margin: 0; font-size: 17px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
+  /* ---------- libraries ---------- */
+  .lib { display: flex; align-items: center; gap: 18px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+  .lib-name { font: 400 26px/1.1 var(--serif); }
+  .lib .grow { flex: 1; }
+
+  /* ---------- movies ---------- */
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 26px; }
+  .filters input[type=search] { flex: 1 1 260px; width: auto; }
+  .filters select { width: auto; }
+  .count { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; margin-left: auto; }
+  .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 30px 20px; }
+  .film { background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 9px; }
+  .poster { aspect-ratio: 2 / 3; border-radius: 4px; background: var(--raised) center / cover no-repeat; position: relative; overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); transition: transform .18s ease, box-shadow .18s ease; }
+  .poster.blank { display: grid; place-items: center; color: var(--faint); font: italic 15px var(--serif); padding: 10px; text-align: center; }
+  .film:hover .poster { transform: translateY(-3px); box-shadow: 0 10px 24px -12px rgba(0,0,0,.6); }
+  .flag { position: absolute; left: 0; bottom: 0; right: 0; padding: 18px 8px 6px; font: 600 10.5px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: #f6efe3;
+    background: linear-gradient(transparent, rgba(0,0,0,.78)); }
+  .flag.amber { color: #f3c36f; }
+  .film .t { font-weight: 600; font-size: 14px; line-height: 1.3; }
+  .film .y { color: var(--faint); font-weight: 400; }
+  .film .m { color: var(--muted); font-size: 12.5px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .more { display: flex; justify-content: center; margin-top: 40px; }
+
+  /* ---------- status ---------- */
+  .figure { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .figure .big { font: 400 64px/1 var(--serif); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .figure .of { color: var(--muted); font-size: 16px; }
+  .meter { height: 2px; background: var(--line); margin: 22px 0 26px; }
+  .meter > div { height: 100%; background: var(--accent); width: 0; transition: width .5s; }
+  .facts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px 32px; margin-bottom: 40px; }
+  .facts-grid div:first-child { margin-bottom: 3px; }
+  pre.log { margin: 0; background: var(--log); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; font: 12.5px/1.65 var(--mono); color: var(--muted); max-height: 520px; overflow: auto; white-space: pre-wrap; }
+  .log .warn { color: var(--warn); } .log .error { color: var(--err); }
+
+  /* ---------- drawer ---------- */
+  .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 8; backdrop-filter: blur(2px); }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--bg); border-left: 1px solid var(--line); z-index: 9; display: flex; flex-direction: column; }
+  .drawer-head { display: flex; align-items: center; gap: 12px; padding: 18px 28px; border-bottom: 1px solid var(--line); }
+  .drawer-head h2 { margin: 0; font: 400 30px/1.1 var(--serif); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drawer-body { padding: 26px 28px 40px; overflow-y: auto; flex: 1; }
+  .drawer-foot { padding: 16px 28px; border-top: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .drawer-foot:empty { display: none; }
-  .drawer-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .x { background: none; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; padding: 4px 8px; border-radius: 8px; }
-  .x:hover { background: var(--panel-2); color: var(--text); }
-  .movie-top { display: grid; grid-template-columns: 140px 1fr; gap: 18px; margin-bottom: 18px; }
-  .movie-top .poster { border-radius: 9px; }
-  .facts { font-size: 13.5px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
-  .facts b { color: var(--text); font-weight: 560; }
-  .plot { font-size: 13.5px; line-height: 1.55; margin: 8px 0 0; color: var(--text); }
-  .chip.on { color: var(--text); background: var(--panel-3); }
-  .chip .rm { background: none; border: 0; color: var(--faint); cursor: pointer; padding: 0 0 0 4px; font: inherit; }
-  .chip .rm:hover { color: var(--err); }
-  .add-select { width: auto; padding: 4px 8px; font-size: 12.5px; border-radius: 999px; }
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 18px; }
-  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px; font: inherit; cursor: pointer; }
+  .film-top { display: grid; grid-template-columns: 150px 1fr; gap: 24px; margin-bottom: 30px; }
+  .facts { display: flex; flex-direction: column; gap: 5px; font-size: 14px; color: var(--muted); }
+  .facts b { color: var(--text); font-weight: 550; }
+  .plot { font: 400 18px/1.45 var(--serif); color: var(--text); margin: 12px 0 0; }
+  .edit-row { padding: 18px 0; border-top: 1px solid var(--line); }
+  .tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: -8px 0 26px; overflow-x: auto; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 10px 0; font: 500 14.5px var(--sans); cursor: pointer; white-space: nowrap; }
   .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
-  table.list { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  table.list td, table.list th { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-  table.list th { color: var(--faint); font-weight: 500; font-size: 12px; }
+  .tabs sup { font-size: 10.5px; color: var(--faint); margin-left: 2px; }
+  table.list { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  table.list th { text-align: left; font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line-strong); }
+  table.list td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.list .y { color: var(--faint); }
   table.list .dim td { color: var(--faint); }
-  .stars { color: var(--warn); letter-spacing: 1px; white-space: nowrap; }
+  .stars { color: var(--accent); letter-spacing: 1px; white-space: nowrap; }
   .file-btn { position: relative; overflow: hidden; }
   .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-  .row-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
-  .row-strip .poster { width: 84px; flex: none; border-radius: 6px; }
-  @media (max-width: 640px) { .movie-top { grid-template-columns: 96px 1fr; } .movies { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+  .strip { display: flex; gap: 10px; overflow-x: auto; padding: 4px 0 14px; }
+  .strip .poster { width: 92px; flex: none; }
+  .row-name { font: 400 22px/1.2 var(--serif); margin: 24px 0 10px; }
+  .row-name:first-child { margin-top: 0; }
+  .block-title { font: 400 24px/1.2 var(--serif); margin: 34px 0 6px; display: flex; gap: 12px; align-items: baseline; }
+  .block-title .note, .row-name .note { font-family: var(--sans); }
 
-  @media (max-width: 820px) {
-    .shell { grid-template-columns: 1fr; background: var(--bg); }
-    aside { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 10px; border-right: 0; border-bottom: 1px solid var(--line); }
-    .brand { padding: 4px 10px; } .aside-foot { display: none; }
-    .nav { width: auto; } .nav .count { display: none; }
-    main { padding: 20px 16px 60px; }
-    .grid2 { grid-template-columns: 1fr; }
-    .kv { grid-template-columns: 1fr; }
+  /* ---------- toast, login ---------- */
+  #toast { position: fixed; left: 28px; bottom: 28px; background: var(--text); color: var(--bg); padding: 11px 16px; border-radius: 6px; font-size: 14px; font-weight: 500;
+    opacity: 0; transform: translateY(8px); transition: .18s; pointer-events: none; z-index: 20; max-width: calc(100vw - 56px); }
+  #toast.show { opacity: 1; transform: none; }
+  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  .login { width: 100%; max-width: 380px; }
+  .login .wordmark { font-size: 64px; margin-bottom: 8px; }
+  .login p { color: var(--muted); margin: 0 0 32px; }
+  .login label { display: block; font-weight: 600; font-size: 14px; margin: 18px 0 7px; }
+
+  @media (max-width: 860px) {
+    .masthead-in { gap: 18px; padding: 0 16px; }
+    .statusline-in, main { padding-left: 16px; padding-right: 16px; }
+    main { padding-top: 30px; }
+    .page-head h1 { font-size: 40px; }
+    .setting, .person-body { grid-template-columns: 1fr; gap: 14px; }
+    .two, .setting .control.two { grid-template-columns: 1fr; }
+    .film-top { grid-template-columns: 104px 1fr; gap: 16px; }
+    .drawer-head, .drawer-body, .drawer-foot { padding-left: 18px; padding-right: 18px; }
+    .shelf { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 22px 12px; }
+    #toast { left: 16px; bottom: 16px; }
   }
+  @media (max-width: 560px) {
+    .masthead-in { flex-wrap: wrap; height: auto; padding-top: 12px; gap: 6px 16px; }
+    nav.primary { order: 3; flex-basis: 100%; }
+    .nav { padding: 12px 0 10px; }
+    .tools { margin-left: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
 
 <div id="login" class="login-wrap hidden">
-  <form class="card login" id="login-form">
-    <div class="brand"><div class="mark">P</div>Pickyfin Server</div>
-    <p class="note" style="margin:0 0 16px">Sign in with a Jellyfin administrator account.</p>
-    <div class="field"><label for="login-user">Username</label><input type="text" id="login-user" autocomplete="username" required></div>
-    <div class="field"><label for="login-pass">Password</label><input type="password" id="login-pass" autocomplete="current-password"></div>
+  <form class="login" id="login-form">
+    <div class="wordmark">Pickyfin<i></i></div>
+    <p>Sign in with a Jellyfin administrator account.</p>
+    <label for="login-user">Username</label><input type="text" id="login-user" autocomplete="username" required>
+    <label for="login-pass">Password</label><input type="password" id="login-pass" autocomplete="current-password">
     <div class="actions"><button class="btn primary" type="submit">Sign in</button><span class="note err" id="login-error"></span></div>
   </form>
 </div>
 
-<div id="app" class="shell hidden">
-  <aside>
-    <div class="brand"><div class="mark">P</div>Pickyfin</div>
-    <button class="nav active" data-page="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5.5"/></svg>Users<span class="count" id="count-users"></span></button>
-    <button class="nav" data-page="movies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4M3 12h18"/></svg>Movies</button>
-    <button class="nav" data-page="libraries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Libraries</button>
-    <button class="nav" data-page="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>AI</button>
-    <button class="nav" data-page="rows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><path d="M3 20h12"/></svg>Rows &amp; timing</button>
-    <button class="nav" data-page="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Status</button>
-    <div class="aside-foot">
-      <div class="seg theme" id="theme-seg" title="Appearance"><button type="button" data-v="system">System</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div>
-      <div id="who" style="margin-top:12px"></div><button id="logout">Sign out</button>
+<div id="app" class="hidden">
+  <header class="masthead">
+    <div class="masthead-in">
+      <div class="wordmark">Pickyfin<i></i></div>
+      <nav class="primary">
+        <button class="nav active" data-page="users">People<sup id="count-users"></sup></button>
+        <button class="nav" data-page="movies">Movies</button>
+        <button class="nav" data-page="libraries">Libraries</button>
+        <button class="nav" data-page="ai">AI</button>
+        <button class="nav" data-page="rows">Rows</button>
+        <button class="nav" data-page="status">Status</button>
+      </nav>
+      <div class="tools">
+        <button class="icon-btn" id="theme-btn" title="Appearance"></button>
+        <button class="icon-btn" id="logout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l4-4-4-4M14 12H4"/></svg></button>
+      </div>
     </div>
-  </aside>
+  </header>
+  <div class="statusline"><div class="statusline-in"><span class="dot" id="state-dot"></span><span id="state">Loading…</span></div></div>
 
   <main>
-    <div class="strip"><span class="dot" id="state-dot"></span><span id="state">Loading…</span></div>
-
-    <!-- USERS -->
+    <!-- PEOPLE -->
     <section data-page="users">
       <div class="page-head"><div>
-        <h1>Users</h1>
-        <p>Describe what each person likes in a sentence or two. That's what the picks follow most; watch history adds to it. Picks show up as rows in Pickyfin on the TV, and as playlists in every other Jellyfin app.</p>
+        <h1>People</h1>
+        <p>Say in a sentence or two what each person likes. That's what their picks follow most; watch history and Letterboxd add to it. Picks appear as rows in Pickyfin on the TV, and as playlists in every other Jellyfin app.</p>
       </div></div>
-      <div id="users"></div>
+      <div class="people" id="users"></div>
+      <details class="others" id="others"><summary><span class="label" id="others-label"></span></summary><div class="people" id="users-off" style="margin-top:12px"></div></details>
     </section>
 
     <!-- MOVIES -->
     <section data-page="movies" class="hidden">
       <div class="page-head"><div>
         <h1>Movies</h1>
-        <p>Everything the AI tagged, and how. Open a movie to correct its tags; movies you edit are never re-tagged by the AI.</p>
+        <p>Every movie in the library and how the AI described it. Open one to correct it; movies you edit are never re-tagged.</p>
       </div></div>
-      <div class="toolbar">
-        <input type="search" id="m-q" placeholder="Search title, director or year">
-        <div class="seg" id="m-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited by you</button></div>
+      <div class="filters">
+        <input type="search" id="m-q" placeholder="Title, director or year">
+        <div class="seg" id="m-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited</button></div>
         <select id="m-tag"><option value="">Any tag</option></select>
         <select id="m-lib"><option value="">All libraries</option></select>
-        <select id="m-sort"><option value="title">A–Z</option><option value="added">Newest added</option><option value="acclaim">Best rated</option><option value="year">Newest film</option></select>
+        <select id="m-sort"><option value="title">A–Z</option><option value="added">Recently added</option><option value="acclaim">Highest rated</option><option value="year">Newest film</option></select>
+        <span class="count" id="m-count"></span>
       </div>
-      <div class="count-note" id="m-count"></div>
-      <div class="movies" id="movies"></div>
+      <div class="shelf" id="movies"></div>
       <div class="more"><button class="btn hidden" id="m-more">Show more</button></div>
     </section>
 
@@ -285,107 +344,85 @@
     <section data-page="libraries" class="hidden">
       <div class="page-head"><div>
         <h1>Libraries</h1>
-        <p>Choose which libraries recommendations may come from. Movies in switched-off libraries are never recommended and aren't sent to the AI, so they cost nothing.</p>
+        <p>Which libraries recommendations may come from. Movies in a switched-off library are never recommended and never sent to the AI. Watch history from every library still counts toward taste.</p>
       </div></div>
-      <div class="card" id="libraries"><div class="empty">Loading…</div></div>
-      <p class="note">A movie that's in several libraries can still be recommended if one of them is on. Watch history from every library still counts toward taste.</p>
+      <div class="settings" id="libraries"><div class="empty">Loading…</div></div>
     </section>
 
     <!-- AI -->
     <section data-page="ai" class="hidden">
       <div class="page-head"><div>
         <h1>AI</h1>
-        <p>The AI tags every movie once, reads your descriptions, and picks the "Recommended for you" row. One call per person per refresh.</p>
+        <p>The AI describes every movie once, reads what you write about each person, and picks their main row. One call per person per refresh.</p>
       </div></div>
-
-      <form class="card" id="ai-form">
-        <h2>Provider</h2>
-        <p class="desc">Any of these works; OpenRouter gives access to most models with one key.</p>
-        <div class="field">
-          <div class="seg" id="provider-seg">
-            <button type="button" data-v="OpenRouter">OpenRouter</button><button type="button" data-v="GoogleAI">Google AI</button><button type="button" data-v="OpenAI">OpenAI</button><button type="button" data-v="Anthropic">Anthropic</button>
-          </div>
+      <form id="ai-form" class="settings">
+        <div class="setting">
+          <div><h3>Provider</h3><p class="why">Any of these works. OpenRouter reaches most models with a single key.</p></div>
+          <div class="control"><div><div class="seg" id="provider-seg"><button type="button" data-v="OpenRouter">OpenRouter</button><button type="button" data-v="GoogleAI">Google</button><button type="button" data-v="OpenAI">OpenAI</button><button type="button" data-v="Anthropic">Anthropic</button></div></div></div>
         </div>
-        <div class="field">
-          <label for="ApiKey">API key <span class="pill" id="key-state"></span></label>
-          <input type="password" id="ApiKey" placeholder="Paste a new key, or leave empty to keep the current one" autocomplete="off">
+        <div class="setting">
+          <div><h3>API key <span class="state" id="key-state"></span></h3><p class="why">Stored on this server only. Leave the field empty to keep the saved key.</p></div>
+          <div class="control"><input type="password" id="ApiKey" placeholder="Paste a new key" autocomplete="off"></div>
         </div>
-        <div class="grid2" style="margin-top:16px">
-          <div class="field">
-            <label for="ChatModel">Model for picking</label>
-            <input type="text" id="ChatModel" list="models">
-            <div class="help">Reads the descriptions and chooses. Worth a capable model.</div>
-          </div>
-          <div class="field">
-            <label for="ClassificationModel">Model for tagging movies</label>
-            <input type="text" id="ClassificationModel" list="models">
-            <div class="help">Runs once per movie; a fast, cheap model is fine.</div>
+        <div class="setting">
+          <div><h3>Models</h3><p class="why">Picking reads your descriptions and decides, so it deserves a capable model. Describing movies runs once per movie; a fast, cheap one is fine.</p></div>
+          <div class="control two">
+            <div><label class="field-label" for="ChatModel">For picking</label><input type="text" id="ChatModel" list="models"></div>
+            <div><label class="field-label" for="ClassificationModel">For describing movies</label><input type="text" id="ClassificationModel" list="models"></div>
           </div>
         </div>
         <datalist id="models"></datalist>
-        <details class="field" style="margin-top:16px">
-          <summary class="note" style="cursor:pointer">Advanced</summary>
-          <div class="field" style="margin-top:12px">
-            <label for="CustomEndpoint">Custom endpoint</label>
-            <input type="text" id="CustomEndpoint" placeholder="Leave empty for the provider's default">
-            <div class="help">For a self-hosted or proxy endpoint that speaks the provider's API.</div>
-          </div>
-        </details>
-        <div class="actions">
-          <button class="btn primary" type="submit">Save</button>
-          <button class="btn" type="button" id="test-ai">Test connection</button>
-          <span class="note" id="ai-note"></span>
+        <div class="setting">
+          <div><h3>Custom endpoint</h3><p class="why">Only for a self-hosted or proxy endpoint that speaks the provider's API.</p></div>
+          <div class="control"><input type="text" id="CustomEndpoint" placeholder="Provider default"></div>
         </div>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" id="test-ai">Test connection</button><span class="note" id="ai-note"></span></div>
       </form>
 
-      <form class="card" id="tmdb-form">
-        <h2>TMDB keywords <span class="pill">optional</span></h2>
-        <p class="desc">Adds precise keywords from The Movie Database (like "heist" or "time travel"), which sharpens matching. Free key at themoviedb.org → Settings → API.</p>
-        <div class="field">
-          <label for="TmdbApiKey">TMDB API key <span class="pill" id="tmdb-state"></span></label>
-          <input type="password" id="TmdbApiKey" placeholder="Paste a key, or leave empty to keep the current one" autocomplete="off">
+      <h2 class="group-title">TMDB</h2>
+      <form id="tmdb-form" class="settings">
+        <div class="setting">
+          <div><h3>TMDB key <span class="state" id="tmdb-state"></span></h3><p class="why">Optional. Adds precise keywords from The Movie Database ("heist", "time travel"), which sharpens matching. A free key comes from themoviedb.org → Settings → API.</p></div>
+          <div class="control"><input type="password" id="TmdbApiKey" placeholder="Paste a key" autocomplete="off"></div>
         </div>
-        <div class="actions"><button class="btn primary" type="submit">Save</button><span class="note" id="tmdb-note"></span></div>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="tmdb-note"></span></div>
       </form>
     </section>
 
     <!-- ROWS -->
     <section data-page="rows" class="hidden">
       <div class="page-head"><div>
-        <h1>Rows &amp; timing</h1>
-        <p>What each person gets on their home screen, and how often it changes.</p>
+        <h1>Rows</h1>
+        <p>What each person finds on their home screen, and how often it changes.</p>
       </div></div>
-      <form class="card" id="rows-form">
-        <div class="field">
-          <label>"Because You Watched …" rows</label>
-          <div class="seg" id="because-seg"><button type="button" data-v="0">None</button><button type="button" data-v="1">One</button><button type="button" data-v="2">Two</button></div>
-          <div class="help">Based on the latest movies the person finished. "Recommended for you" is always there.</div>
+      <form id="rows-form" class="settings">
+        <div class="setting">
+          <div><h3>"Because You Watched …"</h3><p class="why">Rows built around the latest films the person finished. "Recommended for you" is always there.</p></div>
+          <div class="control"><div><div class="seg" id="because-seg"><button type="button" data-v="0">None</button><button type="button" data-v="1">One</button><button type="button" data-v="2">Two</button></div></div></div>
         </div>
-        <div class="field">
-          <label for="PicksPerRow">Movies per row <span class="pill" id="picks-value"></span></label>
-          <input type="range" id="PicksPerRow" min="5" max="40" step="1" style="width:100%;accent-color:var(--accent)">
+        <div class="setting">
+          <div><h3>Movies per row <span class="state" id="picks-value"></span></h3><p class="why">More is not always better on a TV; around twenty fills a row without padding.</p></div>
+          <div class="control"><input type="range" id="PicksPerRow" min="5" max="40" step="1"></div>
         </div>
-        <div class="field">
-          <label for="RefreshHours">Fresh picks at least every</label>
-          <select id="RefreshHours" style="width:auto"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">day</option><option value="48">2 days</option><option value="168">week</option></select>
-          <div class="help">Also right after someone finishes a movie, and when you change their description.</div>
+        <div class="setting">
+          <div><h3>Fresh picks at least every</h3><p class="why">Also right after someone finishes a film, and whenever you change what you wrote about them.</p></div>
+          <div class="control"><select id="RefreshHours" style="width:auto"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">day</option><option value="48">2 days</option><option value="168">week</option></select></div>
         </div>
-        <div class="actions"><button class="btn primary" type="submit">Save</button><span class="note" id="rows-note"></span></div>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="rows-note"></span></div>
       </form>
     </section>
 
     <!-- STATUS -->
     <section data-page="status" class="hidden">
-      <div class="page-head"><div><h1>Status</h1><p>What the server is doing, and its recent log.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
-      <div class="card">
-        <h2 id="lib-title">Library</h2>
-        <div class="bar"><div id="lib-bar"></div></div>
-        <div class="kv" style="margin-top:14px">
-          <div>Movies tagged</div><div id="lib-count">–</div>
-          <div>Last library sync</div><div id="lib-synced">–</div>
-          <div>Jellyfin</div><div id="jf-url">–</div>
-        </div>
+      <div class="page-head"><div><h1>Status</h1><p>What the server is doing and what it did recently.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
+      <div class="figure"><span class="big" id="lib-count">–</span><span class="of" id="lib-of"></span></div>
+      <div class="meter"><div id="lib-bar"></div></div>
+      <div class="facts-grid">
+        <div><div class="label">Library synced</div><div id="lib-synced">–</div></div>
+        <div><div class="label">Jellyfin</div><div id="jf-url">–</div></div>
+        <div><div class="label">Signed in as</div><div id="who">–</div></div>
       </div>
+      <div class="label" style="margin-bottom:10px">Log</div>
       <pre class="log" id="log"></pre>
     </section>
   </main>
@@ -393,12 +430,12 @@
 
 <div class="scrim hidden" id="scrim"></div>
 <aside class="drawer hidden" id="drawer" aria-modal="true" role="dialog">
-  <div class="drawer-head"><h2 id="d-title"></h2><button class="x" id="d-close" title="Close">×</button></div>
+  <div class="drawer-head"><h2 id="d-title"></h2><button class="icon-btn" id="d-close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="drawer-body" id="d-body"></div>
   <div class="drawer-foot" id="d-foot"></div>
 </aside>
 
-<div id="toast"></div>
+<div id="toast" role="status"></div>
 
 <script>
 const $ = (s, el = document) => el.querySelector(s);
@@ -411,17 +448,31 @@ const ago = d => {
   if (s < 86400) return Math.round(s / 3600) + ' h ago'; return new Date(d).toLocaleDateString();
 };
 const today = () => new Date().toISOString().slice(0, 10);
-const colors = ['#aa5cc3', '#00a4dc', '#3ecf8e', '#f0b429', '#ef5f5f', '#5c7cfa', '#e8590c', '#20c997'];
-const colorFor = s => colors[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length];
+const day = d => d ? new Date(d).toLocaleDateString() : '';
 let settings = null;
 
-// Appearance: follows the system unless chosen; remembered in this browser only
-function applyTheme(t) { if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
+// ---------- appearance: follows the system unless chosen (remembered in this browser) ----------
+const themeIcons = {
+  system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
+  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
+};
+const themeNames = { system: 'Appearance: follows the system', light: 'Appearance: light', dark: 'Appearance: dark' };
 let theme = 'system';
 try { theme = localStorage.getItem('pickyfin-theme') || 'system'; } catch {}
+function applyTheme(t) {
+  theme = t;
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  $('#theme-btn').innerHTML = themeIcons[t]; $('#theme-btn').title = themeNames[t] + ' (click to change)';
+}
 applyTheme(theme);
+$('#theme-btn').addEventListener('click', () => {
+  const next = { system: 'light', light: 'dark', dark: 'system' }[theme];
+  applyTheme(next); try { localStorage.setItem('pickyfin-theme', next); } catch {}
+  toast(themeNames[next]);
+});
 
-function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200); }
+function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2400); }
 
 async function call(method, url, body) {
   const res = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -434,7 +485,7 @@ async function call(method, url, body) {
 function showLogin() { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
 async function showApp(me) {
   $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
-  $('#who').textContent = me?.Name ? 'Signed in as ' + me.Name : '';
+  $('#who').textContent = me?.Name || '–';
   await loadSettings(); loadUsers(); loadStatus();
 }
 $('#login-form').addEventListener('submit', async e => {
@@ -452,6 +503,7 @@ function go(page) {
   if (page === 'status') loadStatus();
   if (page === 'users') loadUsers();
   history.replaceState(null, '', '#' + page);
+  window.scrollTo(0, 0);
 }
 $$('.nav').forEach(n => n.addEventListener('click', () => go(n.dataset.page)));
 
@@ -462,6 +514,7 @@ function seg(el, value, onChange) {
   });
 }
 const segValue = el => $('button.on', el)?.dataset.v;
+const stateText = (on, yes = 'saved', no = 'not set') => `<span class="dot ${on ? 'ok' : ''}"></span>${on ? yes : no}`;
 
 // ---------- settings ----------
 const modelSuggestions = {
@@ -471,14 +524,13 @@ const modelSuggestions = {
   Anthropic: ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'],
 };
 function fillModels(provider) { $('#models').innerHTML = (modelSuggestions[provider] || []).map(m => `<option value="${m}">`).join(''); }
-const setPill = (el, on) => { el.textContent = on ? 'saved' : 'not set'; el.className = 'pill ' + (on ? 'ok' : 'warn'); };
 
 async function loadSettings() {
   settings = await call('GET', '/api/settings');
   seg($('#provider-seg'), settings.AIProvider, fillModels); fillModels(settings.AIProvider);
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
-  setPill($('#key-state'), settings.HasApiKey); setPill($('#tmdb-state'), settings.HasTmdbApiKey);
+  $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
   $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
@@ -491,14 +543,12 @@ async function save(changes, note) {
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
-
 $('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
   AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
   ChatModel: $('#ChatModel').value, ClassificationModel: $('#ClassificationModel').value, CustomEndpoint: $('#CustomEndpoint').value }, $('#ai-note')); });
 $('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
 $('#rows-form').addEventListener('submit', e => { e.preventDefault(); save({
   BecauseRows: Number(segValue($('#because-seg'))), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value) }, $('#rows-note')); });
-
 $('#test-ai').addEventListener('click', async e => {
   const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';
   const r = await call('POST', '/api/settings/test-ai').catch(err => ({ Ok: false, Message: err.message }));
@@ -508,16 +558,28 @@ $('#test-ai').addEventListener('click', async e => {
 // ---------- drawer ----------
 function openDrawer(title) {
   $('#d-title').textContent = title; $('#d-body').innerHTML = '<p class="note">Loading…</p>'; $('#d-foot').innerHTML = '';
-  $('#scrim').classList.remove('hidden'); $('#drawer').classList.remove('hidden');
+  $('#scrim').classList.remove('hidden'); $('#drawer').classList.remove('hidden'); document.body.style.overflow = 'hidden';
 }
-function closeDrawer() { $('#scrim').classList.add('hidden'); $('#drawer').classList.add('hidden'); }
+function closeDrawer() { $('#scrim').classList.add('hidden'); $('#drawer').classList.add('hidden'); document.body.style.overflow = ''; }
 $('#d-close').addEventListener('click', closeDrawer);
 $('#scrim').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 const posterUrl = id => `/api/movies/${id}/poster`;
-const poster = (id, cls = '') => `<div class="poster ${cls}" style="background-image:url('${posterUrl(id)}')"></div>`;
+// Poster, or the title in type when Jellyfin has no image
+function poster(id, title = '', flag = '') {
+  return `<div class="poster" data-poster="${id}" data-title="${esc(title)}" style="background-image:url('${posterUrl(id)}')">${flag}</div>`;
+}
+function checkPosters(root) {
+  $$('[data-poster]', root).forEach(p => {
+    const img = new Image();
+    img.onerror = () => {
+      p.style.backgroundImage = 'none'; p.classList.add('blank');
+      if (!p.querySelector('.ptitle')) p.insertAdjacentHTML('afterbegin', `<span class="ptitle">${esc(p.dataset.title || '')}</span>`);
+    };
+    img.src = posterUrl(p.dataset.poster);
+  });
+}
 const starText = r => r == null ? '' : '★'.repeat(Math.floor(r)) + (r % 1 ? '½' : '');
-const day = d => d ? new Date(d).toLocaleDateString() : '';
 
 // ---------- movies ----------
 let vocab = null, moviePage = 0, movieTimer = null;
@@ -525,8 +587,7 @@ const PAGE = 60;
 async function ensureVocab() {
   if (vocab) return vocab;
   vocab = await call('GET', '/api/vocabulary');
-  const sel = $('#m-tag');
-  sel.innerHTML = '<option value="">Any tag</option>'
+  $('#m-tag').innerHTML = '<option value="">Any tag</option>'
     + `<optgroup label="Subcategories">${vocab.Subcategories.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>`
     + `<optgroup label="Moods">${vocab.Moods.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>`;
   return vocab;
@@ -539,13 +600,13 @@ async function fillLibraryFilter() {
     sel.value = keep;
   } catch {}
 }
-function movieCard(m) {
-  const badge = !m.Tagged ? '<span class="pill warn badge">not tagged yet</span>' : m.Edited ? '<span class="pill ok badge">edited</span>' : m.Excluded ? '<span class="pill badge">library off</span>' : '';
-  const tags = [...m.Subcategories, ...m.Moods].slice(0, 3).join(' · ');
+function filmCard(m) {
+  const flag = !m.Tagged ? '<div class="flag amber">Not described yet</div>' : m.Edited ? '<div class="flag">Edited by you</div>' : m.Excluded ? '<div class="flag">Library off</div>' : '';
   const el = document.createElement('button');
-  el.className = 'movie';
-  el.innerHTML = `<div class="poster" style="background-image:url('${posterUrl(m.Id)}')">${badge}</div>
-    <div class="meta-box"><div class="t">${esc(m.Title)}</div><div class="y">${m.Year ?? ''}</div><div class="mini">${esc(tags)}</div></div>`;
+  el.className = 'film';
+  el.innerHTML = `${poster(m.Id, m.Title, flag)}
+    <div><div class="t">${esc(m.Title)} <span class="y">${m.Year ?? ''}</span></div>
+    <div class="m">${esc([...m.Subcategories, ...m.Moods].slice(0, 3).join(', '))}</div></div>`;
   el.addEventListener('click', () => openMovie(m.Id));
   return el;
 }
@@ -555,9 +616,11 @@ async function loadMovies(reset) {
   if ($('#m-lib').value) params.set('library', $('#m-lib').value);
   const r = await call('GET', '/api/movies?' + params);
   const box = $('#movies'); if (reset) box.innerHTML = '';
-  r.Items.forEach(m => box.appendChild(movieCard(m)));
+  const before = box.children.length;
+  r.Items.forEach(m => box.appendChild(filmCard(m)));
+  checkPosters({ querySelectorAll: s => [...box.children].slice(before).flatMap(c => [...c.querySelectorAll(s)]) });
   $('#m-count').textContent = r.Total === 1 ? '1 movie' : `${r.Total.toLocaleString()} movies`;
-  if (!r.Total) box.innerHTML = '<div class="empty" style="grid-column:1/-1">No movies match.</div>';
+  if (!r.Total) box.innerHTML = '<div class="empty" style="grid-column:1/-1">Nothing matches.</div>';
   $('#m-more').classList.toggle('hidden', (moviePage + 1) * PAGE >= r.Total);
 }
 seg($('#m-state'), 'all', () => loadMovies(true));
@@ -565,10 +628,10 @@ $('#m-q').addEventListener('input', () => { clearTimeout(movieTimer); movieTimer
 for (const id of ['#m-tag', '#m-lib', '#m-sort']) $(id).addEventListener('change', () => loadMovies(true));
 $('#m-more').addEventListener('click', () => { moviePage++; loadMovies(false); });
 
-function chipEditor(selected, options, label) {
+function tagEditor(selected, options, label) {
   const box = document.createElement('div');
   const draw = () => {
-    box.innerHTML = `<div class="chips">${selected.map((v, i) => `<span class="chip on">${esc(v)}<button class="rm" data-i="${i}" title="Remove">×</button></span>`).join('')}
+    box.innerHTML = `<div class="tags">${selected.map((v, i) => `<span class="tag">${esc(v)}<button class="rm" data-i="${i}" title="Remove ${esc(v)}">×</button></span>`).join('')}
       <select class="add-select"><option value="">+ ${esc(label)}</option>${options.filter(o => !selected.includes(o)).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>`;
     $$('.rm', box).forEach(b => b.onclick = () => { selected.splice(Number(b.dataset.i), 1); draw(); });
     $('select', box).onchange = e => { if (e.target.value) { selected.push(e.target.value); draw(); } };
@@ -580,36 +643,37 @@ const options = (list, value) => `<option value="">–</option>` + list.map(o =>
 
 async function openMovie(id) {
   await ensureVocab();
-  openDrawer('Movie');
+  openDrawer('');
   const d = await call('GET', `/api/movies/${id}`);
   const m = d.Summary;
   $('#d-title').textContent = `${m.Title}${m.Year ? ' (' + m.Year + ')' : ''}`;
   const subs = [...m.Subcategories], moods = [...m.Moods];
-  const status = !m.Tagged ? '<span class="pill warn">not tagged yet</span>' : m.Edited ? '<span class="pill ok">edited by you; the AI leaves it alone</span>' : '<span class="pill">tagged by the AI</span>';
+  const who = !m.Tagged ? 'Not described yet' : m.Edited ? 'Described by you; the AI leaves it alone' : 'Described by the AI';
   $('#d-body').innerHTML = `
-    <div class="movie-top">${poster(m.Id)}
+    <div class="film-top">${poster(m.Id, m.Title)}
       <div class="facts">
-        <div>${status}</div>
-        ${d.Director ? `<div>Director <b>${esc(d.Director)}</b></div>` : ''}
+        <div class="label" style="margin-bottom:6px">${who}</div>
+        ${d.Director ? `<div>Directed by <b>${esc(d.Director)}</b></div>` : ''}
         ${d.Cast ? `<div>With <b>${esc(d.Cast)}</b></div>` : ''}
-        <div>Library <b>${esc(m.Libraries.join(', ') || '–')}</b>${m.Excluded ? ' · <span class="pill">switched off</span>' : ''}</div>
-        <div>Rating <b>${m.Acclaim || '–'}</b> / 10${d.CommunityRating ? ` · audience ${d.CommunityRating.toFixed(1)}` : ''}${d.CriticRating ? ` · critics ${Math.round(d.CriticRating)}%` : ''}</div>
+        ${m.Libraries.filter(l => l !== '?').length ? `<div>In <b>${esc(m.Libraries.filter(l => l !== '?').join(', '))}</b>${m.Excluded ? ' (switched off)' : ''}</div>` : ''}
+        <div>Rated <b>${m.Acclaim || '–'}</b> of 10${d.CommunityRating ? ` · audience ${d.CommunityRating.toFixed(1)}` : ''}${d.CriticRating ? ` · critics ${Math.round(d.CriticRating)}%` : ''}</div>
         ${d.Plot ? `<p class="plot">${esc(d.Plot)}</p>` : ''}
       </div>
     </div>
-    <div class="field"><label>Subcategories</label><div id="e-subs"></div><div class="help">The first one counts most.</div></div>
-    <div class="field"><label>Moods</label><div id="e-moods"></div></div>
-    <div class="field"><label for="e-themes">Themes</label><input type="text" id="e-themes" value="${esc(d.Themes.join(', '))}"><div class="help">Free text, separated by commas.</div></div>
-    <div class="grid2" style="margin-top:16px">
-      <div class="field"><label for="e-narr">Storytelling</label><select id="e-narr">${options(vocab.NarrativeStyles, d.NarrativeStyle)}</select></div>
-      <div class="field"><label for="e-acc">Accessibility</label><select id="e-acc">${options(vocab.Accessibility, d.Accessibility)}</select></div>
-      <div class="field"><label for="e-int">Intensity</label><select id="e-int">${options(vocab.Intensity, d.Intensity)}</select></div>
-      <div class="field"><label for="e-score">Critical acclaim (AI's estimate, 1–10)</label><input type="number" id="e-score" min="0" max="10" value="${d.CriticalAcclaimScore || ''}"></div>
+    <div class="edit-row"><label class="field-label">Subcategories</label><div id="e-subs"></div><div class="sub">The first one counts most.</div></div>
+    <div class="edit-row"><label class="field-label">Moods</label><div id="e-moods"></div></div>
+    <div class="edit-row"><label class="field-label" for="e-themes">Themes</label><input type="text" id="e-themes" value="${esc(d.Themes.join(', '))}"><div class="sub">Free text, separated by commas.</div></div>
+    <div class="edit-row two">
+      <div><label class="field-label" for="e-narr">Storytelling</label><select id="e-narr">${options(vocab.NarrativeStyles, d.NarrativeStyle)}</select></div>
+      <div><label class="field-label" for="e-acc">Accessibility</label><select id="e-acc">${options(vocab.Accessibility, d.Accessibility)}</select></div>
+      <div><label class="field-label" for="e-int">Intensity</label><select id="e-int">${options(vocab.Intensity, d.Intensity)}</select></div>
+      <div><label class="field-label" for="e-score">Critics' standing, 1–10</label><input type="number" id="e-score" min="0" max="10" value="${d.CriticalAcclaimScore || ''}"></div>
     </div>
-    ${d.Keywords.length ? `<div class="field"><label>TMDB keywords</label><div class="chips">${d.Keywords.map(k => `<span class="chip">${esc(k)}</span>`).join('')}</div></div>` : ''}`;
-  $('#e-subs').appendChild(chipEditor(subs, vocab.Subcategories, 'subcategory'));
-  $('#e-moods').appendChild(chipEditor(moods, vocab.Moods, 'mood'));
-  $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Tag again with AI</button><span class="note" id="e-note"></span>`;
+    ${d.Keywords.length ? `<div class="edit-row"><label class="field-label">TMDB keywords</label><div class="tags">${d.Keywords.map(k => `<span class="tag">${esc(k)}</span>`).join('')}</div></div>` : ''}`;
+  checkPosters($('#d-body'));
+  $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
+  $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));
+  $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button><span class="note" id="e-note"></span>`;
   $('#e-save').onclick = async () => {
     try {
       await call('PUT', `/api/movies/${id}`, {
@@ -618,63 +682,71 @@ async function openMovie(id) {
         NarrativeStyle: $('#e-narr').value, Accessibility: $('#e-acc').value, Intensity: $('#e-int').value,
         CriticalAcclaimScore: Number($('#e-score').value) || 0,
       });
-      toast('Saved. The AI will leave these tags alone.'); openMovie(id); refreshMovieList();
+      toast('Saved. The AI will leave it alone.'); openMovie(id); refreshMovieList();
     } catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; }
   };
   $('#e-retag').onclick = async e => {
-    e.target.disabled = true; $('#e-note').className = 'note'; $('#e-note').textContent = 'Asking the AI… (free models can take a few minutes)';
-    try { await call('POST', `/api/movies/${id}/retag`); toast('Tagged again by the AI'); openMovie(id); refreshMovieList(); }
+    e.target.disabled = true; $('#e-note').className = 'note'; $('#e-note').textContent = 'Asking the AI… free models can take a few minutes.';
+    try { await call('POST', `/api/movies/${id}/retag`); toast('Described again by the AI'); openMovie(id); refreshMovieList(); }
     catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; e.target.disabled = false; }
   };
 }
 function refreshMovieList() { if (!$('section[data-page="movies"]').classList.contains('hidden')) loadMovies(true); }
 
-// ---------- one person: history, Letterboxd, rows ----------
+// ---------- one person: Letterboxd, history, rows ----------
 async function openUser(id, name, tab = 'letterboxd') {
   openDrawer(name);
   const d = await call('GET', `/api/users/${id}/details`);
   const lb = d.Letterboxd;
   const counted = d.History.filter(h => h.Counted).length;
   $('#d-body').innerHTML = `
-    <div class="tabs"><button data-t="letterboxd">Letterboxd</button><button data-t="history">Watch history <span class="note">${counted}/${d.History.length}</span></button><button data-t="rows">Rows</button><button data-t="brief">Description</button></div>
+    <div class="tabs"><button data-t="letterboxd">Letterboxd</button><button data-t="history">Watch history<sup>${counted}/${d.History.length}</sup></button><button data-t="rows">Rows<sup>${d.Rows.length}</sup></button><button data-t="brief">Understood as</button></div>
     <div data-tab="letterboxd">
-      <div class="card">
-        <div class="row" style="display:flex;align-items:center;gap:12px"><div style="flex:1"><b>Use Letterboxd for ${esc(name)}</b><div class="help">Watched films are never recommended; ratings shape taste; watchlist films move up.</div></div>
-          <label class="switch"><input type="checkbox" id="lb-use" ${lb.Use ? 'checked' : ''}><span></span></label></div>
-        <div class="field" style="margin-top:16px"><label for="lb-user">Letterboxd username</label>
-          <input type="text" id="lb-user" value="${esc(lb.Username || '')}" placeholder="e.g. dave">
-          <div class="help">Their public diary (recent watches and ratings) is read twice a day.</div></div>
-        <div class="field"><label>Full history and watchlist</label>
-          <div class="actions" style="margin-top:0"><span class="btn file-btn">Upload Letterboxd export<input type="file" id="lb-file" accept=".zip,.csv"></span><span class="note" id="lb-up"></span></div>
-          <div class="help">On letterboxd.com: Settings → Data → Export your data, then upload the ZIP here. The diary feed only covers recent films; the export has everything, including the watchlist.</div></div>
-        <details class="field" style="margin-top:14px"><summary class="note" style="cursor:pointer">JSON links (as in the old plugin)</summary>
-          <div class="field" style="margin-top:12px"><label for="lb-wl">Watchlist JSON link</label><input type="text" id="lb-wl" value="${esc(lb.WatchlistUrl || '')}"></div>
-          <div class="field"><label for="lb-rt">Ratings JSON link</label><input type="text" id="lb-rt" value="${esc(lb.RatingsUrl || '')}"></div>
-        </details>
-        <div class="actions"><button class="btn primary" id="lb-save">Save and read now</button><button class="btn ghost" id="lb-clear">Forget all Letterboxd data</button></div>
-        <p class="note" style="margin:12px 0 0">${lb.Status ? esc(lb.Status) + ' · ' + ago(lb.Synced) : 'Nothing read yet.'}</p>
+      <div class="settings">
+        <div class="setting">
+          <div><h3>Use Letterboxd</h3><p class="why">Films watched there are never recommended, ratings shape taste, and watchlist films move up.</p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="lb-use" ${lb.Use ? 'checked' : ''}><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>Username</h3><p class="why">Their public diary, read twice a day. It only reaches back to recent films.</p></div>
+          <div class="control"><input type="text" id="lb-user" value="${esc(lb.Username || '')}" placeholder="letterboxd.com/…"></div>
+        </div>
+        <div class="setting">
+          <div><h3>Everything, including the watchlist</h3><p class="why">On letterboxd.com: Settings → Data → Export your data. Upload the ZIP here; it replaces the previous upload.</p></div>
+          <div class="control"><div><span class="btn file-btn">Upload export<input type="file" id="lb-file" accept=".zip,.csv"></span></div><span class="note" id="lb-up"></span></div>
+        </div>
+        <div class="setting">
+          <div><h3>JSON links</h3><p class="why">Only if you used them with the old plugin.</p></div>
+          <div class="control"><input type="text" id="lb-wl" value="${esc(lb.WatchlistUrl || '')}" placeholder="Watchlist JSON link"><input type="text" id="lb-rt" value="${esc(lb.RatingsUrl || '')}" placeholder="Ratings JSON link"></div>
+        </div>
+        <div class="setting-foot"><button class="btn primary" id="lb-save">Save and read now</button><button class="btn quiet" id="lb-clear">Forget all Letterboxd data</button>
+          <span class="note">${lb.Status ? esc(lb.Status) + ' · ' + ago(lb.Synced) : 'Nothing read yet.'}</span></div>
       </div>
       ${listTable('Watched', lb.Watched, true)}
       ${listTable('Watchlist', lb.Watchlist, false)}
     </div>
     <div data-tab="history" class="hidden">
-      <p class="note">Movies ${esc(name)} finished in Jellyfin, newest first. Greyed out = before the "count from" date, so not used for taste.</p>
-      ${d.History.length ? `<table class="list"><tr><th>Movie</th><th>Last watched</th><th></th></tr>${d.History.map(h => `<tr class="${h.Counted ? '' : 'dim'}"><td>${esc(h.Title)} <span class="note">${h.Year ?? ''}</span></td><td>${day(h.LastPlayed)}</td><td>${h.Counted ? '<span class="pill ok">counts</span>' : '<span class="pill">ignored</span>'}</td></tr>`).join('')}</table>` : '<p class="empty">Nothing watched yet.</p>'}
+      <p class="note" style="margin-top:0">Films ${esc(name)} finished in Jellyfin, newest first. Faded ones were watched before the "count from" date and don't shape taste.</p>
+      ${d.History.length ? `<table class="list"><tr><th>Film</th><th>Last watched</th><th></th></tr>${d.History.map(h => `<tr class="${h.Counted ? '' : 'dim'}"><td>${esc(h.Title)} <span class="y">${h.Year ?? ''}</span></td><td>${day(h.LastPlayed)}</td><td class="note">${h.Counted ? 'counts' : 'ignored'}</td></tr>`).join('')}</table>` : '<p class="empty">Nothing watched yet.</p>'}
     </div>
     <div data-tab="rows" class="hidden">
-      ${d.Rows.length ? d.Rows.map(r => `<div class="row-title">${esc(r.Name)}</div><div class="row-strip">${r.Movies.map(m => `<div title="${esc(m.Title)}">${poster(m.Id)}</div>`).join('')}</div>`).join('') : '<p class="empty">No rows yet. They appear after the first picks.</p>'}
+      ${d.Rows.length ? d.Rows.map(r => `<div class="row-name">${esc(r.Name)}</div><div class="strip">${r.Movies.map(m => `<div title="${esc(m.Title)}">${poster(m.Id, m.Title)}</div>`).join('')}</div>`).join('') : '<p class="empty">No rows yet.</p>'}
     </div>
     <div data-tab="brief" class="hidden">
-      ${d.BriefTags ? chips(d.BriefTags) : '<p class="empty">No description yet, or it hasn\'t been read by the AI yet.</p>'}
-      ${d.BriefTags && d.BriefTags.Themes?.length ? `<div class="help" style="margin-top:12px">Themes</div><div class="chips">${d.BriefTags.Themes.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
-      ${d.BriefTags && d.BriefTags.Keywords?.length ? `<div class="help" style="margin-top:12px">Keywords</div><div class="chips">${d.BriefTags.Keywords.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
+      ${d.BriefTags ? `<p class="note" style="margin-top:0">How the AI translated what you wrote into the vocabulary it uses for movies.</p>
+        <div class="edit-row"><label class="field-label">Likes</label>${tagList([...(d.BriefTags.Subcategories || []), ...(d.BriefTags.Moods || [])])}</div>
+        ${[...(d.BriefTags.AvoidSubcategories || []), ...(d.BriefTags.AvoidMoods || [])].length ? `<div class="edit-row"><label class="field-label">Avoids</label>${tagList([...(d.BriefTags.AvoidSubcategories || []), ...(d.BriefTags.AvoidMoods || [])], true)}</div>` : ''}
+        ${d.BriefTags.Themes?.length ? `<div class="edit-row"><label class="field-label">Themes</label>${tagList(d.BriefTags.Themes)}</div>` : ''}
+        ${d.BriefTags.Keywords?.length ? `<div class="edit-row"><label class="field-label">Keywords</label>${tagList(d.BriefTags.Keywords)}</div>` : ''}`
+        : '<p class="empty">Nothing written yet, or not read by the AI yet.</p>'}
     </div>`;
+  checkPosters($('#d-body'));
   const show = t => { $$('.tabs button', $('#d-body')).forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('[data-tab]', $('#d-body')).forEach(p => p.classList.toggle('hidden', p.dataset.tab !== t)); };
   $$('.tabs button', $('#d-body')).forEach(b => b.onclick = () => show(b.dataset.t)); show(tab);
 
   const saveLb = async () => call('PUT', `/api/users/${id}/letterboxd`, { Use: $('#lb-use').checked, Username: $('#lb-user').value, WatchlistUrl: $('#lb-wl').value, RatingsUrl: $('#lb-rt').value });
   $('#lb-save').onclick = async e => { e.target.disabled = true; try { await saveLb(); toast('Letterboxd read'); openUser(id, name); } catch (err) { toast(err.message); e.target.disabled = false; } };
-  $('#lb-use').onchange = async () => { await saveLb(); toast($('#lb-use').checked ? 'Letterboxd on' : 'Letterboxd off for picks'); };
+  $('#lb-use').onchange = async () => { await saveLb(); toast($('#lb-use').checked ? 'Letterboxd used for picks' : 'Letterboxd ignored for picks'); };
   $('#lb-clear').onclick = async () => { if (!confirm(`Forget all Letterboxd data for ${name}?`)) return; await call('DELETE', `/api/users/${id}/letterboxd`); toast('Forgotten'); openUser(id, name); };
   $('#lb-file').onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
@@ -685,13 +757,13 @@ async function openUser(id, name, tab = 'letterboxd') {
     else { let m = res.statusText; try { m = (await res.json()).detail || m; } catch {} $('#lb-up').textContent = m; $('#lb-up').className = 'note err'; }
   };
 }
-
+const tagList = (list, avoid = false) => `<div class="tags">${list.map(t => `<span class="tag ${avoid ? 'avoid' : ''}">${esc(t)}</span>`).join('')}</div>`;
 function listTable(title, films, watched) {
   if (!films.length) return '';
   const inLib = films.filter(f => f.ItemId).length;
-  return `<div class="row-title" style="margin-top:20px">${title} <span class="note">${films.length} · ${inLib} in your library</span></div>
+  return `<h3 class="block-title">${title} <span class="note">${films.length} · ${inLib} in your library</span></h3>
     <table class="list"><tr><th>Film</th>${watched ? '<th>Rating</th><th>Watched</th>' : ''}<th>In your library</th></tr>
-    ${films.slice(0, 400).map(f => `<tr class="${f.ItemId ? '' : 'dim'}"><td>${esc(f.Title)} <span class="note">${f.Year ?? ''}</span></td>${watched ? `<td class="stars">${starText(f.Rating)}</td><td>${day(f.Date)}</td>` : ''}<td>${f.ItemId ? esc(f.InLibrary) : '–'}</td></tr>`).join('')}
+    ${films.slice(0, 400).map(f => `<tr class="${f.ItemId ? '' : 'dim'}"><td>${esc(f.Title)} <span class="y">${f.Year ?? ''}</span></td>${watched ? `<td class="stars">${starText(f.Rating)}</td><td>${day(f.Date)}</td>` : ''}<td>${f.ItemId ? 'yes' : '–'}</td></tr>`).join('')}
     </table>${films.length > 400 ? `<p class="note">and ${films.length - 400} more</p>` : ''}`;
 }
 
@@ -700,12 +772,12 @@ async function loadLibraries() {
   const box = $('#libraries');
   try {
     const libs = await call('GET', '/api/libraries');
-    if (!libs.length) { box.innerHTML = '<div class="empty">No movie libraries found in Jellyfin.</div>'; return; }
+    if (!libs.length) { box.innerHTML = '<div class="empty">No movie libraries in Jellyfin.</div>'; return; }
     box.innerHTML = libs.map(l => `
       <div class="lib">
-        <div class="grow"><div class="lib-name">${esc(l.Name)}</div><div class="lib-sub">${l.Movies ? l.Movies + ' movies' : 'movies counted after the next library sync'}</div></div>
-        <span class="pill ${l.Enabled ? 'ok' : ''}">${l.Enabled ? 'Recommended from' : 'Off'}</span>
-        <label class="switch"><input type="checkbox" data-id="${l.Id}" ${l.Enabled ? 'checked' : ''}><span></span></label>
+        <div class="grow"><div class="lib-name">${esc(l.Name)}</div><div class="note">${l.Movies ? l.Movies.toLocaleString() + ' movies' : 'Counted after the next library sync'}</div></div>
+        <span class="state"><span class="dot ${l.Enabled ? 'ok' : ''}"></span>${l.Enabled ? 'Recommended from' : 'Off'}</span>
+        <label class="switch" title="Recommend from ${esc(l.Name)}"><input type="checkbox" data-id="${l.Id}" ${l.Enabled ? 'checked' : ''}><span></span></label>
       </div>`).join('');
     $$('input', box).forEach(i => i.addEventListener('change', async () => {
       const excluded = $$('input', box).filter(x => !x.checked).map(x => x.dataset.id);
@@ -714,56 +786,50 @@ async function loadLibraries() {
   } catch (err) { box.innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
 }
 
-// ---------- users ----------
-function chips(t) {
-  if (!t) return '';
-  const like = [...(t.Subcategories || []), ...(t.Moods || [])].map(x => `<span class="chip">${esc(x)}</span>`);
-  const avoid = [...(t.AvoidSubcategories || []), ...(t.AvoidMoods || [])].map(x => `<span class="chip avoid">no ${esc(x)}</span>`);
-  return like.length + avoid.length ? `<div class="help" style="margin-top:10px">Understood as</div><div class="chips">${like.join('')}${avoid.join('')}</div>` : '';
+// ---------- people ----------
+function personState(u) {
+  if (!u.Enabled) return '';
+  if (u.Pending) return '<span class="state"><span class="dot busy"></span>Picking soon</span>';
+  if ((u.LastResult || '').startsWith('Failed')) return '<span class="state"><span class="dot err"></span>Last picks failed</span>';
+  if (u.LastRefresh) return `<span class="state"><span class="dot ok"></span>Picked ${ago(u.LastRefresh)}</span>`;
+  return '<span class="state"><span class="dot"></span>Waiting</span>';
 }
-
-function statusPill(u) {
-  if (!u.Enabled) return '<span class="pill">Off</span>';
-  if (u.Pending) return '<span class="pill warn">Picking soon</span>';
-  if ((u.LastResult || '').startsWith('Failed')) return '<span class="pill err">Failed</span>';
-  if (u.LastRefresh) return '<span class="pill ok">Up to date</span>';
-  return '<span class="pill warn">Waiting</span>';
-}
-
-function userCard(u) {
+function personRow(u) {
   const from = u.CountHistoryFrom ? u.CountHistoryFrom.slice(0, 10) : '';
+  const t = u.BriefTags;
+  const likes = t ? [...(t.Subcategories || []), ...(t.Moods || [])] : [];
+  const avoids = t ? [...(t.AvoidSubcategories || []), ...(t.AvoidMoods || [])] : [];
   const el = document.createElement('div');
-  el.className = 'card' + (u.Enabled ? '' : ' off');
+  el.className = 'person' + (u.Enabled ? '' : ' off');
   el.innerHTML = `
-    <div class="user-head">
-      <div class="avatar" style="background:${colorFor(u.Name)}">${esc(u.Name[0]?.toUpperCase())}</div>
-      <div class="grow"><div class="user-name">${esc(u.Name)}</div><div class="user-sub">${u.Enabled ? 'Last picks ' + ago(u.LastRefresh) : 'No recommendations'}</div></div>
-      ${statusPill(u)}
+    <div class="person-head">
+      <div class="person-name">${esc(u.Name)}</div>
+      ${personState(u)}
       <label class="switch" title="Recommendations for ${esc(u.Name)}"><input type="checkbox" class="enabled" ${u.Enabled ? 'checked' : ''}><span></span></label>
     </div>
-    <div class="user-body">
-      <div class="field">
-        <label>What does ${esc(u.Name)} like?</label>
-        <textarea class="brief" placeholder="e.g. Loves slow-burn Korean thrillers and heist movies, lately into 70s sci-fi. No musicals, nothing too gory.">${esc(u.Brief)}</textarea>
-        ${chips(u.BriefTags)}
-      </div>
-      <div class="field">
-        <label>Watch history that counts</label>
-        <div class="history">
-          <div class="seg hist"><button type="button" data-v="all">All of it</button><button type="button" data-v="from">Only from a date</button></div>
-          <input type="date" class="from ${from ? '' : 'hidden'}" value="${from || today()}">
+    <div class="person-body">
+      <div>
+        <label class="field-label">What does ${esc(u.Name)} like?</label>
+        <textarea class="brief" placeholder="Loves slow-burn Korean thrillers and heist films, lately into 70s sci-fi. No musicals, nothing too gory.">${esc(u.Brief)}</textarea>
+        ${likes.length + avoids.length ? `<div class="understood"><span class="label">Understood as</span>${tagList(likes)}${avoids.length ? tagList(avoids, true) : ''}</div>` : ''}
+        <div class="actions">
+          <button class="btn primary save">Save</button>
+          <button class="btn refresh">Pick again now</button>
+          <button class="btn quiet details">Letterboxd, history &amp; rows</button>
         </div>
-        <div class="help">On a shared TV, older history may be someone else's. Watches after the date always count.</div>
       </div>
-      <div class="actions">
-        <button class="btn primary save">Save</button>
-        <button class="btn refresh">Pick again now</button>
-        <button class="btn details">Details &amp; Letterboxd</button>
-        ${u.LastResult ? `<span class="note">${esc(u.LastResult)}</span>` : ''}
+      <div class="side">
+        <div>
+          <label class="field-label">Watch history that counts</label>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <div class="seg hist"><button type="button" data-v="all">All of it</button><button type="button" data-v="from">From a date</button></div>
+            <input type="date" class="from ${from ? '' : 'hidden'}" value="${from || today()}">
+          </div>
+          <div class="sub">On a shared TV, older history may be someone else's. Watches after the date always count.</div>
+        </div>
+        ${u.LastResult ? `<div class="last">${esc(u.LastResult)}</div>` : ''}
       </div>
-
     </div>`;
-
   seg($('.hist', el), from ? 'from' : 'all', v => $('.from', el).classList.toggle('hidden', v !== 'from'));
   const persist = async () => {
     const mode = segValue($('.hist', el));
@@ -778,17 +844,20 @@ function userCard(u) {
   $('.details', el).addEventListener('click', () => openUser(u.UserId, u.Name));
   return el;
 }
-
 async function loadUsers() {
   const users = await call('GET', '/api/users');
-  $('#count-users').textContent = users.filter(u => u.Enabled).length + '/' + users.length;
+  const on = users.filter(u => u.Enabled), off = users.filter(u => !u.Enabled);
+  $('#count-users').textContent = users.length ? `${on.length}/${users.length}` : '';
   const box = $('#users'); box.innerHTML = '';
-  if (!users.length) { box.innerHTML = '<div class="card empty">Users appear here after the first sync with Jellyfin.</div>'; return; }
-  // People with recommendations first
-  users.sort((a, b) => (b.Enabled - a.Enabled) || a.Name.localeCompare(b.Name)).forEach(u => box.appendChild(userCard(u)));
+  const rest = $('#users-off'); rest.innerHTML = '';
+  if (!users.length) { box.innerHTML = '<div class="empty">People appear here after the first sync with Jellyfin.</div>'; $('#others').classList.add('hidden'); return; }
+  if (!on.length) box.innerHTML = '<div class="empty">Nobody gets recommendations yet. Switch someone on below.</div>';
+  on.forEach(u => box.appendChild(personRow(u)));
+  off.forEach(u => rest.appendChild(personRow(u)));
+  $('#others').classList.toggle('hidden', !off.length);
+  $('#others-label').textContent = `${off.length} ${off.length === 1 ? 'person' : 'people'} without recommendations`;
+  if (!on.length) $('#others').open = true;
 }
-
-seg($('#theme-seg'), theme, v => { applyTheme(v); try { localStorage.setItem('pickyfin-theme', v); } catch {} });
 
 // ---------- status ----------
 async function loadStatus() {
@@ -796,10 +865,11 @@ async function loadStatus() {
     const s = await call('GET', '/api/status');
     const busy = s.State !== 'Idle';
     const wait = s.Waiting ? ` · ${Math.floor(s.Waiting / 60)}:${String(s.Waiting % 60).padStart(2, '0')}` : '';
-    const tagging = busy && s.Movies && s.Classified < s.Movies ? ` · ${s.Classified} of ${s.Movies} tagged` : '';
-    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + tagging : `Idle · ${s.Classified} of ${s.Movies} movies tagged`;
+    const progress = busy && s.Movies && s.Classified < s.Movies ? ` · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} described` : '';
+    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + progress : `Idle · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} movies described`;
     $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : busy ? 'busy' : 'ok');
-    $('#lib-count').textContent = `${s.Classified} of ${s.Movies}`;
+    $('#lib-count').textContent = s.Classified.toLocaleString();
+    $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described`;
     $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';
     $('#lib-synced').textContent = ago(s.LibrarySynced);
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
