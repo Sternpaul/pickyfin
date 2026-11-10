@@ -187,6 +187,20 @@ public sealed class RefreshService : BackgroundService
                 _logger.LogInformation("New user {User}", user.Name);
             }
         }
+
+        // Users deleted in Jellyfin: forget them and everything kept for them (their playlists went with them).
+        // Never on an empty list: that's a failed read, not everyone deleted.
+        var current = jellyfinUsers.Select(u => u.Id).ToHashSet();
+        var gone = jellyfinUsers.Count == 0 ? new() : known.Values.Where(u => !current.Contains(u.UserId)).ToList();
+        if (gone.Count > 0)
+        {
+            var ids = gone.Select(u => u.UserId).ToList();
+            db.Users.RemoveRange(gone);
+            db.Playlists.RemoveRange(db.Playlists.Where(p => ids.Contains(p.UserId)));
+            db.Pins.RemoveRange(db.Pins.Where(p => ids.Contains(p.UserId)));
+            db.Letterboxd.RemoveRange(db.Letterboxd.Where(f => ids.Contains(f.UserId)));
+            _logger.LogInformation("Removed user(s) deleted in Jellyfin: {Users}", string.Join(", ", gone.Select(u => u.Name)));
+        }
         await db.SaveChangesAsync(cancellationToken);
     }
 
