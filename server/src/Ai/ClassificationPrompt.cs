@@ -18,7 +18,7 @@ namespace Pickyfin.Server.Ai
             string.IsNullOrWhiteSpace(text) ? "" : text.Length <= max ? text : text[..max] + "…";
 
         /// <summary>Everything we know about a movie, compact, for a prompt.</summary>
-        public static object Facts(MovieMetadata m, int index, int plotChars = 900) => new
+        public static object Facts(MovieMetadata m, int index, int plotChars = 900, bool withReview = false) => new
         {
             Ref = Ref(index),
             m.Title,
@@ -31,14 +31,19 @@ namespace Pickyfin.Server.Ai
             Keywords = m.KeywordSet.Items.Count > 0 ? m.KeywordSet.Items.Take(15) : null,
             Plot = Cut(m.Plot, plotChars),
             FromTheWeb = string.IsNullOrWhiteSpace(m.WebNotes) ? null : Cut(m.WebNotes, 2500),
+            // A flagged film being decided again: both sides of the argument
+            EarlierTags = withReview && m.Issue is not null && m.IsClassified ? new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items } : null,
+            Concerns = withReview && m.Issue is not null ? m.Issue.Split('\n') : null,
         };
 
         private static readonly JsonSerializerOptions Compact = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 
         public static string Build(IList<MovieMetadata> movies)
         {
-            var moviesJson = JsonSerializer.Serialize(movies.Select((m, i) => Facts(m, i)), Compact);
+            var moviesJson = JsonSerializer.Serialize(movies.Select((m, i) => Facts(m, i, withReview: true)), Compact);
             return $@"You classify movies for a recommendation engine. Use what you know about each film together with the facts given (genres, keywords, plot, and text from the web when present). The facts are reliable; don't contradict them.
+
+Some movies were tagged before and questioned. They carry ""EarlierTags"" (what an AI said before) and ""Concerns"" (objections from a reviewing AI or an automatic genre check). Both are arguments, not facts, and either side can be wrong. Weigh them against the facts and the web text, keep earlier tags that fit, replace the ones that don't, and make your own decision.
 
 Return a JSON object with a ""movies"" array, one entry per input movie, with these fields:
 - ""Ref"": copy the input Ref exactly (""m1"", ""m2"", …).

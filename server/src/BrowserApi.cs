@@ -118,6 +118,14 @@ public static class BrowserApi
     };
 
     private static int _lookupAllRunning;
+    // Which films "look up all" still has to do, and which it's on now (for the Issues page)
+    private static readonly object LookupGate = new();
+    private static HashSet<Guid> _lookupWaiting = new(), _lookupWorking = new();
+    private static int _lookupDone, _lookupTotal;
+    private static string? LookupState(Guid id)
+    {
+        lock (LookupGate) return _lookupWorking.Contains(id) ? "working" : _lookupWaiting.Contains(id) ? "waiting" : null;
+    }
 
     public static void MapBrowserApi(this RouteGroupBuilder admin)
     {
@@ -251,6 +259,7 @@ public static class BrowserApi
                     Lines = m.Issue!.Split('\n'),
                     LookedUp = m.WebNotes is not null,
                     FoundOnWeb = !string.IsNullOrEmpty(m.WebNotes),
+                    Lookup = _lookupAllRunning == 1 ? LookupState(m.ItemId) : null,
                 }),
                 Tagged = movies.Count(m => m.IsClassified),
                 Trust = movies.GroupBy(m => m.Trust).ToDictionary(g => g.Key, g => g.Count()),
@@ -260,6 +269,8 @@ public static class BrowserApi
                 s.CheckModel,
                 Web = new { Configured = WebLookup.Configured, s.WebLookupAuto, Budget = s.WebLookupBudget, usage.Lookups, usage.Dollars, usage.Today, PerDay = s.WebLookupsPerDay, Blocked = web.Blocked() },
                 LookingUpAll = _lookupAllRunning == 1,
+                LookupDone = _lookupDone,
+                LookupTotal = _lookupTotal,
             });
         });
 
@@ -295,7 +306,7 @@ public static class BrowserApi
             if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Problem("No AI key set (AI page).", statusCode: 400);
             if (web.Blocked() is { } why) return Results.Problem(why, statusCode: 400);
             if (Interlocked.Exchange(ref _lookupAllRunning, 1) == 1) return Results.Accepted();
-            var log = logs.CreateLogger("Issues");
+            var log = logs.CreateLogger("Pickyfin.Server.Issues");
             _ = Task.Run(async () =>
             {
                 var ct = life.ApplicationStopping;
@@ -303,7 +314,8 @@ public static class BrowserApi
                 {
                     var open = (await store.GetAllMoviesAsync(ct))
                         .Where(m => m.Issue is not null && !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
-                    log.LogInformation("Looking up {Count} flagged movie(s) on the web", open.Count);
+                    log.LogInformation("Look up all: {Count} flagged movie(s), {Batch} per AI call", open.Count, MovieClassifier.BatchSize);
+                    lock (LookupGate) { _lookupWaiting = open.Select(m => m.ItemId).ToHashSet(); _lookupWorking = new(); _lookupDone = 0; _lookupTotal = open.Count; }
                     // Look up 20, then describe those 20 in one AI call: no flood of requests to the provider
                     var done = 0;
                     var provider = ai.GetProvider();
@@ -316,17 +328,29 @@ public static class BrowserApi
                             if (web.Blocked() is { } stop) { log.LogInformation("Stopped: {Why}", stop); break; }
                             var batch = open.Skip(i).Take(size).ToList();
                             TaggingEta.BatchStarted(open.Count - i);
+                            lock (LookupGate) { _lookupWorking = batch.Select(m => m.ItemId).ToHashSet(); _lookupWaiting.ExceptWith(_lookupWorking); }
+                            Activity.Background = $"Look up all: movies {i + 1}–{i + batch.Count} of {open.Count}";
+                            log.LogInformation("Look up all: movies {Start}–{End} of {Total}", i + 1, i + batch.Count, open.Count);
+                            var before = done;
                             try { done += await classifier.LookUpAndTagManyAsync(provider, batch, ct); }
                             catch (Exception error) when (error is not OperationCanceledException)
                             {
-                                log.LogWarning("Lookup of movies {Start}–{End} failed: {Error}", i + 1, i + batch.Count, error.Message);
+                                log.LogWarning("Look up all: movies {Start}–{End} failed: {Error}", i + 1, i + batch.Count, error.Message);
                             }
+                            lock (LookupGate) { _lookupWorking = new(); _lookupDone = i + batch.Count; }
+                            if (done - before < batch.Count && web.Blocked() is null)
+                                log.LogWarning("Look up all: only {Looked} of {Count} looked up in this group", done - before, batch.Count);
                             TaggingEta.BatchDone();
                         }
                     }
-                    finally { TaggingEta.Stop(); }
+                    finally
+                    {
+                        TaggingEta.Stop();
+                        Activity.Background = null;
+                        lock (LookupGate) { _lookupWaiting = new(); _lookupWorking = new(); }
+                    }
                     var left = (await store.GetAllMoviesAsync(ct)).Count(m => m.Issue is not null);
-                    log.LogInformation("Looked up and tagged again: {Done}; {Left} issue(s) left", done, left);
+                    log.LogInformation("Look up all finished: {Done} looked up and described again; {Left} issue(s) left", done, left);
                 }
                 catch (OperationCanceledException) { }
                 finally { Interlocked.Exchange(ref _lookupAllRunning, 0); }

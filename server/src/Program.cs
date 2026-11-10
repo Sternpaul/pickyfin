@@ -145,7 +145,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     var (waitingFor, seconds) = Activity.Current;
     return Results.Ok(new
     {
-        State = waitingFor ?? worker.State,
+        State = waitingFor ?? Activity.Background ?? worker.State,
         Waiting = waitingFor is null ? 0 : seconds,
         TaggingLeft = TaggingEta.SecondsLeft,
         worker.LastError,

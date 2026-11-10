@@ -45,6 +45,18 @@ public class QualityTests
     }
 
     [Fact]
+    public void TheDeciderSeesEarlierTagsAndConcerns()
+    {
+        var flagged = M("Back to the Future Part III", new[] { "Adventure" }, new[] { "Western", "Time Travel" });
+        flagged.Issue = "Second opinion: \"Western\" doesn't fit";
+        var fresh = M("Heat", new[] { "Crime" }, new string[0]);
+        var prompt = Pickyfin.Server.Ai.ClassificationPrompt.Build(new List<MovieMetadata> { flagged, fresh });
+        Assert.Contains("\"EarlierTags\":{\"Subcategories\":[\"Western\",\"Time Travel\"]", prompt);
+        Assert.Contains("\"Concerns\":[", prompt);
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(prompt, "\"Concerns\":").Count);
+    }
+
+    [Fact]
     public void AnswersAreMatchedByRefNeverByPosition()
     {
         var batch = new List<MovieMetadata> { M("A", new string[0], new string[0]), M("B", new string[0], new string[0]) };

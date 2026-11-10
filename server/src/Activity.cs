@@ -13,6 +13,9 @@ public static class Activity
         return new End(what);
     }
 
+    /// <summary>A long run in the background ("Looking up flagged movies: 20 of 85"), shown between its waits.</summary>
+    public static string? Background { get; set; }
+
     public static (string? What, int Seconds) Current
     {
         get { lock (Gate) return (_what, _what is null ? 0 : (int)(DateTime.UtcNow - _since).TotalSeconds); }
