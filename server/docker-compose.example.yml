@@ -1,0 +1,17 @@
+# Copy next to your Jellyfin compose file, fill in the two values, then:
+#   docker compose up -d
+# Admin page: http://<server>:8097 (sign in with a Jellyfin administrator)
+services:
+  pickyfin-server:
+    image: ghcr.io/sternpaul/pickyfin-server:latest
+    container_name: pickyfin-server
+    restart: unless-stopped
+    ports:
+      - "8097:8097"
+    environment:
+      # How this container reaches Jellyfin (inside Docker: the service name)
+      JELLYFIN_URL: http://jellyfin:8096
+      # Jellyfin: Dashboard -> API Keys -> + (name it "Pickyfin")
+      JELLYFIN_API_KEY: ""
+    volumes:
+      - ./pickyfin-data:/data

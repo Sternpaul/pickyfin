@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pickyfin Server</title>
+<style>
+  :root {
+    --bg: #0e0f11; --sidebar: #131417; --panel: #17181b; --panel-2: #202227; --panel-3: #2a2c32;
+    --line: #2a2c31; --line-2: #383b42;
+    --text: #ececef; --muted: #9a9ca3; --faint: #6b6e76;
+    --accent: #00a4dc; --accent-2: #aa5cc3; --accent-ink: #00131b;
+    --ok: #3ecf8e; --warn: #f0b429; --err: #ef5f5f;
+    --radius: 12px;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 14.5px; line-height: 1.5; }
+  a { color: var(--accent); }
+  .hidden { display: none !important; }
+
+  /* layout */
+  .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; background: linear-gradient(to right, var(--sidebar) 232px, var(--bg) 232px); }
+  aside { background: var(--sidebar); border-right: 1px solid var(--line); padding: 20px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; font-weight: 650; font-size: 17px; letter-spacing: .2px; }
+  .mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent-2), var(--accent)); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; }
+  .nav { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; color: var(--muted); cursor: pointer; border: 0; background: none; font: inherit; text-align: left; width: 100%; }
+  .nav:hover { background: var(--panel-2); color: var(--text); }
+  .nav.active { background: var(--panel-3); color: var(--text); }
+  .nav svg { width: 18px; height: 18px; flex: none; opacity: .85; }
+  .nav .count { margin-left: auto; font-size: 12px; color: var(--faint); }
+  .aside-foot { margin-top: auto; padding: 10px; font-size: 12.5px; color: var(--faint); }
+  .aside-foot button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; font: inherit; }
+  main { padding: 28px 36px 80px; max-width: 1040px; width: 100%; }
+  .page-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+  .page-head h1 { font-size: 22px; margin: 0; font-weight: 650; }
+  .page-head p { margin: 4px 0 0; color: var(--muted); max-width: 640px; }
+  .page-head .spacer { flex: 1; }
+
+  /* status strip */
+  .strip { display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 22px; color: var(--muted); font-size: 13px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.busy { background: var(--accent); box-shadow: 0 0 0 4px rgba(0,164,220,.15); animation: pulse 1.6s infinite; }
+  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(0,164,220,0); } }
+
+  /* cards and fields */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 15.5px; margin: 0 0 4px; font-weight: 620; }
+  .card > .desc { color: var(--muted); margin: 0 0 16px; font-size: 13.5px; }
+  .field { margin-top: 16px; }
+  .field:first-of-type { margin-top: 0; }
+  .field > label { display: flex; align-items: center; gap: 8px; font-weight: 550; margin-bottom: 6px; }
+  .field .help { color: var(--faint); font-size: 12.5px; margin-top: 5px; }
+  textarea, input[type=text], input[type=password], input[type=date], input[type=number], select {
+    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px; font: inherit; outline: none; }
+  textarea:focus, input:focus, select:focus { border-color: var(--accent); }
+  textarea { min-height: 78px; resize: vertical; line-height: 1.5; }
+  input[type=date] { width: auto; color-scheme: dark; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid2 .field { margin-top: 0; }
+
+  /* buttons */
+  .btn { display: inline-flex; align-items: center; gap: 7px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 14px; font: inherit; font-weight: 550; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--panel-3); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.ghost { background: none; border-color: transparent; color: var(--muted); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+
+  /* switch */
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; background: var(--panel-3); border-radius: 999px; transition: .15s; cursor: pointer; border: 1px solid var(--line-2); }
+  .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #cfd0d4; border-radius: 50%; transition: .15s; }
+  .switch input:checked + span { background: var(--accent); border-color: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(16px); background: #fff; }
+
+  /* segmented */
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button { background: none; border: 0; color: var(--muted); padding: 6px 12px; border-radius: 7px; font: inherit; cursor: pointer; }
+  .seg button.on { background: var(--panel-3); color: var(--text); }
+
+  /* chips, pills */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
+  .chip.avoid { color: #f59a9a; border-color: #4d2b2b; background: #231718; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-weight: 500; }
+  .pill.ok { color: var(--ok); background: rgba(62,207,142,.1); } .pill.warn { color: var(--warn); background: rgba(240,180,41,.1); } .pill.err { color: var(--err); background: rgba(239,95,95,.1); }
+
+  /* users */
+  .user-head { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-weight: 650; color: #fff; flex: none; }
+  .user-name { font-weight: 620; font-size: 15.5px; }
+  .user-sub { color: var(--faint); font-size: 12.5px; }
+  .user-head .grow { flex: 1; min-width: 0; }
+  .user-body { margin-top: 16px; }
+  .card.off .user-body { display: none; }
+  .card.off { padding-bottom: 20px; }
+  .history { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .rows-preview { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .rows-preview summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; display: flex; gap: 8px; align-items: center; }
+  .rows-preview summary::before { content: "▸"; transition: .15s; }
+  .rows-preview[open] summary::before { transform: rotate(90deg); }
+  .row-title { font-weight: 600; margin: 14px 0 6px; font-size: 13.5px; }
+  .posters { display: flex; flex-wrap: wrap; gap: 6px; }
+  .posters span { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px; font-size: 12.5px; color: var(--muted); }
+
+  /* libraries */
+  .lib { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .lib:first-of-type { border-top: 0; padding-top: 0; }
+  .lib .grow { flex: 1; }
+  .lib-name { font-weight: 560; }
+  .lib-sub { color: var(--faint); font-size: 12.5px; }
+
+  /* status */
+  .bar { height: 8px; background: var(--panel-3); border-radius: 999px; overflow: hidden; margin: 10px 0 6px; }
+  .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); width: 0; transition: width .4s; }
+  pre.log { background: #0a0b0c; border: 1px solid var(--line); border-radius: 10px; padding: 14px; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 460px; overflow: auto; white-space: pre-wrap; color: #b7b9bf; margin: 0; }
+  .log .warn { color: var(--warn); } .log .error { color: var(--err); }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; font-size: 13.5px; }
+  .kv div:nth-child(odd) { color: var(--faint); }
+
+  /* callout, toast, login */
+  .callout { display: flex; gap: 14px; align-items: center; background: linear-gradient(135deg, rgba(170,92,195,.12), rgba(0,164,220,.10)); border: 1px solid #343a52; border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
+  .callout .grow { flex: 1; }
+  .callout b { display: block; margin-bottom: 2px; }
+  .callout span { color: var(--muted); font-size: 13px; }
+  .note { font-size: 13px; color: var(--muted); }
+  .note.ok { color: var(--ok); } .note.err { color: var(--err); }
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--panel-3); border: 1px solid var(--line-2); padding: 10px 16px; border-radius: 10px; opacity: 0; transition: .2s; pointer-events: none; z-index: 9; }
+  #toast.show { opacity: 1; transform: translateX(-50%); }
+  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+  .login { width: 100%; max-width: 380px; }
+  .login .brand { padding: 0 0 18px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+
+  @media (max-width: 820px) {
+    .shell { grid-template-columns: 1fr; background: var(--bg); }
+    aside { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .brand { padding: 4px 10px; } .aside-foot { display: none; }
+    .nav { width: auto; } .nav .count { display: none; }
+    main { padding: 20px 16px 60px; }
+    .grid2 { grid-template-columns: 1fr; }
+    .kv { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="login" class="login-wrap hidden">
+  <form class="card login" id="login-form">
+    <div class="brand"><div class="mark">P</div>Pickyfin Server</div>
+    <p class="note" style="margin:0 0 16px">Sign in with a Jellyfin administrator account.</p>
+    <div class="field"><label for="login-user">Username</label><input type="text" id="login-user" autocomplete="username" required></div>
+    <div class="field"><label for="login-pass">Password</label><input type="password" id="login-pass" autocomplete="current-password"></div>
+    <div class="actions"><button class="btn primary" type="submit">Sign in</button><span class="note err" id="login-error"></span></div>
+  </form>
+</div>
+
+<div id="app" class="shell hidden">
+  <aside>
+    <div class="brand"><div class="mark">P</div>Pickyfin</div>
+    <button class="nav active" data-page="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5.5"/></svg>Users<span class="count" id="count-users"></span></button>
+    <button class="nav" data-page="libraries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Libraries</button>
+    <button class="nav" data-page="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>AI</button>
+    <button class="nav" data-page="rows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><path d="M3 20h12"/></svg>Rows &amp; timing</button>
+    <button class="nav" data-page="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Status</button>
+    <div class="aside-foot"><div id="who"></div><button id="logout">Sign out</button></div>
+  </aside>
+
+  <main>
+    <div class="strip"><span class="dot" id="state-dot"></span><span id="state">Loading…</span></div>
+
+    <!-- USERS -->
+    <section data-page="users">
+      <div class="page-head"><div>
+        <h1>Users</h1>
+        <p>Describe what each person likes in a sentence or two. That's what the picks follow most; watch history adds to it. Picks show up as rows in Pickyfin on the TV, and as playlists in every other Jellyfin app.</p>
+      </div></div>
+      <div id="users"></div>
+    </section>
+
+    <!-- LIBRARIES -->
+    <section data-page="libraries" class="hidden">
+      <div class="page-head"><div>
+        <h1>Libraries</h1>
+        <p>Choose which libraries recommendations may come from. Movies in switched-off libraries are never recommended and aren't sent to the AI, so they cost nothing.</p>
+      </div></div>
+      <div class="card" id="libraries"><div class="empty">Loading…</div></div>
+      <p class="note">A movie that's in several libraries can still be recommended if one of them is on. Watch history from every library still counts toward taste.</p>
+    </section>
+
+    <!-- AI -->
+    <section data-page="ai" class="hidden">
+      <div class="page-head"><div>
+        <h1>AI</h1>
+        <p>The AI tags every movie once, reads your descriptions, and picks the "Recommended for you" row. One call per person per refresh.</p>
+      </div></div>
+
+      <div class="callout" id="import-callout">
+        <div class="grow"><b>Already using the AI Movie Recommender plugin?</b><span>Take over its provider, key and models in one click.</span></div>
+        <button class="btn" id="import-plugin">Take over settings</button>
+      </div>
+
+      <form class="card" id="ai-form">
+        <h2>Provider</h2>
+        <p class="desc">Any of these works; OpenRouter gives access to most models with one key.</p>
+        <div class="field">
+          <div class="seg" id="provider-seg">
+            <button type="button" data-v="OpenRouter">OpenRouter</button><button type="button" data-v="GoogleAI">Google AI</button><button type="button" data-v="OpenAI">OpenAI</button><button type="button" data-v="Anthropic">Anthropic</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="ApiKey">API key <span class="pill" id="key-state"></span></label>
+          <input type="password" id="ApiKey" placeholder="Paste a new key, or leave empty to keep the current one" autocomplete="off">
+        </div>
+        <div class="grid2" style="margin-top:16px">
+          <div class="field">
+            <label for="ChatModel">Model for picking</label>
+            <input type="text" id="ChatModel" list="models">
+            <div class="help">Reads the descriptions and chooses. Worth a capable model.</div>
+          </div>
+          <div class="field">
+            <label for="ClassificationModel">Model for tagging movies</label>
+            <input type="text" id="ClassificationModel" list="models">
+            <div class="help">Runs once per movie; a fast, cheap model is fine.</div>
+          </div>
+        </div>
+        <datalist id="models"></datalist>
+        <details class="field" style="margin-top:16px">
+          <summary class="note" style="cursor:pointer">Advanced</summary>
+          <div class="field" style="margin-top:12px">
+            <label for="CustomEndpoint">Custom endpoint</label>
+            <input type="text" id="CustomEndpoint" placeholder="Leave empty for the provider's default">
+            <div class="help">For a self-hosted or proxy endpoint that speaks the provider's API.</div>
+          </div>
+        </details>
+        <div class="actions">
+          <button class="btn primary" type="submit">Save</button>
+          <button class="btn" type="button" id="test-ai">Test connection</button>
+          <span class="note" id="ai-note"></span>
+        </div>
+      </form>
+
+      <form class="card" id="tmdb-form">
+        <h2>TMDB keywords <span class="pill">optional</span></h2>
+        <p class="desc">Adds precise keywords from The Movie Database (like "heist" or "time travel"), which sharpens matching. Free key at themoviedb.org → Settings → API.</p>
+        <div class="field">
+          <label for="TmdbApiKey">TMDB API key <span class="pill" id="tmdb-state"></span></label>
+          <input type="password" id="TmdbApiKey" placeholder="Paste a key, or leave empty to keep the current one" autocomplete="off">
+        </div>
+        <div class="actions"><button class="btn primary" type="submit">Save</button><span class="note" id="tmdb-note"></span></div>
+      </form>
+    </section>
+
+    <!-- ROWS -->
+    <section data-page="rows" class="hidden">
+      <div class="page-head"><div>
+        <h1>Rows &amp; timing</h1>
+        <p>What each person gets on their home screen, and how often it changes.</p>
+      </div></div>
+      <form class="card" id="rows-form">
+        <div class="field">
+          <label>"Because You Watched …" rows</label>
+          <div class="seg" id="because-seg"><button type="button" data-v="0">None</button><button type="button" data-v="1">One</button><button type="button" data-v="2">Two</button></div>
+          <div class="help">Based on the latest movies the person finished. "Recommended for you" is always there.</div>
+        </div>
+        <div class="field">
+          <label for="PicksPerRow">Movies per row <span class="pill" id="picks-value"></span></label>
+          <input type="range" id="PicksPerRow" min="5" max="40" step="1" style="width:100%;accent-color:var(--accent)">
+        </div>
+        <div class="field">
+          <label for="RefreshHours">Fresh picks at least every</label>
+          <select id="RefreshHours" style="width:auto"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">day</option><option value="48">2 days</option><option value="168">week</option></select>
+          <div class="help">Also right after someone finishes a movie, and when you change their description.</div>
+        </div>
+        <div class="actions"><button class="btn primary" type="submit">Save</button><span class="note" id="rows-note"></span></div>
+      </form>
+    </section>
+
+    <!-- STATUS -->
+    <section data-page="status" class="hidden">
+      <div class="page-head"><div><h1>Status</h1><p>What the server is doing, and its recent log.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
+      <div class="card">
+        <h2 id="lib-title">Library</h2>
+        <div class="bar"><div id="lib-bar"></div></div>
+        <div class="kv" style="margin-top:14px">
+          <div>Movies tagged</div><div id="lib-count">–</div>
+          <div>Last library sync</div><div id="lib-synced">–</div>
+          <div>Jellyfin</div><div id="jf-url">–</div>
+        </div>
+      </div>
+      <pre class="log" id="log"></pre>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ago = d => {
+  if (!d) return 'never';
+  const s = (Date.now() - new Date(d)) / 1000;
+  if (s < 60) return 'just now'; if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' h ago'; return new Date(d).toLocaleDateString();
+};
+const today = () => new Date().toISOString().slice(0, 10);
+const colors = ['#aa5cc3', '#00a4dc', '#3ecf8e', '#f0b429', '#ef5f5f', '#5c7cfa', '#e8590c', '#20c997'];
+const colorFor = s => colors[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length];
+let settings = null;
+
+function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200); }
+
+async function call(method, url, body) {
+  const res = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401 && url !== '/api/login') { showLogin(); throw new Error('Signed out'); }
+  if (!res.ok) { let m = res.statusText; try { m = (await res.json()).detail || m; } catch {} throw new Error(m); }
+  return res.status === 202 || res.status === 204 ? null : res.json().catch(() => null);
+}
+
+// ---------- login / navigation ----------
+function showLogin() { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
+async function showApp(me) {
+  $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
+  $('#who').textContent = me?.Name ? 'Signed in as ' + me.Name : '';
+  await loadSettings(); loadUsers(); loadStatus();
+}
+$('#login-form').addEventListener('submit', async e => {
+  e.preventDefault(); $('#login-error').textContent = '';
+  try { const me = await call('POST', '/api/login', { username: $('#login-user').value, password: $('#login-pass').value }); showApp(me); }
+  catch (err) { $('#login-error').textContent = err.message; }
+});
+$('#logout').addEventListener('click', async () => { await call('POST', '/api/logout'); showLogin(); });
+
+function go(page) {
+  $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.page === page));
+  $$('main section').forEach(s => s.classList.toggle('hidden', s.dataset.page !== page));
+  if (page === 'libraries') loadLibraries();
+  if (page === 'status') loadStatus();
+  if (page === 'users') loadUsers();
+  history.replaceState(null, '', '#' + page);
+}
+$$('.nav').forEach(n => n.addEventListener('click', () => go(n.dataset.page)));
+
+function seg(el, value, onChange) {
+  $$('button', el).forEach(b => {
+    b.classList.toggle('on', b.dataset.v === String(value));
+    b.onclick = () => { $$('button', el).forEach(x => x.classList.toggle('on', x === b)); onChange?.(b.dataset.v); };
+  });
+}
+const segValue = el => $('button.on', el)?.dataset.v;
+
+// ---------- settings ----------
+const modelSuggestions = {
+  OpenRouter: ['google/gemini-2.5-flash', 'google/gemini-2.5-pro', 'anthropic/claude-sonnet-4.5', 'openai/gpt-4.1-mini', 'deepseek/deepseek-chat'],
+  GoogleAI: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'],
+  OpenAI: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
+  Anthropic: ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'],
+};
+function fillModels(provider) { $('#models').innerHTML = (modelSuggestions[provider] || []).map(m => `<option value="${m}">`).join(''); }
+const setPill = (el, on) => { el.textContent = on ? 'saved' : 'not set'; el.className = 'pill ' + (on ? 'ok' : 'warn'); };
+
+async function loadSettings() {
+  settings = await call('GET', '/api/settings');
+  seg($('#provider-seg'), settings.AIProvider, fillModels); fillModels(settings.AIProvider);
+  for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
+  $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
+  setPill($('#key-state'), settings.HasApiKey); setPill($('#tmdb-state'), settings.HasTmdbApiKey);
+  seg($('#because-seg'), settings.BecauseRows);
+  $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
+  const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
+  $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
+}
+$('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
+
+async function save(changes, note) {
+  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ...changes };
+  try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
+  catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
+}
+
+$('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
+  AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
+  ChatModel: $('#ChatModel').value, ClassificationModel: $('#ClassificationModel').value, CustomEndpoint: $('#CustomEndpoint').value }, $('#ai-note')); });
+$('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
+$('#rows-form').addEventListener('submit', e => { e.preventDefault(); save({
+  BecauseRows: Number(segValue($('#because-seg'))), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value) }, $('#rows-note')); });
+
+$('#test-ai').addEventListener('click', async e => {
+  const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';
+  const r = await call('POST', '/api/settings/test-ai').catch(err => ({ Ok: false, Message: err.message }));
+  note.textContent = r.Message; note.className = 'note ' + (r.Ok ? 'ok' : 'err'); e.target.disabled = false;
+});
+$('#import-plugin').addEventListener('click', async e => {
+  e.target.disabled = true;
+  const r = await call('POST', '/api/settings/import-plugin').catch(err => ({ Ok: false, Message: err.message }));
+  toast(r.Message); if (r.Ok) await loadSettings(); e.target.disabled = false;
+});
+
+// ---------- libraries ----------
+async function loadLibraries() {
+  const box = $('#libraries');
+  try {
+    const libs = await call('GET', '/api/libraries');
+    if (!libs.length) { box.innerHTML = '<div class="empty">No movie libraries found in Jellyfin.</div>'; return; }
+    box.innerHTML = libs.map(l => `
+      <div class="lib">
+        <div class="grow"><div class="lib-name">${esc(l.Name)}</div><div class="lib-sub">${l.Movies ? l.Movies + ' movies' : 'movies counted after the next library sync'}</div></div>
+        <span class="pill ${l.Enabled ? 'ok' : ''}">${l.Enabled ? 'Recommended from' : 'Off'}</span>
+        <label class="switch"><input type="checkbox" data-id="${l.Id}" ${l.Enabled ? 'checked' : ''}><span></span></label>
+      </div>`).join('');
+    $$('input', box).forEach(i => i.addEventListener('change', async () => {
+      const excluded = $$('input', box).filter(x => !x.checked).map(x => x.dataset.id);
+      if (await save({ ExcludedLibraries: excluded })) { toast('Saved. Everyone gets fresh picks shortly.'); loadLibraries(); }
+    }));
+  } catch (err) { box.innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+}
+
+// ---------- users ----------
+function chips(t) {
+  if (!t) return '';
+  const like = [...(t.Subcategories || []), ...(t.Moods || [])].map(x => `<span class="chip">${esc(x)}</span>`);
+  const avoid = [...(t.AvoidSubcategories || []), ...(t.AvoidMoods || [])].map(x => `<span class="chip avoid">no ${esc(x)}</span>`);
+  return like.length + avoid.length ? `<div class="help" style="margin-top:10px">Understood as</div><div class="chips">${like.join('')}${avoid.join('')}</div>` : '';
+}
+
+function statusPill(u) {
+  if (!u.Enabled) return '<span class="pill">Off</span>';
+  if (u.Pending) return '<span class="pill warn">Picking soon</span>';
+  if ((u.LastResult || '').startsWith('Failed')) return '<span class="pill err">Failed</span>';
+  if (u.LastRefresh) return '<span class="pill ok">Up to date</span>';
+  return '<span class="pill warn">Waiting</span>';
+}
+
+function userCard(u) {
+  const from = u.CountHistoryFrom ? u.CountHistoryFrom.slice(0, 10) : '';
+  const el = document.createElement('div');
+  el.className = 'card' + (u.Enabled ? '' : ' off');
+  el.innerHTML = `
+    <div class="user-head">
+      <div class="avatar" style="background:${colorFor(u.Name)}">${esc(u.Name[0]?.toUpperCase())}</div>
+      <div class="grow"><div class="user-name">${esc(u.Name)}</div><div class="user-sub">${u.Enabled ? 'Last picks ' + ago(u.LastRefresh) : 'No recommendations'}</div></div>
+      ${statusPill(u)}
+      <label class="switch" title="Recommendations for ${esc(u.Name)}"><input type="checkbox" class="enabled" ${u.Enabled ? 'checked' : ''}><span></span></label>
+    </div>
+    <div class="user-body">
+      <div class="field">
+        <label>What does ${esc(u.Name)} like?</label>
+        <textarea class="brief" placeholder="e.g. Loves slow-burn Korean thrillers and heist movies, lately into 70s sci-fi. No musicals, nothing too gory.">${esc(u.Brief)}</textarea>
+        ${chips(u.BriefTags)}
+      </div>
+      <div class="field">
+        <label>Watch history that counts</label>
+        <div class="history">
+          <div class="seg hist"><button type="button" data-v="all">All of it</button><button type="button" data-v="from">Only from a date</button></div>
+          <input type="date" class="from ${from ? '' : 'hidden'}" value="${from || today()}">
+        </div>
+        <div class="help">On a shared TV, older history may be someone else's. Watches after the date always count.</div>
+      </div>
+      <div class="actions">
+        <button class="btn primary save">Save</button>
+        <button class="btn refresh">Pick again now</button>
+        ${u.LastResult ? `<span class="note">${esc(u.LastResult)}</span>` : ''}
+      </div>
+      ${u.Rows.length ? `<details class="rows-preview"><summary>${u.Rows.length} row${u.Rows.length > 1 ? 's' : ''} on the home screen</summary><div class="rows-body note">Loading…</div></details>` : ''}
+    </div>`;
+
+  seg($('.hist', el), from ? 'from' : 'all', v => $('.from', el).classList.toggle('hidden', v !== 'from'));
+  const persist = async () => {
+    const mode = segValue($('.hist', el));
+    await call('PUT', `/api/users/${u.UserId}`, {
+      enabled: $('.enabled', el).checked, brief: $('.brief', el).value,
+      countHistoryFrom: mode === 'from' ? $('.from', el).value + 'T00:00:00Z' : null,
+    });
+  };
+  $('.enabled', el).addEventListener('change', async () => { await persist(); toast($('.enabled', el).checked ? `Recommendations on for ${u.Name}` : `Off for ${u.Name}; their rows are removed`); loadUsers(); });
+  $('.save', el).addEventListener('click', async e => { e.target.disabled = true; try { await persist(); toast('Saved. New picks in a moment.'); setTimeout(loadUsers, 600); } catch (err) { toast(err.message); e.target.disabled = false; } });
+  $('.refresh', el).addEventListener('click', async e => { e.target.disabled = true; await call('POST', `/api/users/${u.UserId}/refresh`); toast(`Picking again for ${u.Name}`); setTimeout(loadUsers, 600); });
+  const details = $('details', el);
+  if (details) details.addEventListener('toggle', async () => {
+    if (!details.open) return;
+    const rows = await call('GET', `/api/users/${u.UserId}/rows`);
+    $('.rows-body', el).innerHTML = rows.map(r => `<div class="row-title">${esc(r.Name)}</div><div class="posters">${r.Movies.map(m => `<span>${esc(m)}</span>`).join('')}</div>`).join('');
+  });
+  return el;
+}
+
+async function loadUsers() {
+  const users = await call('GET', '/api/users');
+  $('#count-users').textContent = users.filter(u => u.Enabled).length + '/' + users.length;
+  const box = $('#users'); box.innerHTML = '';
+  if (!users.length) { box.innerHTML = '<div class="card empty">Users appear here after the first sync with Jellyfin.</div>'; return; }
+  // People with recommendations first
+  users.sort((a, b) => (b.Enabled - a.Enabled) || a.Name.localeCompare(b.Name)).forEach(u => box.appendChild(userCard(u)));
+}
+
+// ---------- status ----------
+async function loadStatus() {
+  try {
+    const s = await call('GET', '/api/status');
+    const busy = s.State !== 'Idle';
+    const tagging = s.State.startsWith('Syncing') && s.Movies ? ` · ${s.Classified} of ${s.Movies} movies tagged` : '';
+    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + '…' + tagging : `Idle · ${s.Classified} of ${s.Movies} movies tagged`;
+    $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : busy ? 'busy' : 'ok');
+    $('#lib-count').textContent = `${s.Classified} of ${s.Movies}`;
+    $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';
+    $('#lib-synced').textContent = ago(s.LibrarySynced);
+    $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
+  } catch {}
+}
+$('#sync').addEventListener('click', async e => { e.target.disabled = true; await call('POST', '/api/library/sync'); toast('Library sync started'); setTimeout(() => { e.target.disabled = false; loadStatus(); }, 1500); });
+setInterval(() => { if (!$('#app').classList.contains('hidden')) loadStatus(); }, 4000);
+
+call('GET', '/api/me').then(async me => { await showApp(me); const p = location.hash.slice(1); if (p) go(p); }).catch(showLogin);
+</script>
+</body>
+</html>

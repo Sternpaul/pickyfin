@@ -32,11 +32,14 @@ On a Fire TV or Android TV device:
 
 Pickyfin installs next to the official Jellyfin app; you can keep both.
 
-## Recommendations need a server plugin
+## Recommendations need Pickyfin Server
 
-The app shows the recommendations, but doesn't compute them. That's done on the
-server by the [AI Movie Recommender](https://github.com/Sternpaul/jellyfin-smart-playlists)
-plugin, which writes private playlists for each user. Pickyfin shows these as rows:
+The app shows the recommendations, but doesn't compute them. That's done by
+[**Pickyfin Server**](../server/README.md), a small Docker container next to
+Jellyfin with its own admin page: you describe what each person likes, choose
+libraries, and it writes private playlists for each user. Pickyfin shows these as
+rows (playlists from the older [AI Movie Recommender](https://github.com/Sternpaul/jellyfin-smart-playlists)
+plugin work too):
 
 | Playlist written by the plugin | Row in Pickyfin |
 | --- | --- |
@@ -45,8 +48,6 @@ plugin, which writes private playlists for each user. Pickyfin shows these as ro
 
 At most three rows in total, in this order.
 
-Install the plugin in Jellyfin under *Dashboard → Plugins → Repositories* with
-`https://sternpaul.github.io/jellyfin-smart-playlists/repo/manifest.json`.
 Without it, Pickyfin works like the official app, just without these rows.
 
 ## What's changed compared to the official app

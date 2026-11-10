@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Pickyfin.Server</RootNamespace>
+    <AssemblyName>Pickyfin.Server</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Ported plugin code has its own style; don't drown real warnings -->
+    <NoWarn>$(NoWarn);CS1591;CA1848;CA2254</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>
