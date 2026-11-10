@@ -44,6 +44,7 @@ builder.Services.AddSingleton(new DataDirectory(dataDirectory));
 builder.Services.AddSingleton<WebLookup>();
 builder.Services.AddSingleton<MovieClassifier>();
 builder.Services.AddSingleton<SecondOpinion>();
+builder.Services.AddSingleton<WebSweep>();
 builder.Services.AddSingleton(sp => new TmdbKeywordService(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb"),
     sp.GetRequiredService<MovieStore>(),
@@ -328,6 +329,7 @@ record SettingsView
     public string? ExaApiKey { get; init; }
     public bool WebLookupAuto { get; init; }
     public double WebLookupBudget { get; init; }
+    public int WebLookupsPerDay { get; init; }
 
     public static SettingsView From(ServerSettings s) => new()
     {
@@ -355,6 +357,7 @@ record SettingsView
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
+        WebLookupsPerDay = s.WebLookupsPerDay,
     };
 
     /// <summary>Empty secret fields mean "keep the current value".</summary>
@@ -376,6 +379,7 @@ record SettingsView
         if (!string.IsNullOrWhiteSpace(CheckModel)) s.CheckModel = CheckModel.Trim();
         s.WebLookupAuto = WebLookupAuto;
         s.WebLookupBudget = Math.Clamp(WebLookupBudget, 0, 1000);
+        s.WebLookupsPerDay = Math.Clamp(WebLookupsPerDay, 0, 2000);
         s.RefreshHours = Math.Clamp(RefreshHours, 1, 168);
         s.PicksPerRow = Math.Clamp(PicksPerRow, 5, 50);
         s.BecauseRows = Math.Clamp(BecauseRows, 0, 2);

@@ -107,15 +107,23 @@ namespace Pickyfin.Server.Library
         public async Task LookUpFlaggedAsync(IAIProvider provider, List<MovieMetadata> movies, CancellationToken cancellationToken)
         {
             if (!ServerSettings.Current.WebLookupAuto) return;
-            var flagged = movies.Where(m => m.Issue is not null && m.WebNotes is null && !m.ManuallyEdited).ToList();
+            var flagged = movies.Where(m => m.Issue is not null && m.WebNotes is null && !m.ManuallyEdited && !m.Verified).ToList();
+            await LookUpAndTagManyAsync(provider, flagged, cancellationToken);
+        }
+
+        /// <summary>Looks each movie up, then tags the ones with findings again in one AI call. Returns how many were looked up.</summary>
+        public async Task<int> LookUpAndTagManyAsync(IAIProvider provider, List<MovieMetadata> movies, CancellationToken cancellationToken)
+        {
             var withNotes = new List<MovieMetadata>();
-            foreach (var movie in flagged)
+            var looked = 0;
+            foreach (var movie in movies)
             {
                 if (_web.Blocked() is { } why) { _logger.LogInformation("Web lookups paused: {Why}", why); break; }
                 try
                 {
                     using (Activity.Begin($"Looking up {movie.Title} on the web"))
                         movie.WebNotes = await _web.FindAsync(movie, cancellationToken) ?? "";
+                    looked++;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -125,10 +133,11 @@ namespace Pickyfin.Server.Library
                 if (movie.WebNotes.Length > 0) withNotes.Add(movie);
                 else await _movieStore.SaveMoviesAsync(new[] { movie }, cancellationToken);
             }
-            if (withNotes.Count == 0) return;
+            if (withNotes.Count == 0) return looked;
             _logger.LogInformation("Tagging {Count} looked-up movie(s) again", withNotes.Count);
             using (Activity.Begin($"Tagging {withNotes.Count} looked-up movie(s) again: waiting for {provider.Name}"))
                 await TagBatchAsync(provider, withNotes, cancellationToken);
+            return looked;
         }
 
         /// <summary>One AI call for a batch: apply the tags, note what looks off, save.</summary>
@@ -139,6 +148,7 @@ namespace Pickyfin.Server.Library
             foreach (var movie in batch.Where(known.ContainsKey))
             {
                 movie.Checked = false;
+                movie.Verified = false;
                 movie.Issue = Issues.Describe(movie, known[movie]);
             }
             var missing = batch.Count(m => !known.ContainsKey(m));

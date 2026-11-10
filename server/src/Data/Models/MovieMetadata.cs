@@ -32,6 +32,12 @@ namespace Pickyfin.Server.Data.Models
         public bool Checked { get; set; }
         /// <summary>Pickyfin: what a web search found about the film, given to the AI when tagging again.</summary>
         public string? WebNotes { get; set; }
+        /// <summary>Pickyfin: the admin looked at these tags and said they're right.</summary>
+        public bool Verified { get; set; }
+
+        /// <summary>How far the tags can be trusted: "you", "web", "second", "ai" or "none".</summary>
+        [NotMapped] public string Trust =>
+            !IsClassified ? "none" : ManuallyEdited || Verified ? "you" : !string.IsNullOrEmpty(WebNotes) ? "web" : Checked && Issue is null ? "second" : "ai";
 
         [NotMapped] public List<string> GenreList => string.IsNullOrEmpty(Genres) ? new() : JsonSerializer.Deserialize<List<string>>(Genres) ?? new();
 

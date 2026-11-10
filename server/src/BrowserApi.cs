@@ -87,6 +87,7 @@ public static class BrowserApi
             .Select(id => Guid.TryParse(id, out var g) && libraryNames.TryGetValue(g, out var n) ? n : "?").ToList(),
         Excluded = ServerSettings.Current.IsLibraryExcluded(m.Libraries),
         HasIssue = m.Issue is not null,
+        m.Trust,
     };
 
     private static object Detail(MovieMetadata m, Dictionary<Guid, string> libraryNames) => new
@@ -112,6 +113,7 @@ public static class BrowserApi
         Issue = m.Issue?.Split('\n'),
         m.Checked,
         m.WebNotes,
+        m.Verified,
     };
 
     private static int _lookupAllRunning;
@@ -129,7 +131,7 @@ public static class BrowserApi
 
         // ---------- movies ----------
 
-        admin.MapGet("/movies", async (string? q, string? state, Guid? library, string? tag, string? sort, int? skip, int? take,
+        admin.MapGet("/movies", async (string? q, string? state, Guid? library, string? tag, string? trust, string? sort, int? skip, int? take,
             MovieStore store, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
         {
             var names = await LibraryNamesAsync(sync, jellyfin, ct);
@@ -149,6 +151,7 @@ public static class BrowserApi
                 "issues" => movies.Where(m => m.Issue is not null),
                 _ => movies,
             };
+            if (!string.IsNullOrEmpty(trust)) movies = movies.Where(m => m.Trust == trust);
             if (library is { } lib) movies = movies.Where(m => (m.Libraries ?? "").Contains(lib.ToString(), StringComparison.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(tag))
                 movies = movies.Where(m => m.SubcategorySet.Contains(tag) || m.MoodSet.Contains(tag) || m.ThemeSet.Contains(tag) || m.KeywordSet.Contains(tag));
@@ -201,6 +204,7 @@ public static class BrowserApi
             // Checked by a person now: nothing left to flag
             movie.Issue = null;
             movie.Checked = true;
+            movie.Verified = true;
             movie.LastUpdated = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
@@ -248,10 +252,12 @@ public static class BrowserApi
                     FoundOnWeb = !string.IsNullOrEmpty(m.WebNotes),
                 }),
                 Tagged = movies.Count(m => m.IsClassified),
+                Trust = movies.GroupBy(m => m.Trust).ToDictionary(g => g.Key, g => g.Count()),
+                NotLookedUp = movies.Count(WebSweep.Wanted),
                 Checked = movies.Count(m => m.IsClassified && m.Checked),
                 s.CheckEnabled,
                 s.CheckModel,
-                Web = new { Configured = WebLookup.Configured, s.WebLookupAuto, Budget = s.WebLookupBudget, usage.Lookups, usage.Dollars, Blocked = web.Blocked() },
+                Web = new { Configured = WebLookup.Configured, s.WebLookupAuto, Budget = s.WebLookupBudget, usage.Lookups, usage.Dollars, usage.Today, PerDay = s.WebLookupsPerDay, Blocked = web.Blocked() },
                 LookingUpAll = _lookupAllRunning == 1,
             });
         });
@@ -261,7 +267,8 @@ public static class BrowserApi
             await using var db = database.Open();
             await db.Movies.Where(m => m.ItemId == id).ExecuteUpdateAsync(u => u
                 .SetProperty(m => m.Issue, (string?)null)
-                .SetProperty(m => m.Checked, true), ct);
+                .SetProperty(m => m.Checked, true)
+                .SetProperty(m => m.Verified, true), ct);
             return Results.Ok();
         });
 

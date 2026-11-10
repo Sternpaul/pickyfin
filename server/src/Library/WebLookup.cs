@@ -26,7 +26,10 @@ public sealed class WebLookup
         _usagePath = Path.Combine(data.Path, "web-lookups.json");
     }
 
-    public sealed record Usage(string Month, int Lookups, double Dollars);
+    public sealed record Usage(string Month, int Lookups, double Dollars, string? Day = null, int DayLookups = 0)
+    {
+        public int Today => Day == DateTime.UtcNow.ToString("yyyy-MM-dd") ? DayLookups : 0;
+    }
 
     public Usage ThisMonth
     {
@@ -48,7 +51,12 @@ public sealed class WebLookup
     private void Count(double dollars)
     {
         var now = ThisMonth;
-        lock (Gate) File.WriteAllText(_usagePath, JsonSerializer.Serialize(now with { Lookups = now.Lookups + 1, Dollars = now.Dollars + dollars }));
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        lock (Gate) File.WriteAllText(_usagePath, JsonSerializer.Serialize(now with
+        {
+            Lookups = now.Lookups + 1, Dollars = now.Dollars + dollars,
+            Day = today, DayLookups = now.Today + 1,
+        }));
     }
 
     public static bool Configured => !string.IsNullOrWhiteSpace(ServerSettings.Current.ExaApiKey);

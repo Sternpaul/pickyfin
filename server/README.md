@@ -57,6 +57,10 @@ Tags can be wrong, especially for lesser-known films. Pickyfin catches that in t
 
 With an [Exa](https://exa.ai) key, flagged films are looked up on the web (Wikipedia, Letterboxd, TMDB, …) and described again from what was found. That costs under one cent per film; the free plan includes $10 a month, and a monthly limit on the AI page stops lookups before that.
 
+To go further, "Look up the whole library" (AI page) works through every film a few at a time, up to a number per day, flagged and lesser-known films first. The page shows how long it will take and what it costs per month; the spend shown is what Exa reports.
+
+Every movie shows how far its tags can be trusted: checked by you, looked up on the web, second opinion agrees, or AI only. The Movies page can filter by that, and any movie can be marked as checked.
+
 On the Issues page, each movie can be opened and fixed by hand, looked up again, or marked as fine. Any movie can be looked up by hand from its page under Movies ("Look up on the web, then describe"). Movies you edit or mark as fine are never flagged again.
 
 ## Run it

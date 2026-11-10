@@ -62,3 +62,18 @@ public class QualityTests
         Assert.Empty(SecondOpinion.Parse("{\"problems\":[]}", batch)!);
     }
 }
+
+public class TrustTests
+{
+    [Fact]
+    public void TrustGoesFromAiToSecondToWebToYou()
+    {
+        var m = new MovieMetadata { IsClassified = true };
+        Assert.Equal("ai", m.Trust);
+        m.Checked = true; Assert.Equal("second", m.Trust);
+        m.Issue = "x"; Assert.Equal("ai", m.Trust);
+        m.WebNotes = ""; Assert.Equal("ai", m.Trust);
+        m.WebNotes = "found"; Assert.Equal("web", m.Trust);
+        m.Verified = true; Assert.Equal("you", m.Trust);
+    }
+}

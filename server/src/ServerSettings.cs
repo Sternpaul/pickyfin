@@ -40,6 +40,8 @@ public sealed class ServerSettings
     public bool WebLookupAuto { get; set; } = true;
     /// <summary>Exa spending stops for the month at this many dollars.</summary>
     public double WebLookupBudget { get; set; } = 9;
+    /// <summary>Slowly look up the whole library: this many films a day (0 = off).</summary>
+    public int WebLookupsPerDay { get; set; }
 
     /// <summary>Libraries whose movies are never recommended (and not classified).</summary>
     public List<Guid> ExcludedLibraries { get; set; } = new();

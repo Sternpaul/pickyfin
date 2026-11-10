@@ -26,11 +26,12 @@ public sealed class RefreshService : BackgroundService
     private readonly PlaylistWriter _writer;
     private readonly Letterboxd.LetterboxdSync _letterboxd;
     private readonly ILogger<RefreshService> _logger;
+    private readonly Library.WebSweep _sweep;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -40,6 +41,7 @@ public sealed class RefreshService : BackgroundService
         _writer = writer;
         _letterboxd = letterboxd;
         _logger = logger;
+        _sweep = sweep;
     }
 
     public string State { get; private set; } = "Starting";
@@ -119,6 +121,14 @@ public sealed class RefreshService : BackgroundService
                 _logger.LogError("Picks for {User} failed: {Error}", user.Name, error.Message);
                 await UpdateAsync(user.UserId, u => u.LastResult = "Failed: " + error.Message, cancellationToken);
             }
+        }
+
+        // Last, so picks never wait for it: a few more films looked up on the web
+        State = "Looking up films on the web";
+        try { await _sweep.RunAsync(cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("Library lookup paused: {Error}", error.Message);
         }
     }
 
