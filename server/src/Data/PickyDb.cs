@@ -37,6 +37,30 @@ public sealed class UserProfile
     public DateTime? LastSeenPlay { get; set; }
     public bool RefreshRequested { get; set; }
     public string? LastResult { get; set; }
+
+    /// <summary>Movies the admin took out of this person's rows: never recommended to them again. Comma separated ids.</summary>
+    public string HiddenItems { get; set; } = "";
+
+    public HashSet<Guid> HiddenIds() => Ids.Parse(HiddenItems).ToHashSet();
+}
+
+/// <summary>Movies the admin put into one of a person's rows; they stay there (first) until watched.</summary>
+public sealed class RowPin
+{
+    public int Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>"recommended", "because-1", "because-2".</summary>
+    public string Slot { get; set; } = "";
+    /// <summary>Item ids in order, comma separated.</summary>
+    public string Items { get; set; } = "";
+}
+
+public static class Ids
+{
+    public static List<Guid> Parse(string? list) => (list ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+        .Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).ToList();
+
+    public static string Join(IEnumerable<Guid> ids) => string.Join(",", ids.Distinct());
 }
 
 /// <summary>A film from someone's Letterboxd: watched (maybe rated) or on their watchlist.</summary>
@@ -82,6 +106,7 @@ public sealed class PickyDb : DbContext
     public DbSet<UserProfile> Users => Set<UserProfile>();
     public DbSet<ManagedPlaylist> Playlists => Set<ManagedPlaylist>();
     public DbSet<LetterboxdFilm> Letterboxd => Set<LetterboxdFilm>();
+    public DbSet<RowPin> Pins => Set<RowPin>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder options) => options.UseSqlite($"Data Source={_path}");
 
@@ -91,6 +116,7 @@ public sealed class PickyDb : DbContext
         model.Entity<UserProfile>().HasKey(u => u.UserId);
         model.Entity<ManagedPlaylist>().HasIndex(p => new { p.UserId, p.Slot }).IsUnique();
         model.Entity<LetterboxdFilm>().HasIndex(f => new { f.UserId, f.Kind });
+        model.Entity<RowPin>().HasIndex(r => new { r.UserId, r.Slot }).IsUnique();
     }
 }
 
@@ -145,6 +171,7 @@ public sealed class Database
         AddColumn("Users", "LetterboxdRatingsUrl", "TEXT NULL");
         AddColumn("Users", "LetterboxdSynced", "TEXT NULL");
         AddColumn("Users", "LetterboxdStatus", "TEXT NULL");
+        AddColumn("Users", "HiddenItems", "TEXT NOT NULL DEFAULT ''");
 
         Run(@"CREATE TABLE IF NOT EXISTS ""Letterboxd"" (
             ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_Letterboxd"" PRIMARY KEY AUTOINCREMENT,
@@ -159,6 +186,12 @@ public sealed class Database
             ""Date"" TEXT NULL,
             ""ItemId"" TEXT NULL)");
         Run(@"CREATE INDEX IF NOT EXISTS ""IX_Letterboxd_UserId_Kind"" ON ""Letterboxd"" (""UserId"", ""Kind"")");
+        Run(@"CREATE TABLE IF NOT EXISTS ""Pins"" (
+            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_Pins"" PRIMARY KEY AUTOINCREMENT,
+            ""UserId"" TEXT NOT NULL,
+            ""Slot"" TEXT NOT NULL,
+            ""Items"" TEXT NOT NULL)");
+        Run(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Pins_UserId_Slot"" ON ""Pins"" (""UserId"", ""Slot"")");
     }
 
     public PickyDb Open() => new(_path);

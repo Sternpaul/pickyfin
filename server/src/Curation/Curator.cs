@@ -28,6 +28,7 @@ public sealed class Curator
 {
     public const string RecommendedName = "Recommended for you";
     public const string BecausePrefix = "Because You Watched ";
+    public static readonly string[] Slots = { "recommended", "because-1", "because-2" };
 
     private readonly JellyfinClient _jellyfin;
     private readonly MovieStore _store;
@@ -50,6 +51,12 @@ public sealed class Curator
     public async Task<CurationResult> CurateAsync(UserProfile user, BriefProfile? brief, CancellationToken cancellationToken)
     {
         var library = (await _store.GetAllMoviesAsync(cancellationToken)).ToDictionary(m => m.ItemId);
+        // The admin's edits: movies they added to a row, and movies they took out
+        Dictionary<string, List<Guid>> pinned;
+        await using (var db = _database.Open())
+            pinned = (await db.Pins.AsNoTracking().Where(p => p.UserId == user.UserId).ToListAsync(cancellationToken))
+                .ToDictionary(p => p.Slot, p => Ids.Parse(p.Items).Where(library.ContainsKey).ToList());
+        var hidden = user.HiddenIds().Where(library.ContainsKey).Select(i => Identity(library[i])).ToHashSet();
         var visible = await _jellyfin.GetMoviesAsync(user.UserId, withDetails: false, cancellationToken);
 
         // 1. Counted history, newest first
@@ -79,7 +86,7 @@ public sealed class Curator
         // recommend it once, and not at all if any copy was watched, here or on Letterboxd
         var seen = history.Concat(lb.Watched).Select(Identity).ToHashSet();
         candidates = candidates
-            .Where(m => !seen.Contains(Identity(m)))
+            .Where(m => !seen.Contains(Identity(m)) && !hidden.Contains(Identity(m)))
             .GroupBy(Identity)
             .Select(g => g.OrderByDescending(m => m.IsClassified).First())
             .ToList();
@@ -88,7 +95,15 @@ public sealed class Curator
         if (Settings.MinRating > 0)
             candidates = candidates.Where(m => m.CommunityRating is not > 0 || m.CommunityRating >= Settings.MinRating).ToList();
 
-        if (candidates.Count == 0)
+        // Added movies stay until watched, and the AI doesn't pick them a second time
+        foreach (var key in pinned.Keys.ToList())
+            pinned[key] = pinned[key].Where(i => !seen.Contains(Identity(library[i]))).ToList();
+        var pinnedIds = pinned.Values.SelectMany(v => v).Select(i => Identity(library[i])).ToHashSet();
+        var pinnedCount = pinned.Values.Sum(v => v.Count);
+        candidates = candidates.Where(m => !pinnedIds.Contains(Identity(m))).ToList();
+        List<Guid> Pins(string key) => pinned.GetValueOrDefault(key) ?? new();
+
+        if (candidates.Count == 0 && pinnedCount == 0)
             return new CurationResult(new(), "Nothing left to recommend: this user has seen everything they can access.");
 
         // What they were shown last time, so rows change between refreshes
@@ -106,11 +121,17 @@ public sealed class Curator
 
         // 3. AI picks the main row
         var perRow = Math.Clamp(Settings.PicksPerRow, 5, 50);
+        var wanted = Math.Max(0, perRow - Pins("recommended").Count);
         List<Guid> recommended;
         string how;
-        try
+        if (wanted == 0 || shortlist.Count == 0)
         {
-            recommended = await AskAiAsync(user, brief, recentHistory, lb, shortlist, perRow, cancellationToken);
+            recommended = new();
+            how = "main row filled by you";
+        }
+        else try
+        {
+            recommended = await AskAiAsync(user, brief, recentHistory, lb, shortlist, wanted, cancellationToken);
             how = "AI picked from a shortlist of " + shortlist.Count;
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -122,32 +143,37 @@ public sealed class Curator
         // Top up from the shortlist if the AI returned fewer
         foreach (var movie in shortlist)
         {
-            if (recommended.Count >= perRow) break;
+            if (recommended.Count >= wanted) break;
             if (!recommended.Contains(movie.ItemId)) recommended.Add(movie.ItemId);
         }
+        recommended = Pins("recommended").Concat(recommended.Take(wanted)).ToList();
 
-        var rows = new List<PickRow> { new("recommended", RecommendedName, recommended) };
+        var rows = new List<PickRow>();
+        if (recommended.Count > 0) rows.Add(new("recommended", RecommendedName, recommended));
 
         // 4. Because You Watched: two most recent counted watches with tags
         var used = new HashSet<Guid>(recommended);
         var slot = 1;
         foreach (var seed in history.Where(m => m.IsClassified).DistinctBy(Identity).Take(Math.Clamp(Settings.BecauseRows, 0, 2)))
         {
+            var mine = Pins($"because-{slot}");
             var similar = candidates
                 .Where(m => !used.Contains(m.ItemId))
                 .Select(m => (Movie: m, Score: _similarity.CalculateSimilarity(seed, m) * 0.75 + (brief is null ? 0 : BriefScore(m, brief) * 0.25)))
                 .Where(x => x.Score > 0.15)
                 .OrderByDescending(x => x.Score)
-                .Take(perRow)
+                .Take(Math.Max(0, perRow - mine.Count))
                 .Select(x => x.Movie.ItemId)
                 .ToList();
-            if (similar.Count < 5) continue;
+            if (similar.Count + mine.Count < 5) continue;
+            similar = mine.Concat(similar).ToList();
             used.UnionWith(similar);
             rows.Add(new($"because-{slot++}", BecausePrefix + seed.Title, similar));
         }
 
         var lbText = lb.Any ? $"; Letterboxd {lb.Watched.Count} watched, {lb.Watchlist.Count} on watchlist in library" : "";
-        var summary = $"{rows.Count} row(s); {history.Count} counted watch(es); brief {(brief is null || brief.IsEmpty ? "not set" : "used")}{lbText}; {how}.";
+        var pinText = pinnedCount > 0 ? $"; {pinnedCount} added by you" : "";
+        var summary = $"{rows.Count} row(s){pinText}; {history.Count} counted watch(es); brief {(brief is null || brief.IsEmpty ? "not set" : "used")}{lbText}; {how}.";
         return new CurationResult(rows, summary);
     }
 

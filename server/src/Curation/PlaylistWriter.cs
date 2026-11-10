@@ -32,26 +32,7 @@ public sealed class PlaylistWriter
         var written = 0;
 
         foreach (var row in rows)
-        {
-            var items = string.Join(",", row.Items);
-            var current = existing.FirstOrDefault(p => p.Slot == row.Slot);
-            if (current is not null && current.Name == row.Name && current.Items == items) continue;
-
-            var playlistId = await _jellyfin.CreatePlaylistAsync(userId, row.Name, row.Items, cancellationToken);
-            if (current is not null)
-            {
-                await _jellyfin.DeleteItemAsync(current.PlaylistId, cancellationToken);
-                current.PlaylistId = playlistId;
-                current.Name = row.Name;
-                current.Items = items;
-            }
-            else
-            {
-                db.Playlists.Add(new ManagedPlaylist { UserId = userId, Slot = row.Slot, PlaylistId = playlistId, Name = row.Name, Items = items });
-            }
-            await db.SaveChangesAsync(cancellationToken);
-            written++;
-        }
+            if (await WriteOneAsync(db, existing, userId, row, cancellationToken)) written++;
 
         // Rows that aren't needed any more (e.g. fewer "Because You Watched" rows)
         foreach (var stale in existing.Where(p => rows.All(r => r.Slot != p.Slot)))
@@ -64,6 +45,46 @@ public sealed class PlaylistWriter
 
         if (written > 0) _logger.LogInformation("Wrote {Count} playlist change(s) for user {User}", written, userId);
         return written;
+    }
+
+    /// <summary>Rewrites one row right away (after the admin edited it), leaving the others alone.</summary>
+    public async Task WriteRowAsync(Guid userId, PickRow row, CancellationToken cancellationToken)
+    {
+        await using var db = _database.Open();
+        var existing = await db.Playlists.Where(p => p.UserId == userId).ToListAsync(cancellationToken);
+        if (row.Items.Count > 0)
+        {
+            await WriteOneAsync(db, existing, userId, row, cancellationToken);
+            return;
+        }
+        // Emptied: the row goes away until the next refresh fills it
+        var current = existing.FirstOrDefault(p => p.Slot == row.Slot);
+        if (current is null) return;
+        await _jellyfin.DeleteItemAsync(current.PlaylistId, cancellationToken);
+        db.Playlists.Remove(current);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<bool> WriteOneAsync(PickyDb db, List<ManagedPlaylist> existing, Guid userId, PickRow row, CancellationToken cancellationToken)
+    {
+        var items = string.Join(",", row.Items);
+        var current = existing.FirstOrDefault(p => p.Slot == row.Slot);
+        if (current is not null && current.Name == row.Name && current.Items == items) return false;
+
+        var playlistId = await _jellyfin.CreatePlaylistAsync(userId, row.Name, row.Items, cancellationToken);
+        if (current is not null)
+        {
+            await _jellyfin.DeleteItemAsync(current.PlaylistId, cancellationToken);
+            current.PlaylistId = playlistId;
+            current.Name = row.Name;
+            current.Items = items;
+        }
+        else
+        {
+            db.Playlists.Add(new ManagedPlaylist { UserId = userId, Slot = row.Slot, PlaylistId = playlistId, Name = row.Name, Items = items });
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     /// <summary>Removes everything this service wrote for a user (when they're switched off).</summary>

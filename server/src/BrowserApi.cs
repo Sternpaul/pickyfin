@@ -19,6 +19,47 @@ public static class BrowserApi
 
     public sealed record LetterboxdSettings(bool Use, string? Username);
 
+    /// <summary>A row as the admin left it: all movies in order, which of them they added, and which they took out.</summary>
+    public sealed record RowEdit(List<Guid> Items, List<Guid>? Added, List<Guid>? Removed);
+
+    /// <summary>Lower case, no accents, punctuation as spaces: "Amélie" and "amelie", "Spider-Man" and "spider man" match.</summary>
+    internal static string Fold(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        var sb = new System.Text.StringBuilder(text.Length);
+        foreach (var c in text.Replace("&", " and ").Normalize(System.Text.NormalizationForm.FormD))
+        {
+            var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (cat == System.Globalization.UnicodeCategory.NonSpacingMark) continue;
+            if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
+            else if (sb.Length > 0 && sb[^1] != ' ') sb.Append(' ');
+        }
+        return sb.ToString().Trim();
+    }
+
+    /// <summary>
+    /// How well a movie matches a search, 0 = not at all. Every word has to be found in the
+    /// title, year, director or cast; title matches rank above the rest.
+    /// </summary>
+    internal static int SearchRank(MovieMetadata m, string query)
+    {
+        var q = Fold(query);
+        if (q.Length == 0) return 1;
+        var title = Fold(m.Title);
+        var titleTight = title.Replace(" ", "");
+        var qTight = q.Replace(" ", "");
+        if (title == q || titleTight == qTight) return 100;
+        if (title.StartsWith(q) || titleTight.StartsWith(qTight)) return 80;
+        var withoutArticle = System.Text.RegularExpressions.Regex.Replace(title, "^(the|a|an|der|die|das|le|la|les|el|o|i) ", "");
+        if (withoutArticle.StartsWith(q)) return 75;
+        var words = q.Split(' ');
+        if (titleTight.Contains(qTight)) return 60;
+        var all = $"{title} {m.ReleaseYear} {Fold(m.Director)} {Fold(m.Cast)}";
+        if (words.All(w => title.Contains(w))) return 50;
+        if (words.All(w => all.Contains(w))) return words.Any(w => title.Contains(w)) ? 30 : 20;
+        return 0;
+    }
+
     private static List<string> Tags(TagSet set) => set.Items.ToList();
 
     private static async Task<Dictionary<Guid, string>> LibraryNamesAsync(LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct)
@@ -85,12 +126,11 @@ public static class BrowserApi
             var names = await LibraryNamesAsync(sync, jellyfin, ct);
             IEnumerable<MovieMetadata> movies = await store.GetAllMoviesAsync(ct);
 
+            Dictionary<Guid, int>? rank = null;
             if (!string.IsNullOrWhiteSpace(q))
             {
-                var needle = q.Trim();
-                movies = movies.Where(m => m.Title.Contains(needle, StringComparison.OrdinalIgnoreCase)
-                    || (m.Director ?? "").Contains(needle, StringComparison.OrdinalIgnoreCase)
-                    || m.ReleaseYear?.ToString() == needle);
+                rank = movies.Select(m => (m.ItemId, Rank: SearchRank(m, q))).Where(x => x.Rank > 0).ToDictionary(x => x.ItemId, x => x.Rank);
+                movies = movies.Where(m => rank.ContainsKey(m.ItemId));
             }
             movies = state switch
             {
@@ -108,6 +148,8 @@ public static class BrowserApi
                 "added" => movies.OrderByDescending(m => m.DateAdded),
                 "acclaim" => movies.OrderByDescending(m => m.Acclaim),
                 "year" => movies.OrderByDescending(m => m.ReleaseYear),
+                // A search shows the best matches first, the better known film on a tie
+                _ when rank is not null => movies.OrderByDescending(m => rank[m.ItemId]).ThenByDescending(m => m.Popularity).ThenBy(m => m.Title, StringComparer.OrdinalIgnoreCase),
                 _ => movies.OrderBy(m => m.Title, StringComparer.OrdinalIgnoreCase),
             };
             var list = movies.ToList();
@@ -194,8 +236,10 @@ public static class BrowserApi
             UserProfile? user;
             List<LetterboxdFilm> films;
             List<ManagedPlaylist> playlists;
+            List<RowPin> pins;
             await using (var db = database.Open())
             {
+                pins = await db.Pins.AsNoTracking().Where(p => p.UserId == id).ToListAsync(ct);
                 user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == id, ct);
                 films = await db.Letterboxd.AsNoTracking().Where(f => f.UserId == id).ToListAsync(ct);
                 playlists = await db.Playlists.AsNoTracking().Where(p => p.UserId == id).OrderBy(p => p.Slot).ToListAsync(ct);
@@ -244,13 +288,65 @@ public static class BrowserApi
                         .OrderByDescending(f => f.ItemId is not null).ThenBy(f => f.Title).Select(Film),
                 },
                 BriefTags = BriefProfile.FromJson(user.BriefProfile),
-                Rows = playlists.Select(p => new
+                Rows = playlists.OrderBy(p => Array.IndexOf(Curator.Slots, p.Slot)).Select(p =>
                 {
-                    p.Name,
-                    Movies = p.Items.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty)
-                        .Select(g => new { Id = g, Title = Name(g) }),
+                    var added = Ids.Parse(pins.FirstOrDefault(x => x.Slot == p.Slot)?.Items).ToHashSet();
+                    return new
+                    {
+                        p.Slot,
+                        p.Name,
+                        Movies = Ids.Parse(p.Items).Select(g => new { Id = g, Title = Name(g), Added = added.Contains(g) }),
+                    };
                 }),
+                Hidden = user.HiddenIds().Select(g => new { Id = g, Title = Name(g) }).Where(m => m.Title != ""),
             });
+        });
+
+        // ---------- editing someone's rows ----------
+
+        admin.MapPut("/users/{id:guid}/rows/{slot}", async (Guid id, string slot, RowEdit edit, Database database, MovieStore store, PlaylistWriter writer, CancellationToken ct) =>
+        {
+            if (!Curator.Slots.Contains(slot)) return Results.NotFound();
+            var library = (await store.GetAllMoviesAsync(ct)).ToDictionary(m => m.ItemId);
+            var items = edit.Items.Where(library.ContainsKey).Distinct().ToList();
+            var added = (edit.Added ?? new()).Where(items.Contains).ToList();
+            string name;
+            await using (var db = database.Open())
+            {
+                var user = await db.Users.FindAsync(new object[] { id }, ct);
+                if (user is null) return Results.NotFound();
+                var playlist = await db.Playlists.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == id && p.Slot == slot, ct);
+                name = playlist?.Name ?? (slot == "recommended" ? Curator.RecommendedName : "");
+                if (name == "") return Results.Problem("This row doesn't exist right now.", statusCode: 409);
+
+                // Taken out = never recommended to this person again; added = stays in this row
+                if (edit.Removed is { Count: > 0 } removed)
+                {
+                    var hidden = user.HiddenIds();
+                    hidden.UnionWith(removed);
+                    user.HiddenItems = Ids.Join(hidden);
+                }
+                var pin = await db.Pins.FirstOrDefaultAsync(p => p.UserId == id && p.Slot == slot, ct);
+                if (added.Count == 0) { if (pin is not null) db.Pins.Remove(pin); }
+                else if (pin is null) db.Pins.Add(new RowPin { UserId = id, Slot = slot, Items = Ids.Join(added) });
+                else pin.Items = Ids.Join(added);
+                await db.SaveChangesAsync(ct);
+            }
+            await writer.WriteRowAsync(id, new PickRow(slot, name, items), ct);
+            return Results.Ok();
+        });
+
+        // Lets the AI recommend a movie to this person again
+        admin.MapDelete("/users/{id:guid}/hidden/{item:guid}", async (Guid id, Guid item, Database database, CancellationToken ct) =>
+        {
+            await using var db = database.Open();
+            var user = await db.Users.FindAsync(new object[] { id }, ct);
+            if (user is null) return Results.NotFound();
+            var hidden = user.HiddenIds();
+            hidden.Remove(item);
+            user.HiddenItems = Ids.Join(hidden);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok();
         });
 
         admin.MapPut("/users/{id:guid}/letterboxd", async (Guid id, LetterboxdSettings body, Database database, LetterboxdSync letterboxd, RefreshService worker, CancellationToken ct) =>

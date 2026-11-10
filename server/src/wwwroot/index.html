@@ -229,6 +229,32 @@
   .strip { display: flex; gap: 10px; overflow-x: auto; padding: 4px 0 14px; }
   .strip .poster { width: 92px; flex: none; }
   .row-name { font: 600 15px/1.3 var(--sans); margin: 22px 0 10px; }
+  /* editable rows */
+  .row-edit { padding: 22px 0 8px; border-top: 1px solid var(--line); }
+  .row-edit:first-of-type { border-top: 0; padding-top: 0; }
+  .row-edit .head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .row-edit .head .row-name { margin: 0; flex: 1; }
+  .strip .tile { width: 104px; flex: none; position: relative; display: flex; flex-direction: column; gap: 6px; }
+  .tile .cap { font-size: 12px; line-height: 1.3; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .tile-tools { position: absolute; top: 5px; right: 5px; left: 5px; display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity .12s; }
+  .tile:hover .tile-tools, .tile:focus-within .tile-tools { opacity: 1; }
+  @media (hover: none) { .tile-tools { opacity: 1; } }
+  .tile-tools button { width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(0,0,0,.72); color: #fff; cursor: pointer; display: grid; place-items: center; padding: 0; }
+  .tile-tools button:hover { background: #000; }
+  .tile-tools .spacer { flex: 1; }
+  .tile-tools svg { width: 14px; height: 14px; }
+  .picker { margin: 6px 0 14px; }
+  .results { border: 1px solid var(--line); border-radius: 6px; margin-top: 8px; max-height: 360px; overflow: auto; }
+  .results:empty { display: none; }
+  .result { display: flex; gap: 12px; align-items: center; padding: 7px 12px; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+  .result:last-child { border-bottom: 0; }
+  .result:hover, .result.sel { background: var(--raised); }
+  .result:disabled { cursor: default; opacity: .5; }
+  .result .poster { width: 34px; flex: none; border-radius: 3px; }
+  .result .poster .ptitle { display: none; }
+  .result .what { flex: 1; min-width: 0; }
+  .result .sub { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .result .why { font-size: 12px; color: var(--faint); white-space: nowrap; }
   .row-name:first-child { margin-top: 0; }
   .block-title { font: 600 16px/1.3 var(--sans); margin: 30px 0 6px; display: flex; gap: 12px; align-items: baseline; }
   .block-title .note, .row-name .note { font-family: var(--sans); }
@@ -757,9 +783,7 @@ async function openUser(id, name, tab = 'letterboxd') {
       <p class="note" style="margin-top:0">Films ${esc(name)} finished in Jellyfin, newest first. Faded ones were watched before the "count from" date and don't shape taste.</p>
       ${d.History.length ? `<table class="list"><tr><th>Film</th><th>Last watched</th><th></th></tr>${d.History.map(h => `<tr class="${h.Counted ? '' : 'dim'}"><td>${esc(h.Title)} <span class="y">${h.Year ?? ''}</span></td><td>${day(h.LastPlayed)}</td><td class="note">${h.Counted ? 'counts' : 'ignored'}</td></tr>`).join('')}</table>` : '<p class="empty">Nothing watched yet.</p>'}
     </div>
-    <div data-tab="rows" class="hidden">
-      ${d.Rows.length ? d.Rows.map(r => `<div class="row-name">${esc(r.Name)}</div><div class="strip">${r.Movies.map(m => `<div title="${esc(m.Title)}">${poster(m.Id, m.Title)}</div>`).join('')}</div>`).join('') : '<p class="empty">No rows yet.</p>'}
-    </div>
+    <div data-tab="rows" class="hidden" id="rows-edit"></div>
     <div data-tab="brief" class="hidden">
       ${d.BriefTags ? `<p class="note" style="margin-top:0">How the AI translated what you wrote into the vocabulary it uses for movies.</p>
         <div class="edit-row"><label class="field-label">Likes</label>${tagList([...(d.BriefTags.Subcategories || []), ...(d.BriefTags.Moods || [])])}</div>
@@ -768,6 +792,7 @@ async function openUser(id, name, tab = 'letterboxd') {
         ${d.BriefTags.Keywords?.length ? `<div class="edit-row"><label class="field-label">Keywords</label>${tagList(d.BriefTags.Keywords)}</div>` : ''}`
         : '<p class="empty">Nothing written yet, or not read by the AI yet.</p>'}
     </div>`;
+  rowsEditor(d, id);
   checkPosters($('#d-body'));
   const show = t => { $$('.tabs button', $('#d-body')).forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('[data-tab]', $('#d-body')).forEach(p => p.classList.toggle('hidden', p.dataset.tab !== t)); };
   $$('.tabs button', $('#d-body')).forEach(b => b.onclick = () => show(b.dataset.t)); show(tab);
@@ -790,6 +815,115 @@ async function openUser(id, name, tab = 'letterboxd') {
     else { let m = res.statusText; try { m = (await res.json()).detail || m; } catch {} $('#lb-up').textContent = m; $('#lb-up').className = 'note err'; }
   };
 }
+// ---------- editing someone's rows ----------
+const icon = {
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+  left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-6 6 6 6"/></svg>',
+  right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6l6 6-6 6"/></svg>',
+};
+function rowsEditor(d, userId) {
+  const box = $('#rows-edit');
+  const watched = new Set([...d.History.map(h => h.Id), ...d.Letterboxd.Watched.filter(f => f.ItemId).map(f => f.ItemId)]);
+  const rows = d.Rows.map(r => ({ ...r, Movies: [...r.Movies] }));
+  let hidden = [...(d.Hidden || [])];
+
+  const save = async (row, removed = []) => {
+    try {
+      await call('PUT', `/api/users/${userId}/rows/${row.Slot}`, { Items: row.Movies.map(m => m.Id), Added: row.Movies.filter(m => m.Added).map(m => m.Id), Removed: removed });
+      toast('Saved. The TV shows it next time the home screen loads.');
+    } catch (err) { toast(err.message); }
+  };
+
+  const draw = () => {
+    if (!rows.length) { box.innerHTML = '<p class="empty">No rows yet. They appear after the first picks; switch the person on and press "Pick again now".</p>'; return; }
+    box.innerHTML = `<p class="note" style="margin-top:0">These are the rows on the TV. Take out what doesn't fit, add what you want them to see. Movies you add stay at the front until watched; the AI fills the rest. Movies you take out are never recommended to this person again.</p>`
+      + rows.map((r, ri) => {
+        const mine = r.Movies.filter(m => m.Added).length;
+        return `<div class="row-edit" data-r="${ri}">
+          <div class="head"><div class="row-name">${esc(r.Name)}</div><span class="note">${r.Movies.length} movies${mine ? ` · ${mine} added by you` : ''}</span><button class="btn add-btn">Add a movie</button></div>
+          <div class="picker hidden"><input type="search" placeholder="Search by title, year, director or actor" autocomplete="off" spellcheck="false"><div class="results"></div></div>
+          <div class="strip">${r.Movies.map((m, mi) => `<div class="tile" data-m="${mi}">
+            ${poster(m.Id, m.Title, m.Added ? '<div class="flag">Added by you</div>' : '')}
+            <div class="tile-tools">${m.Added ? `<button class="mv" data-d="-1" title="Earlier">${icon.left}</button><button class="mv" data-d="1" title="Later">${icon.right}</button><span class="spacer"></span>` : ''}<button class="rm" title="${m.Added ? 'Take out again' : 'Take out; never recommend it to them again'}">${icon.x}</button></div>
+            <div class="cap">${esc(m.Title)}</div></div>`).join('')}</div>
+        </div>`;
+      }).join('')
+      + (hidden.length ? `<h3 class="block-title">Taken out <span class="note">never recommended to ${esc(d.Name)}</span></h3>
+        <table class="list">${hidden.map(h => `<tr><td>${esc(h.Title)}</td><td style="text-align:right"><button class="btn quiet back" data-id="${h.Id}">Allow again</button></td></tr>`).join('')}</table>` : '');
+    checkPosters(box);
+
+    $$('.row-edit', box).forEach(el => {
+      const row = rows[Number(el.dataset.r)];
+      $$('.tile', el).forEach(t => {
+        const mi = Number(t.dataset.m), m = row.Movies[mi];
+        $('.rm', t).onclick = () => {
+          row.Movies.splice(mi, 1);
+          const removed = m.Added ? [] : [m.Id];
+          if (!m.Added) hidden.push({ Id: m.Id, Title: m.Title });
+          draw(); save(row, removed);
+        };
+        $$('.mv', t).forEach(b => b.onclick = () => {
+          const to = mi + Number(b.dataset.d);
+          if (to < 0 || to >= row.Movies.length || !row.Movies[to].Added) return;
+          [row.Movies[mi], row.Movies[to]] = [row.Movies[to], row.Movies[mi]];
+          draw(); save(row);
+        });
+      });
+      picker(el, row);
+    });
+    $$('.back', box).forEach(b => b.onclick = async () => {
+      await call('DELETE', `/api/users/${userId}/hidden/${b.dataset.id}`);
+      hidden = hidden.filter(h => h.Id !== b.dataset.id); draw(); toast('Allowed again');
+    });
+  };
+
+  const picker = (el, row) => {
+    const panel = $('.picker', el), input = $('input', panel), results = $('.results', panel);
+    let timer = null, found = [], sel = 0;
+    $('.add-btn', el).onclick = () => { panel.classList.toggle('hidden'); if (!panel.classList.contains('hidden')) input.focus(); };
+    const add = m => {
+      if (!m || row.Movies.some(x => x.Id === m.Id)) return;
+      const firstAi = row.Movies.findIndex(x => !x.Added);
+      row.Movies.splice(firstAi < 0 ? row.Movies.length : firstAi, 0, { Id: m.Id, Title: `${m.Title} (${m.Year ?? ''})`, Added: true });
+      // Added movies come back into play if they were taken out before
+      hidden = hidden.filter(h => h.Id !== m.Id);
+      const q = input.value;
+      draw(); save(row);
+      // Keep the search open with the same words, to add several in a row
+      const again = $(`.row-edit[data-r="${rows.indexOf(row)}"]`, box), next = $('.picker input', again);
+      $('.picker', again).classList.remove('hidden'); next.value = q; next.focus(); next.dispatchEvent(new Event('input'));
+    };
+    const paint = () => {
+      results.innerHTML = found.map((m, i) => {
+        const inRow = row.Movies.some(x => x.Id === m.Id);
+        const why = inRow ? 'already in this row' : watched.has(m.Id) ? 'watched' : '';
+        return `<button class="result ${i === sel ? 'sel' : ''}" data-i="${i}" ${inRow ? 'disabled' : ''}>${poster(m.Id, m.Title)}
+          <div class="what"><div>${esc(m.Title)} <span class="y" style="color:var(--faint)">${m.Year ?? ''}</span></div><div class="sub">${esc([...m.Subcategories, ...m.Moods].slice(0, 3).join(', ') || (m.Tagged ? '' : 'not described yet'))}</div></div>
+          <span class="why">${why}</span></button>`;
+      }).join('');
+      checkPosters(results);
+      $$('.result', results).forEach(b => b.onclick = () => add(found[Number(b.dataset.i)]));
+    };
+    input.oninput = () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (!q) { found = []; paint(); return; }
+      timer = setTimeout(async () => {
+        const r = await call('GET', '/api/movies?' + new URLSearchParams({ q, take: 12 }));
+        if (input.value.trim() !== q) return;
+        found = r.Items; sel = found.findIndex(m => !row.Movies.some(x => x.Id === m.Id)); paint();
+        if (!found.length) results.innerHTML = '<div class="note" style="padding:10px 12px">Nothing in the library matches.</div>';
+      }, 180);
+    };
+    input.onkeydown = e => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(0, Math.min(found.length - 1, sel + (e.key === 'ArrowDown' ? 1 : -1))); paint(); }
+      else if (e.key === 'Enter') { e.preventDefault(); add(found[sel]); }
+      else if (e.key === 'Escape') { e.stopPropagation(); panel.classList.add('hidden'); }
+    };
+  };
+  draw();
+}
+
 const tagList = (list, avoid = false) => `<div class="tags">${list.map(t => `<span class="tag ${avoid ? 'avoid' : ''}">${esc(t)}</span>`).join('')}</div>`;
 function listTable(title, films, watched) {
   if (!films.length) return '';
