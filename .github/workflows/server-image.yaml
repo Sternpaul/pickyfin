@@ -40,6 +40,8 @@ jobs:
         with:
           context: server
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            PICKYFIN_VERSION=${{ github.sha }}
           push: true
           tags: |
             ${{ steps.name.outputs.image }}:latest

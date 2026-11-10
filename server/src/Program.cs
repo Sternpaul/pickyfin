@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Console;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -21,12 +22,7 @@ ServerSettings.Load(dataDirectory);
 // Container log: one line per event, our own messages only; ASP.NET's per-request
 // chatter stays off unless something goes wrong
 builder.Logging.ClearProviders();
-builder.Logging.AddSimpleConsole(o =>
-{
-    o.SingleLine = true;
-    o.IncludeScopes = false;
-    o.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
-});
+builder.Logging.AddConsole(o => o.FormatterName = LogFormat.Name).AddConsoleFormatter<LogFormat, ConsoleFormatterOptions>();
 builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
 builder.Logging.AddFilter("System", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Error);
@@ -263,7 +259,7 @@ admin.MapGet("/users/{id:guid}/rows", async (Guid id, Database database, MovieSt
 app.MapGet("/health", () => Results.Ok("ok"));
 
 app.Lifetime.ApplicationStarted.Register(() =>
-    app.Logger.LogInformation("Pickyfin Server started. Jellyfin: {Url}", string.IsNullOrEmpty(ServerSettings.Current.JellyfinUrl) ? "not set" : ServerSettings.Current.JellyfinUrl));
+    app.Logger.LogInformation("Admin page listening on {Urls}", string.Join(", ", app.Urls)));
 
 app.Run();
 

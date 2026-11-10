@@ -13,5 +13,6 @@ services:
       JELLYFIN_URL: http://jellyfin:8096
       # Jellyfin: Dashboard -> API Keys -> + (name it "Pickyfin")
       JELLYFIN_API_KEY: ""
+      TZ: Europe/Berlin   # log times in your time zone
     volumes:
       - ./pickyfin-data:/data

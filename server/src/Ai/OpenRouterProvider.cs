@@ -142,7 +142,7 @@ namespace Pickyfin.Server.Ai
                 catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or OperationCanceledException) && !cancellationToken.IsCancellationRequested)
                 {
                     _logger.LogWarning("OpenRouter: {Model} attempt {Attempt}/{Max} failed: {Error}", model, attempt, maxAttempts,
-                        ex is TaskCanceledException ? "no answer within 5 minutes" : ex.Message);
+                        ex is TaskCanceledException ? "no answer within 10 minutes" : ex.Message);
                     if (attempt == maxAttempts) return new OpenRouterCallResult { Success = false, Error = $"network: {ex.Message}" };
                     await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt) * 2)), cancellationToken);
                     continue;

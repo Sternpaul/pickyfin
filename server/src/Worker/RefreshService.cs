@@ -52,6 +52,7 @@ public sealed class RefreshService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await LogStartupAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -85,7 +86,10 @@ public sealed class RefreshService : BackgroundService
         {
             State = "Syncing and classifying the library";
             _librarySyncRequested = false;
+            var started = DateTime.UtcNow;
+            _logger.LogInformation("Library sync started");
             await _library.SyncAsync(cancellationToken);
+            _logger.LogInformation("Library sync finished in {Duration}", Pretty(DateTime.UtcNow - started));
         }
 
         State = "Checking users";
@@ -109,6 +113,43 @@ public sealed class RefreshService : BackgroundService
                 await UpdateAsync(user.UserId, u => u.LastResult = "Failed: " + error.Message, cancellationToken);
             }
         }
+    }
+
+    /// <summary>One block at start-up saying what this server runs with, and whether it can reach Jellyfin.</summary>
+    private async Task LogStartupAsync(CancellationToken cancellationToken)
+    {
+        var s = ServerSettings.Current;
+        var build = Environment.GetEnvironmentVariable("PICKYFIN_VERSION") ?? "dev";
+        _logger.LogInformation("Pickyfin Server {Version} starting", build.Length == 40 ? build[..7] : build);
+
+        if (!_jellyfin.IsConfigured)
+        {
+            _logger.LogWarning("Jellyfin: not configured. Set JELLYFIN_URL and JELLYFIN_API_KEY on the container.");
+        }
+        else
+        {
+            try
+            {
+                var (name, version) = await _jellyfin.GetServerInfoAsync(cancellationToken);
+                _logger.LogInformation("Jellyfin: connected to \"{Name}\" ({Version}) at {Url}", name, version, s.JellyfinUrl);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                _logger.LogError("Jellyfin: can't reach {Url}: {Error}", s.JellyfinUrl, error.Message);
+            }
+        }
+
+        _logger.LogInformation(string.IsNullOrWhiteSpace(s.ApiKey)
+            ? "AI: no key set yet (Settings → AI)"
+            : $"AI: {s.AIProvider}, picking with {s.ChatModel}, tagging with {s.ClassificationModel}");
+        _logger.LogInformation("TMDB keywords: {State}", string.IsNullOrWhiteSpace(s.TmdbApiKey) ? "off (no key)" : "on");
+        _logger.LogInformation("Rows: Recommended for you + {Because} Because You Watched, {Picks} movies each, fresh at least every {Hours} h; {Excluded} librar{Plural} switched off",
+            s.BecauseRows, s.PicksPerRow, s.RefreshHours, s.ExcludedLibraries.Count, s.ExcludedLibraries.Count == 1 ? "y" : "ies");
+
+        await using var db = _database.Open();
+        var users = await db.Users.AsNoTracking().ToListAsync(cancellationToken);
+        var on = users.Where(u => u.Enabled).Select(u => u.Name).OrderBy(n => n).ToList();
+        _logger.LogInformation("Users: {On} of {Total} switched on{Names}", on.Count, users.Count, on.Count > 0 ? ": " + string.Join(", ", on) : "");
     }
 
     private async Task SyncUsersAsync(CancellationToken cancellationToken)
@@ -167,6 +208,9 @@ public sealed class RefreshService : BackgroundService
         }, cancellationToken);
         _logger.LogInformation("Picks for {User}: {Summary}", user.Name, result.Summary);
     }
+
+    private static string Pretty(TimeSpan t) =>
+        t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes} min" : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes} min {t.Seconds} s" : $"{t.Seconds} s";
 
     public async Task SwitchOffAsync(Guid userId, CancellationToken cancellationToken) => await _writer.RemoveAllAsync(userId, cancellationToken);
 

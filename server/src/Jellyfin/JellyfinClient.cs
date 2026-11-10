@@ -106,10 +106,11 @@ public sealed class JellyfinClient
         public bool IsDisabled { get; set; }
     }
 
-    public async Task<string> GetServerNameAsync(CancellationToken cancellationToken = default)
+    public async Task<(string Name, string Version)> GetServerInfoAsync(CancellationToken cancellationToken = default)
     {
         using var document = await SendAsync<JsonDocument>(Request(HttpMethod.Get, "/System/Info"), cancellationToken);
-        return document.RootElement.GetProperty("ServerName").GetString() ?? "Jellyfin";
+        var root = document.RootElement;
+        return (root.GetProperty("ServerName").GetString() ?? "Jellyfin", root.TryGetProperty("Version", out var v) ? v.GetString() ?? "?" : "?");
     }
 
     public async Task<List<JellyfinUser>> GetUsersAsync(CancellationToken cancellationToken = default)

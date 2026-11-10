@@ -35,16 +35,16 @@ namespace Pickyfin.Server.Library
             // Re-tagging movies classified under an older vocabulary costs one AI call
             // per batch, so it only happens when the admin opts in.
             var includeOutdated = ServerSettings.Current.ReclassifyOutdatedMovies;
-            _logger.LogInformation("Checking for unclassified movies (including outdated tags: {IncludeOutdated})...", includeOutdated);
+            
             
             var unclassified = await _movieStore.GetMoviesNeedingClassificationAsync(includeOutdated, cancellationToken);
             if (!unclassified.Any())
             {
-                _logger.LogInformation("No movies require classification.");
+                _logger.LogInformation("All movies are tagged");
                 return;
             }
 
-            _logger.LogInformation("Found {Count} unclassified movies. Starting batch classification...", unclassified.Count);
+            _logger.LogInformation("Tagging {Count} movies, 20 per AI call", unclassified.Count);
             
             var provider = _aiProviderFactory.GetProvider();
             
@@ -77,7 +77,7 @@ namespace Pickyfin.Server.Library
                 }
             }
             
-            _logger.LogInformation("Classification complete.");
+            _logger.LogInformation("Tagging finished");
         }
 
         private void ProcessClassificationResult(string? jsonResponse, List<MovieMetadata> batch)

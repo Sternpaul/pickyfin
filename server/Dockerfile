@@ -7,9 +7,11 @@ COPY src/ .
 RUN dotnet publish -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+ARG PICKYFIN_VERSION=dev
 WORKDIR /app
 COPY --from=build /app .
-ENV PICKYFIN_DATA=/data \
+ENV PICKYFIN_VERSION=$PICKYFIN_VERSION \
+    PICKYFIN_DATA=/data \
     ASPNETCORE_URLS=http://+:8097
 VOLUME /data
 EXPOSE 8097

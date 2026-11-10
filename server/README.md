@@ -46,6 +46,7 @@ services:
     environment:
       JELLYFIN_URL: http://jellyfin:8096   # how the container reaches Jellyfin
       JELLYFIN_API_KEY: "..."              # Jellyfin: Dashboard → API Keys → +
+      TZ: Europe/Berlin   # log times in your time zone
     volumes:
       - ./pickyfin-data:/data
 ```
@@ -69,6 +70,7 @@ service name.
        environment:
          JELLYFIN_URL: http://jellyfin:8096
          JELLYFIN_API_KEY: "..."
+         TZ: Europe/Berlin   # log times in your time zone
        volumes:
          - pickyfin-data:/data
    ```

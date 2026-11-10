@@ -20,7 +20,8 @@ namespace Pickyfin.Server.Ai
         public IAIProvider GetProvider()
         {
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.Timeout = TimeSpan.FromMinutes(5);
+            // Free models can take several minutes for a batch of 20 movies
+            httpClient.Timeout = TimeSpan.FromMinutes(10);
 
             return Config.AIProvider switch
             {
