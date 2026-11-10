@@ -432,7 +432,7 @@
             <div><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="check-models"></div>
           </div>
         </div>
-        <datalist id="check-models"><option value="openai/gpt-oss-120b:free"><option value="nvidia/nemotron-3-super-120b-a12b:free"><option value="google/gemma-4-31b-it:free"><option value="openai/gpt-oss-20b:free"><option value="google/gemini-2.5-flash"></datalist>
+        <datalist id="check-models"></datalist>
         <div class="setting">
           <div><h3>Web lookups with Exa <span class="state" id="exa-state"></span></h3><p class="why">For films the AI doesn't know: a web search finds a real description (Wikipedia, Letterboxd, TMDB…), and the film is described again with it. Under one cent per film. Any movie can also be looked up by hand from its page under Movies. A key comes from dashboard.exa.ai.</p></div>
           <div class="control"><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
@@ -521,6 +521,7 @@
       <div class="page-head"><div><h1>Status</h1><p>What the server is doing and what it did recently.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
       <div class="figure"><span class="big" id="lib-count">–</span><span class="of" id="lib-of"></span></div>
       <div class="meter"><div id="lib-bar"></div></div>
+      <div id="check-wrap" class="hidden" style="margin-top:14px"><div class="of" id="check-of" style="margin-bottom:6px"></div><div class="meter"><div id="check-bar"></div></div></div>
       <div class="facts-grid">
         <div><div class="label">Library synced</div><div id="lib-synced">–</div></div>
         <div><div class="label">Jellyfin</div><div id="jf-url">–</div></div>
@@ -644,6 +645,7 @@ async function loadSettings() {
   $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
+  call('GET', '/api/ai/free-models').then(list => { $('#check-models').innerHTML = list.map(m => `<option value="${esc(m)}">`).join(''); }).catch(() => {});
   $('#CheckEnabled').checked = settings.CheckEnabled; $('#CheckModel').value = settings.CheckModel || '';
   $('#ExaApiKey').value = ''; $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
   $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
@@ -1206,6 +1208,12 @@ async function loadStatus() {
     $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described${s.Classified < s.Movies ? eta : ''}`;
     $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';
     $('#lib-synced').textContent = ago(s.LibrarySynced);
+    $('#check-wrap').classList.toggle('hidden', !s.CheckEnabled);
+    if (s.CheckEnabled) {
+      const checking = s.State.startsWith('Second opinion');
+      $('#check-of').textContent = `Second opinion: ${s.Reviewed.toLocaleString()} of ${s.Classified.toLocaleString()} described movies checked or looked up${checking ? eta : ''}`;
+      $('#check-bar').style.width = s.Classified ? (100 * s.Reviewed / s.Classified) + '%' : '0';
+    }
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
   } catch {}
 }

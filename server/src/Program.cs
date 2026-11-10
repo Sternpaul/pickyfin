@@ -141,7 +141,7 @@ api.MapGet("/me", (HttpContext http) =>
 
 admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, LogBuffer log, CancellationToken ct) =>
 {
-    var (total, classified, issues) = await store.GetStatsAsync(ct);
+    var (total, classified, issues, reviewed) = await store.GetStatsAsync(ct);
     var (waitingFor, seconds) = Activity.Current;
     return Results.Ok(new
     {
@@ -153,8 +153,17 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Movies = total,
         Classified = classified,
         Issues = issues,
+        CheckEnabled = ServerSettings.Current.CheckEnabled,
+        Reviewed = reviewed,
         Log = log.Lines.Reverse().Take(80),
     });
+});
+
+// Free models OpenRouter offers right now, for the model pickers
+admin.MapGet("/ai/free-models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
+{
+    await OpenRouterModels.GetAsync(http.CreateClient(), logs.CreateLogger("OpenRouter"), ct);
+    return Results.Ok(OpenRouterModels.Free);
 });
 
 admin.MapPost("/library/sync", (RefreshService worker) =>

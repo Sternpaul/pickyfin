@@ -34,7 +34,7 @@ public sealed class ServerSettings
     // ---- checking the AI's work ----
     /// <summary>A second model reviews every movie's tags and flags what looks wrong.</summary>
     public bool CheckEnabled { get; set; }
-    public string CheckModel { get; set; } = "openai/gpt-oss-120b:free";
+    public string CheckModel { get; set; } = "nvidia/nemotron-3.5-super-vl:free";
     /// <summary>Exa web search: finds facts about films the AI doesn't know, then they're tagged again.</summary>
     public string ExaApiKey { get; set; } = "";
     public bool WebLookupAuto { get; set; } = true;

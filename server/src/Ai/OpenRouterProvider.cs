@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -32,12 +33,14 @@ namespace Pickyfin.Server.Ai
         // 429 in one session while gpt-oss-20b stayed open). When the user's chosen
         // model is rate-limited, we transparently try the next one so a long
         // library-classification run isn't killed by a transient 429.
+        // Free models come and go; any no longer listed by OpenRouter are skipped (see OpenRouterModels).
         private static readonly string[] FreeFallbackModels =
         {
-            "nvidia/nemotron-3-super-120b-a12b:free",
-            "openai/gpt-oss-20b:free",
             "google/gemma-4-31b-it:free",
-            "poolside/laguna-s-2.1:free"
+            "nvidia/nemotron-3.5-super-vl:free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "dots-studio/dots-3-note-preview:free",
         };
 
         public async Task<bool> ValidateConnectionAsync(CancellationToken cancellationToken = default)
@@ -83,29 +86,54 @@ namespace Pickyfin.Server.Ai
             return chain;
         }
 
-        // Tries each model in the chain in order. A model that is rate-limited (429)
-        // or otherwise fails is skipped in favour of the next one. Auth errors (401/403)
-        // apply to every model and abort the whole chain immediately.
+        // Tries each model in the chain in order.
+        // - 429 (busy): two quick tries, then the next model. If every model was only busy,
+        //   wait a minute and go round again (three rounds at most).
+        // - 404 (model gone): skipped, and left out for the next six hours.
+        // - 400 (request rejected): tried once more without JSON mode (some models don't support
+        //   it); if it's still rejected, stop. It's our request, another model won't fix that.
+        // - 401/403: the key is wrong, stop.
         private async Task<string> CallApiWithFallbackAsync(List<string> models, string prompt, bool forceJson, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(Config.ApiKey))
                 throw new InvalidOperationException("OpenRouter API Key is missing.");
 
-            var lastError = "No models available.";
-            for (int i = 0; i < models.Count; i++)
+            var live = string.IsNullOrWhiteSpace(Config.CustomEndpoint) ? await OpenRouterModels.GetAsync(_httpClient, _logger, cancellationToken) : null;
+            if (live is not null)
             {
-                var model = models[i];
-                var result = await TryCallModelAsync(model, prompt, forceJson, cancellationToken);
-                if (result.Success)
+                foreach (var gone in models.Where(m => !live.ContainsKey(m) && m.Equals(models[0], StringComparison.OrdinalIgnoreCase)))
+                    _logger.LogWarning("OpenRouter: '{Model}' isn't offered anymore; pick another model on the AI page. Using fallbacks.", gone);
+                models = models.Where(m => live.ContainsKey(m)).ToList();
+            }
+            models = models.Where(m => !OpenRouterModels.IsGone(m)).ToList();
+            if (models.Count == 0)
+                throw new InvalidOperationException("None of the models is offered by OpenRouter right now; pick another model on the AI page.");
+
+            var lastError = "No models available.";
+            for (var round = 1; round <= 3; round++)
+            {
+                var onlyBusy = true;
+                for (var i = 0; i < models.Count; i++)
                 {
-                    if (i > 0)
-                        _logger.LogWarning("OpenRouter: fell back to model '{Model}' after earlier failure(s).", model);
-                    return result.Content;
+                    var model = models[i];
+                    var json = forceJson && (live is null || !live.TryGetValue(model, out var supportsJson) || supportsJson);
+                    var result = await TryCallModelAsync(model, prompt, json, cancellationToken);
+                    if (result.Success)
+                    {
+                        if (i > 0 || round > 1)
+                            _logger.LogWarning("OpenRouter: answered by fallback model '{Model}'.", model);
+                        return result.Content;
+                    }
+                    if (result.AbortChain)
+                        throw new InvalidOperationException($"OpenRouter stopped: {result.Error}");
+                    lastError = $"{model}: {result.Error}";
+                    if (result.Gone) OpenRouterModels.MarkGone(model);
+                    else if (!result.Busy) onlyBusy = false;
+                    _logger.LogWarning("OpenRouter: model '{Model}' failed ({Error}); trying the next one.", model, result.Error);
                 }
-                if (result.AbortChain)
-                    throw new InvalidOperationException($"OpenRouter request failed (auth/permission): {result.Error}");
-                lastError = result.Error;
-                _logger.LogWarning("OpenRouter: model '{Model}' failed ({Error}); trying next fallback.", model, result.Error);
+                if (!onlyBusy || round == 3) break;
+                _logger.LogWarning("OpenRouter: every free model is busy right now; trying again in a minute (round {Round} of 3).", round + 1);
+                await Task.Delay(TimeSpan.FromSeconds(60), cancellationToken);
             }
             throw new InvalidOperationException($"OpenRouter request failed on all models. Last error: {lastError}");
         }
@@ -116,14 +144,15 @@ namespace Pickyfin.Server.Ai
                 ? "https://openrouter.ai/api/v1/chat/completions"
                 : Config.CustomEndpoint;
 
-            const int maxAttempts = 5;
+            const int maxAttempts = 3;
+            var busyTries = 0;
 
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 using var request = new HttpRequestMessage(HttpMethod.Post, url);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Config.ApiKey);
-                request.Headers.Add("HTTP-Referer", "https://github.com/jellyfin/jellyfin");
-                request.Headers.Add("X-Title", "Jellyfin AI Recommender");
+                request.Headers.Add("HTTP-Referer", "https://github.com/Sternpaul/pickyfin");
+                request.Headers.Add("X-Title", "Pickyfin");
 
                 var requestBody = new
                 {
@@ -145,10 +174,10 @@ namespace Pickyfin.Server.Ai
                 }
                 catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or OperationCanceledException) && !cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogWarning("OpenRouter: {Model} attempt {Attempt}/{Max} failed: {Error}", model, attempt, maxAttempts,
-                        ex is TaskCanceledException ? "no answer within 10 minutes" : ex.Message);
-                    if (attempt == maxAttempts) return new OpenRouterCallResult { Success = false, Error = $"network: {ex.Message}" };
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt) * 2)), cancellationToken);
+                    var what = ex is TaskCanceledException ? $"no answer within {(int)_httpClient.Timeout.TotalMinutes} minutes" : ex.Message;
+                    _logger.LogWarning("OpenRouter: {Model} attempt {Attempt}/{Max} failed: {Error}", model, attempt, maxAttempts, what);
+                    if (attempt == maxAttempts || ex is TaskCanceledException) return new OpenRouterCallResult { Error = what };
+                    await Task.Delay(TimeSpan.FromSeconds(5 * attempt), cancellationToken);
                     continue;
                 }
 
@@ -164,10 +193,10 @@ namespace Pickyfin.Server.Ai
                         attemptResponse.Dispose();
                         return new OpenRouterCallResult { Success = true, Content = content };
                     }
-                    catch (KeyNotFoundException ex)
+                    catch (Exception ex) when (ex is KeyNotFoundException or JsonException or InvalidOperationException)
                     {
                         attemptResponse.Dispose();
-                        return new OpenRouterCallResult { Success = false, Error = $"unexpected response format: {ex.Message}" };
+                        return new OpenRouterCallResult { Error = $"unexpected response format: {ex.Message}" };
                     }
                 }
 
@@ -175,29 +204,44 @@ namespace Pickyfin.Server.Ai
                 var status = (int)attemptResponse.StatusCode;
                 if (errorBody.Length > 300) errorBody = errorBody[..300] + "…";
 
-                // Auth/permission errors are not model-specific: abort the whole chain.
                 if (status == 401 || status == 403)
                 {
                     attemptResponse.Dispose();
-                    return new OpenRouterCallResult { Success = false, AbortChain = true, Error = $"HTTP {status}: {errorBody}" };
+                    return new OpenRouterCallResult { AbortChain = true, Error = $"the API key was refused (HTTP {status}): {errorBody}" };
                 }
 
                 if (status == 429)
                 {
-                    var delay = GetRetryDelay(attemptResponse, attempt, maxAttempts);
-                    _logger.LogWarning("OpenRouter model '{Model}' rate limited (429). Attempt {Attempt}/{Max}. Waiting {Delay}s.", model, attempt, maxAttempts, delay);
+                    var delay = Math.Min(30, GetRetryDelay(attemptResponse, attempt, maxAttempts));
                     attemptResponse.Dispose();
-                    if (attempt == maxAttempts) return new OpenRouterCallResult { Success = false, Error = "rate limited (429) after retries" };
+                    if (++busyTries >= 2) return new OpenRouterCallResult { Busy = true, Error = "busy (429)" };
+                    _logger.LogInformation("OpenRouter model '{Model}' is busy (429); trying again in {Delay}s.", model, delay);
                     await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken);
+                    attempt--; // busy waits don't use up the network retries
                     continue;
                 }
 
-                // Any other error (4xx/5xx): model-specific, skip to the next fallback.
                 attemptResponse.Dispose();
-                return new OpenRouterCallResult { Success = false, Error = $"HTTP {status}: {errorBody}" };
+                if (status == 404)
+                    return new OpenRouterCallResult { Gone = true, Error = $"not offered anymore (HTTP 404): {errorBody}" };
+
+                if (status == 400)
+                {
+                    if (forceJson)
+                    {
+                        _logger.LogInformation("OpenRouter: '{Model}' rejected the request (400); trying once more without JSON mode.", model);
+                        forceJson = false;
+                        attempt--;
+                        continue;
+                    }
+                    return new OpenRouterCallResult { AbortChain = true, Error = $"'{model}' rejected the request (HTTP 400): {errorBody}" };
+                }
+
+                // 5xx and anything else: the model's provider is having trouble, try the next model
+                return new OpenRouterCallResult { Error = $"HTTP {status}: {errorBody}" };
             }
 
-            return new OpenRouterCallResult { Success = false, Error = "exhausted retries" };
+            return new OpenRouterCallResult { Error = "exhausted retries" };
         }
 
         private class OpenRouterCallResult
@@ -205,6 +249,8 @@ namespace Pickyfin.Server.Ai
             public bool Success;
             public string Content = string.Empty;
             public bool AbortChain;
+            public bool Busy;
+            public bool Gone;
             public string Error = string.Empty;
         }
 
