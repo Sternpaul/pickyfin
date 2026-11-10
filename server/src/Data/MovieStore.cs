@@ -27,13 +27,13 @@ public sealed class MovieStore
         return pending.Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
     }
 
-    public async Task<(int Total, int Classified)> GetStatsAsync(CancellationToken cancellationToken = default)
+    public async Task<(int Total, int Classified, int Issues)> GetStatsAsync(CancellationToken cancellationToken = default)
     {
         // Only movies that can be recommended (not in switched-off libraries)
         await using var db = _database.Open();
-        var rows = await db.Movies.AsNoTracking().Select(m => new { m.Libraries, m.IsClassified }).ToListAsync(cancellationToken);
+        var rows = await db.Movies.AsNoTracking().Select(m => new { m.Libraries, m.IsClassified, HasIssue = m.Issue != null }).ToListAsync(cancellationToken);
         var counted = rows.Where(r => !ServerSettings.Current.IsLibraryExcluded(r.Libraries)).ToList();
-        return (counted.Count, counted.Count(r => r.IsClassified));
+        return (counted.Count, counted.Count(r => r.IsClassified), counted.Count(r => r.HasIssue));
     }
 
     /// <summary>Inserts or replaces whole rows.</summary>

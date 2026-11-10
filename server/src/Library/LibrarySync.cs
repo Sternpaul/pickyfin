@@ -14,14 +14,16 @@ public sealed class LibrarySync
     private readonly JellyfinClient _jellyfin;
     private readonly MovieStore _store;
     private readonly MovieClassifier _classifier;
+    private readonly SecondOpinion _secondOpinion;
     private readonly TmdbKeywordService _tmdb;
     private readonly ILogger<LibrarySync> _logger;
 
-    public LibrarySync(JellyfinClient jellyfin, MovieStore store, MovieClassifier classifier, TmdbKeywordService tmdb, ILogger<LibrarySync> logger)
+    public LibrarySync(JellyfinClient jellyfin, MovieStore store, MovieClassifier classifier, SecondOpinion secondOpinion, TmdbKeywordService tmdb, ILogger<LibrarySync> logger)
     {
         _jellyfin = jellyfin;
         _store = store;
         _classifier = classifier;
+        _secondOpinion = secondOpinion;
         _tmdb = tmdb;
         _logger = logger;
     }
@@ -56,8 +58,12 @@ public sealed class LibrarySync
 
             var libraries = string.Join(",", membership.GetValueOrDefault(item.Id, new()).OrderBy(g => g));
             var plotChanged = !isNew && !string.Equals(movie.Plot, item.Overview, StringComparison.Ordinal);
+            var genres = System.Text.Json.JsonSerializer.Serialize(item.Genres ?? new());
+            var countries = string.Join(", ", item.ProductionLocations ?? new());
+            var originalTitle = string.Equals(item.OriginalTitle, item.Name, StringComparison.OrdinalIgnoreCase) ? null : item.OriginalTitle;
             if (!isNew && !plotChanged && movie.Title == item.Name && movie.Libraries == libraries
-                && movie.CommunityRating == item.CommunityRating && movie.CriticRating == item.CriticRating)
+                && movie.CommunityRating == item.CommunityRating && movie.CriticRating == item.CriticRating
+                && movie.Genres == genres && movie.Countries == countries && movie.OriginalTitle == originalTitle)
                 continue;
 
             movie.Libraries = libraries;
@@ -70,6 +76,9 @@ public sealed class LibrarySync
             movie.TmdbId = int.TryParse(Provider(item, "Tmdb"), out var tmdbId) ? tmdbId : null;
             movie.Director = item.People?.FirstOrDefault(p => p.Type == "Director")?.Name;
             movie.Cast = string.Join(", ", (item.People ?? new()).Where(p => p.Type == "Actor").Take(5).Select(p => p.Name));
+            movie.Genres = genres;
+            movie.Countries = countries;
+            movie.OriginalTitle = originalTitle;
             // A changed plot means the old tags may be wrong; classify again
             if (plotChanged && !movie.ManuallyEdited) movie.IsClassified = false;
             changed.Add(movie);
@@ -87,12 +96,33 @@ public sealed class LibrarySync
         }
 
         if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey))
+        {
             await _classifier.ClassifyPendingMoviesAsync(cancellationToken);
+            await GenreSweepAsync(cancellationToken);
+            await _secondOpinion.CheckPendingAsync(cancellationToken);
+        }
         else
             _logger.LogWarning("No AI key set: movies are not classified, recommendations fall back to ratings");
 
 
         LastSync = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// The free genre check for movies tagged before it existed (or whose genres arrived
+    /// later). Movies already reviewed or cleared by the admin are left alone.
+    /// </summary>
+    private async Task GenreSweepAsync(CancellationToken cancellationToken)
+    {
+        var flagged = (await _store.GetAllMoviesAsync(cancellationToken))
+            .Where(m => m.IsClassified && !m.ManuallyEdited && !m.Checked && m.Issue is null)
+            .Select(m => (Movie: m, Problems: GenreCheck.Problems(m)))
+            .Where(x => x.Problems.Count > 0)
+            .ToList();
+        if (flagged.Count == 0) return;
+        foreach (var (movie, problems) in flagged) movie.Issue = string.Join("\n", problems);
+        await _store.SaveMoviesAsync(flagged.Select(x => x.Movie), cancellationToken);
+        _logger.LogInformation("Genre check: {Count} movie(s) look off, see Issues", flagged.Count);
     }
 
     private static string? Provider(JellyfinItem item, string name) =>

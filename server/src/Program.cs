@@ -40,7 +40,10 @@ builder.Services.AddSingleton<MovieStore>();
 builder.Services.AddSingleton(sp => new JellyfinClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("jellyfin")));
 builder.Services.AddHttpClient("jellyfin", c => c.Timeout = TimeSpan.FromMinutes(5));
 builder.Services.AddSingleton<AIProviderFactory>();
+builder.Services.AddSingleton(new DataDirectory(dataDirectory));
+builder.Services.AddSingleton<WebLookup>();
 builder.Services.AddSingleton<MovieClassifier>();
+builder.Services.AddSingleton<SecondOpinion>();
 builder.Services.AddSingleton(sp => new TmdbKeywordService(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb"),
     sp.GetRequiredService<MovieStore>(),
@@ -137,7 +140,7 @@ api.MapGet("/me", (HttpContext http) =>
 
 admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, LogBuffer log, CancellationToken ct) =>
 {
-    var (total, classified) = await store.GetStatsAsync(ct);
+    var (total, classified, issues) = await store.GetStatsAsync(ct);
     var (waitingFor, seconds) = Activity.Current;
     return Results.Ok(new
     {
@@ -148,6 +151,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         LibrarySynced = library.LastSync,
         Movies = total,
         Classified = classified,
+        Issues = issues,
         Log = log.Lines.Reverse().Take(80),
     });
 });
@@ -181,7 +185,8 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     }
     // A library switched back on may have movies that were never classified
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
-    worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey);
+    worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
+        || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey);
     return Results.Ok(SettingsView.From(settings));
 });
 
@@ -317,6 +322,12 @@ record SettingsView
     public string NewArrivals { get; init; } = "some";
     public string Rotation { get; init; } = "medium";
     public double MinRating { get; init; }
+    public bool CheckEnabled { get; init; }
+    public string CheckModel { get; init; } = "";
+    public bool HasExaApiKey { get; init; }
+    public string? ExaApiKey { get; init; }
+    public bool WebLookupAuto { get; init; }
+    public double WebLookupBudget { get; init; }
 
     public static SettingsView From(ServerSettings s) => new()
     {
@@ -339,6 +350,11 @@ record SettingsView
         NewArrivals = s.NewArrivals,
         Rotation = s.Rotation,
         MinRating = s.MinRating,
+        CheckEnabled = s.CheckEnabled,
+        CheckModel = s.CheckModel,
+        HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
+        WebLookupAuto = s.WebLookupAuto,
+        WebLookupBudget = s.WebLookupBudget,
     };
 
     /// <summary>Empty secret fields mean "keep the current value".</summary>
@@ -355,6 +371,11 @@ record SettingsView
         s.ChatModel = ChatModel.Trim();
         s.CustomEndpoint = CustomEndpoint.Trim();
         if (!string.IsNullOrWhiteSpace(TmdbApiKey)) s.TmdbApiKey = TmdbApiKey.Trim();
+        if (!string.IsNullOrWhiteSpace(ExaApiKey)) s.ExaApiKey = ExaApiKey.Trim();
+        s.CheckEnabled = CheckEnabled;
+        if (!string.IsNullOrWhiteSpace(CheckModel)) s.CheckModel = CheckModel.Trim();
+        s.WebLookupAuto = WebLookupAuto;
+        s.WebLookupBudget = Math.Clamp(WebLookupBudget, 0, 1000);
         s.RefreshHours = Math.Clamp(RefreshHours, 1, 168);
         s.PicksPerRow = Math.Clamp(PicksPerRow, 5, 50);
         s.BecauseRows = Math.Clamp(BecauseRows, 0, 2);

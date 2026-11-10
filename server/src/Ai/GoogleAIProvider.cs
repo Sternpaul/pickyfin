@@ -45,6 +45,10 @@ namespace Pickyfin.Server.Ai
             return await CallApiAsync(Config.ClassificationModel, prompt, true, cancellationToken);
         }
 
+        /// <summary>Any JSON-answering prompt on the given model (the second opinion uses this).</summary>
+        public async Task<string> CompleteJsonAsync(string prompt, string model, CancellationToken cancellationToken = default) =>
+            await CallApiAsync(model, prompt, false, cancellationToken);
+
         public async Task<string> ChatAsync(string userQuery, string systemPrompt, CancellationToken cancellationToken = default)
         {
             var prompt = $"{systemPrompt}\n\nUser: {userQuery}";
@@ -80,7 +84,8 @@ namespace Pickyfin.Server.Ai
                                     type = "OBJECT",
                                     properties = new
                                     {
-                                        ItemId = new { type = "STRING" },
+                                        Ref = new { type = "STRING" },
+                                        Known = new { type = "STRING", @enum = new[] { "yes", "partly", "no" } },
                                         Subcategories = new { type = "ARRAY", items = new { type = "STRING", @enum = ClassificationVocabulary.Subcategories } },
                                         Moods = new { type = "ARRAY", items = new { type = "STRING", @enum = ClassificationVocabulary.Moods } },
                                         Themes = new { type = "ARRAY", items = new { type = "STRING" } },
@@ -89,7 +94,7 @@ namespace Pickyfin.Server.Ai
                                         Intensity = new { type = "STRING", @enum = ClassificationVocabulary.Intensity },
                                         CriticalAcclaimScore = new { type = "INTEGER" }
                                     },
-                                    required = new[] { "ItemId", "Subcategories", "Moods", "Themes", "NarrativeStyle", "Accessibility", "Intensity", "CriticalAcclaimScore" }
+                                    required = new[] { "Ref", "Known", "Subcategories", "Moods", "Themes", "NarrativeStyle", "Accessibility", "Intensity", "CriticalAcclaimScore" }
                                 }
                             }
                         },

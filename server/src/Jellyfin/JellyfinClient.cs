@@ -17,6 +17,8 @@ public sealed class JellyfinItem
     public float? CriticRating { get; set; }
     public DateTime? DateCreated { get; set; }
     public List<string>? Genres { get; set; }
+    public string? OriginalTitle { get; set; }
+    public List<string>? ProductionLocations { get; set; }
     public Dictionary<string, string>? ProviderIds { get; set; }
     public List<JellyfinPerson>? People { get; set; }
     public JellyfinUserData? UserData { get; set; }
@@ -51,7 +53,7 @@ public sealed class JellyfinClient
         Converters = { new FlexibleGuidConverter() },
     };
 
-    private const string MovieFields = "Overview,ProviderIds,People,Genres,DateCreated,CriticRating,CommunityRating,ProductionYear";
+    private const string MovieFields = "Overview,ProviderIds,People,Genres,DateCreated,CriticRating,CommunityRating,ProductionYear,OriginalTitle,ProductionLocations";
 
     private readonly HttpClient _http;
 

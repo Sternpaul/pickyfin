@@ -165,6 +165,12 @@ public sealed class Database
         }
 
         AddColumn("Movies", "ManuallyEdited", "INTEGER NOT NULL DEFAULT 0");
+        AddColumn("Movies", "Genres", "TEXT NULL");
+        AddColumn("Movies", "OriginalTitle", "TEXT NULL");
+        AddColumn("Movies", "Countries", "TEXT NULL");
+        AddColumn("Movies", "Issue", "TEXT NULL");
+        AddColumn("Movies", "Checked", "INTEGER NOT NULL DEFAULT 0");
+        AddColumn("Movies", "WebNotes", "TEXT NULL");
         AddColumn("Users", "UseLetterboxd", "INTEGER NOT NULL DEFAULT 1");
         AddColumn("Users", "LetterboxdUsername", "TEXT NULL");
         AddColumn("Users", "LetterboxdWatchlistUrl", "TEXT NULL");

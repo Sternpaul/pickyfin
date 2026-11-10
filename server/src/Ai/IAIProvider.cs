@@ -25,6 +25,8 @@ namespace Pickyfin.Server.Ai
         /// <summary>
         /// Sends a user chat query and returns the AI's response.
         /// </summary>
+        Task<string> CompleteJsonAsync(string prompt, string model, CancellationToken cancellationToken = default);
+
         Task<string> ChatAsync(
             string userQuery, 
             string systemPrompt, 

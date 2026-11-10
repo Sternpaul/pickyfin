@@ -47,6 +47,18 @@ Picks are refreshed daily, soon after the user finishes a movie, and when you
 change their description. Each refresh is one AI call per user; classifying a new
 movie costs a share of one call per 20 movies.
 
+## Checking the AI's work
+
+Tags can be wrong, especially for lesser-known films. Pickyfin catches that in three ways, and lists what it finds on the **Issues** page:
+
+- **The AI says when it doesn't know a film.** It gets every fact Jellyfin and TMDB have (genres, original title, countries, director, cast, keywords, plot) and answers "I know it", "partly" or "no".
+- **A genre check.** Subcategories that don't fit any of Jellyfin's genres (a "Slasher" with only Crime and Drama) are flagged. Nothing is changed; you decide.
+- **A second opinion** (AI page, off by default). A different model reviews every movie's tags, 40 per call, and names only what looks wrong. A free OpenRouter model works.
+
+With an [Exa](https://exa.ai) key, flagged films are looked up on the web (Wikipedia, Letterboxd, TMDB, …) and described again from what was found. That costs about one cent per film; the free plan includes $10 a month, and a monthly limit on the AI page stops lookups before that.
+
+On the Issues page, each movie can be opened and fixed by hand, looked up again, or marked as fine. Movies you edit or mark as fine are never flagged again.
+
 ## Run it
 
 ```yaml

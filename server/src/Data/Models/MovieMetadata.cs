@@ -22,6 +22,18 @@ namespace Pickyfin.Server.Data.Models
         public string? Plot { get; set; }
         public string? Director { get; set; }
         public string? Cast { get; set; }
+        /// <summary>Pickyfin: Jellyfin's genres (JSON array), original title and countries; facts for the AI and the genre check.</summary>
+        public string? Genres { get; set; }
+        public string? OriginalTitle { get; set; }
+        public string? Countries { get; set; }
+        /// <summary>Pickyfin: why these tags may be wrong ("Issues" page); null = nothing found.</summary>
+        public string? Issue { get; set; }
+        /// <summary>Pickyfin: a second model looked at the current tags (or the admin said they're fine).</summary>
+        public bool Checked { get; set; }
+        /// <summary>Pickyfin: what a web search found about the film, given to the AI when tagging again.</summary>
+        public string? WebNotes { get; set; }
+
+        [NotMapped] public List<string> GenreList => string.IsNullOrEmpty(Genres) ? new() : JsonSerializer.Deserialize<List<string>>(Genres) ?? new();
 
         // v2.0: Jellyfin's own ratings, synced on every index. CommunityRating is the
         // 0-10 audience score from the metadata provider; CriticRating is 0-100.

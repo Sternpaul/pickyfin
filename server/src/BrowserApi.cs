@@ -86,6 +86,7 @@ public static class BrowserApi
         Libraries = (m.Libraries ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(id => Guid.TryParse(id, out var g) && libraryNames.TryGetValue(g, out var n) ? n : "?").ToList(),
         Excluded = ServerSettings.Current.IsLibraryExcluded(m.Libraries),
+        HasIssue = m.Issue is not null,
     };
 
     private static object Detail(MovieMetadata m, Dictionary<Guid, string> libraryNames) => new
@@ -105,7 +106,15 @@ public static class BrowserApi
         m.CriticRating,
         m.DateAdded,
         m.LastUpdated,
+        Genres = m.GenreList,
+        m.OriginalTitle,
+        m.Countries,
+        Issue = m.Issue?.Split('\n'),
+        m.Checked,
+        m.WebNotes,
     };
+
+    private static int _lookupAllRunning;
 
     public static void MapBrowserApi(this RouteGroupBuilder admin)
     {
@@ -137,6 +146,7 @@ public static class BrowserApi
                 "tagged" => movies.Where(m => m.IsClassified),
                 "untagged" => movies.Where(m => !m.IsClassified),
                 "edited" => movies.Where(m => m.ManuallyEdited),
+                "issues" => movies.Where(m => m.Issue is not null),
                 _ => movies,
             };
             if (library is { } lib) movies = movies.Where(m => (m.Libraries ?? "").Contains(lib.ToString(), StringComparison.OrdinalIgnoreCase));
@@ -188,6 +198,9 @@ public static class BrowserApi
             movie.IsClassified = subcategories.Count > 0;
             movie.VocabularyVersion = ClassificationVocabulary.Version;
             movie.ManuallyEdited = true;
+            // Checked by a person now: nothing left to flag
+            movie.Issue = null;
+            movie.Checked = true;
             movie.LastUpdated = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
@@ -215,6 +228,91 @@ public static class BrowserApi
             await using (var db = database.Open())
                 movie = await db.Movies.AsNoTracking().FirstAsync(m => m.ItemId == id, ct);
             return Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
+        });
+
+        // ---------- issues ----------
+
+        admin.MapGet("/issues", async (MovieStore store, LibrarySync sync, JellyfinClient jellyfin, WebLookup web, CancellationToken ct) =>
+        {
+            var names = await LibraryNamesAsync(sync, jellyfin, ct);
+            var movies = (await store.GetAllMoviesAsync(ct)).Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+            var usage = web.ThisMonth;
+            var s = ServerSettings.Current;
+            return Results.Ok(new
+            {
+                Items = movies.Where(m => m.Issue is not null).OrderBy(m => m.Title, StringComparer.OrdinalIgnoreCase).Select(m => new
+                {
+                    Summary = Summary(m, names),
+                    Lines = m.Issue!.Split('\n'),
+                    LookedUp = m.WebNotes is not null,
+                    FoundOnWeb = !string.IsNullOrEmpty(m.WebNotes),
+                }),
+                Tagged = movies.Count(m => m.IsClassified),
+                Checked = movies.Count(m => m.IsClassified && m.Checked),
+                s.CheckEnabled,
+                s.CheckModel,
+                Web = new { Configured = WebLookup.Configured, s.WebLookupAuto, Budget = s.WebLookupBudget, usage.Lookups, usage.Dollars, Blocked = web.Blocked() },
+                LookingUpAll = _lookupAllRunning == 1,
+            });
+        });
+
+        admin.MapPost("/movies/{id:guid}/fine", async (Guid id, Database database, CancellationToken ct) =>
+        {
+            await using var db = database.Open();
+            await db.Movies.Where(m => m.ItemId == id).ExecuteUpdateAsync(u => u
+                .SetProperty(m => m.Issue, (string?)null)
+                .SetProperty(m => m.Checked, true), ct);
+            return Results.Ok();
+        });
+
+        admin.MapPost("/movies/{id:guid}/lookup", async (Guid id, Database database, MovieClassifier classifier, WebLookup web, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Problem("No AI key set (AI page).", statusCode: 400);
+            if (web.Blocked() is { } why) return Results.Problem(why, statusCode: 400);
+            MovieMetadata? movie;
+            await using (var db = database.Open())
+                movie = await db.Movies.AsNoTracking().FirstOrDefaultAsync(m => m.ItemId == id, ct);
+            if (movie is null) return Results.NotFound();
+            try { movie = await classifier.LookUpAndTagAsync(movie, ct); }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                return Results.Problem("Lookup failed: " + error.Message, statusCode: 502);
+            }
+            return Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
+        });
+
+        // Every open issue: look up on the web and tag again, in the background
+        admin.MapPost("/issues/lookup-all", (MovieStore store, MovieClassifier classifier, WebLookup web, IHostApplicationLifetime life, ILoggerFactory logs) =>
+        {
+            if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Problem("No AI key set (AI page).", statusCode: 400);
+            if (web.Blocked() is { } why) return Results.Problem(why, statusCode: 400);
+            if (Interlocked.Exchange(ref _lookupAllRunning, 1) == 1) return Results.Accepted();
+            var log = logs.CreateLogger("Issues");
+            _ = Task.Run(async () =>
+            {
+                var ct = life.ApplicationStopping;
+                try
+                {
+                    var open = (await store.GetAllMoviesAsync(ct))
+                        .Where(m => m.Issue is not null && !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+                    log.LogInformation("Looking up {Count} flagged movie(s) on the web", open.Count);
+                    var done = 0;
+                    foreach (var movie in open)
+                    {
+                        if (web.Blocked() is { } stop) { log.LogInformation("Stopped: {Why}", stop); break; }
+                        try { await classifier.LookUpAndTagAsync(movie, ct); done++; }
+                        catch (Exception error) when (error is not OperationCanceledException)
+                        {
+                            log.LogWarning("Lookup failed for {Title}: {Error}", movie.Title, error.Message);
+                        }
+                    }
+                    var left = (await store.GetAllMoviesAsync(ct)).Count(m => m.Issue is not null);
+                    log.LogInformation("Looked up and tagged again: {Done}; {Left} issue(s) left", done, left);
+                }
+                catch (OperationCanceledException) { }
+                finally { Interlocked.Exchange(ref _lookupAllRunning, 0); }
+            });
+            return Results.Accepted();
         });
 
         admin.MapGet("/movies/{id:guid}/poster", async (Guid id, JellyfinClient jellyfin, HttpContext http, CancellationToken ct) =>

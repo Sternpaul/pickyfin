@@ -31,6 +31,16 @@ public sealed class ServerSettings
     public string TmdbApiKey { get; set; } = "";
     public bool ReclassifyOutdatedMovies { get; set; }
 
+    // ---- checking the AI's work ----
+    /// <summary>A second model reviews every movie's tags and flags what looks wrong.</summary>
+    public bool CheckEnabled { get; set; }
+    public string CheckModel { get; set; } = "openai/gpt-oss-120b:free";
+    /// <summary>Exa web search: finds facts about films the AI doesn't know, then they're tagged again.</summary>
+    public string ExaApiKey { get; set; } = "";
+    public bool WebLookupAuto { get; set; } = true;
+    /// <summary>Exa spending stops for the month at this many dollars.</summary>
+    public double WebLookupBudget { get; set; } = 9;
+
     /// <summary>Libraries whose movies are never recommended (and not classified).</summary>
     public List<Guid> ExcludedLibraries { get; set; } = new();
     /// <summary>"Because You Watched …" rows per user, 0 to 2.</summary>

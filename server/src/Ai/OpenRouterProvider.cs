@@ -61,6 +61,10 @@ namespace Pickyfin.Server.Ai
             return await CallApiWithFallbackAsync(chain, prompt, true, cancellationToken);
         }
 
+        /// <summary>Any JSON-answering prompt on the given model (the second opinion uses this).</summary>
+        public async Task<string> CompleteJsonAsync(string prompt, string model, CancellationToken cancellationToken = default) =>
+            await CallApiWithFallbackAsync(BuildFallbackChain(model), prompt, true, cancellationToken);
+
         public async Task<string> ChatAsync(string userQuery, string systemPrompt, CancellationToken cancellationToken = default)
         {
             var prompt = $"{systemPrompt}\n\nUser: {userQuery}";

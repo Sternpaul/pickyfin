@@ -17,14 +17,17 @@ namespace Pickyfin.Server.Library
         private readonly MovieStore _movieStore;
         private readonly AIProviderFactory _aiProviderFactory;
         private readonly ILogger<MovieClassifier> _logger;
+        private readonly WebLookup _web;
 
         private const int BatchSize = 20;
 
         public MovieClassifier(
             MovieStore movieStore,
             AIProviderFactory aiProviderFactory,
-            ILogger<MovieClassifier> logger)
+            ILogger<MovieClassifier> logger,
+            WebLookup web)
         {
+            _web = web;
             _movieStore = movieStore;
             _aiProviderFactory = aiProviderFactory;
             _logger = logger;
@@ -34,14 +37,24 @@ namespace Pickyfin.Server.Library
         public async Task<bool> TagNowAsync(List<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
             var provider = _aiProviderFactory.GetProvider();
-            string json;
             using (Activity.Begin($"Tagging {movies.Count} movie(s): waiting for {provider.Name}"))
-                json = await provider.ClassifyMoviesAsync(movies, cancellationToken);
-            if (string.IsNullOrEmpty(json)) return false;
-            foreach (var movie in movies) movie.IsClassified = false;
-            ProcessClassificationResult(json, movies);
-            await _movieStore.SaveMoviesAsync(movies, cancellationToken);
+                await TagBatchAsync(provider, movies, cancellationToken);
             return movies.All(m => m.IsClassified);
+        }
+
+        /// <summary>
+        /// Looks the movie up on the web and tags it again with what was found. The admin
+        /// asked for it, so a hand edit is handed back to the AI.
+        /// </summary>
+        public async Task<MovieMetadata> LookUpAndTagAsync(MovieMetadata movie, CancellationToken cancellationToken)
+        {
+            using (Activity.Begin($"Looking up {movie.Title} on the web"))
+                movie.WebNotes = await _web.FindAsync(movie, cancellationToken) ?? "";
+            movie.ManuallyEdited = false;
+            var provider = _aiProviderFactory.GetProvider();
+            using (Activity.Begin($"Tagging {movie.Title}: waiting for {provider.Name}"))
+                await TagBatchAsync(provider, new List<MovieMetadata> { movie }, cancellationToken);
+            return movie;
         }
 
         public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default)
@@ -49,8 +62,6 @@ namespace Pickyfin.Server.Library
             // Re-tagging movies classified under an older vocabulary costs one AI call
             // per batch, so it only happens when the admin opts in.
             var includeOutdated = ServerSettings.Current.ReclassifyOutdatedMovies;
-            
-            
             var unclassified = await _movieStore.GetMoviesNeedingClassificationAsync(includeOutdated, cancellationToken);
             if (!unclassified.Any())
             {
@@ -58,188 +69,163 @@ namespace Pickyfin.Server.Library
                 return;
             }
 
-            _logger.LogInformation("Tagging {Count} movies, 20 per AI call", unclassified.Count);
-            
+            _logger.LogInformation("Tagging {Count} movies, {Batch} per AI call", unclassified.Count, BatchSize);
             var provider = _aiProviderFactory.GetProvider();
             TaggingEta.Start(unclassified.Count, BatchSize);
             try
             {
-            // Process in batches
-            for (int i = 0; i < unclassified.Count; i += BatchSize)
-            {
-                if (cancellationToken.IsCancellationRequested) break;
-
-                var batch = unclassified.Skip(i).Take(BatchSize).ToList();
-                _logger.LogInformation("Tagging movies {Start}–{End} of {Total} ({Model})", i + 1, i + batch.Count, unclassified.Count, ServerSettings.Current.ClassificationModel);
-
-                try
+                for (int i = 0; i < unclassified.Count; i += BatchSize)
                 {
-                    string jsonResponse;
-                    var started = DateTime.UtcNow;
-                    TaggingEta.BatchStarted(unclassified.Count - i);
-                    using (Activity.Begin($"Tagging movies {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
-                        jsonResponse = await provider.ClassifyMoviesAsync(batch, cancellationToken);
-                    _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
-                    _logger.LogDebug("Raw AI response (first 2000 chars): {Response}", jsonResponse?.Length > 2000 ? jsonResponse.Substring(0, 2000) : jsonResponse);
-                    if (!string.IsNullOrEmpty(jsonResponse))
-                        ProcessClassificationResult(jsonResponse, batch);
-                    
-                    // Save batch to DB
-                    await _movieStore.SaveMoviesAsync(batch, cancellationToken);
-                    TaggingEta.BatchDone();
+                    if (cancellationToken.IsCancellationRequested) break;
+                    var batch = unclassified.Skip(i).Take(BatchSize).ToList();
+                    _logger.LogInformation("Tagging movies {Start}–{End} of {Total} ({Model})", i + 1, i + batch.Count, unclassified.Count, ServerSettings.Current.ClassificationModel);
+                    try
+                    {
+                        var started = DateTime.UtcNow;
+                        TaggingEta.BatchStarted(unclassified.Count - i);
+                        using (Activity.Begin($"Tagging movies {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
+                            await TagBatchAsync(provider, batch, cancellationToken);
+                        _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
+                        await LookUpFlaggedAsync(provider, batch, cancellationToken);
+                        TaggingEta.BatchDone();
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError("Tagging stopped: {Error}. It continues at the next library sync.", ex.Message);
+                        break;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Tagging stopped: {Error}. It continues at the next library sync.", ex.Message);
-                    break;
-                }
-            }
             }
             finally { TaggingEta.Stop(); }
-            
             _logger.LogInformation("Tagging finished");
         }
 
-        private void ProcessClassificationResult(string? jsonResponse, List<MovieMetadata> batch)
+        /// <summary>
+        /// Films the AI didn't know or that look off get one web lookup and are tagged again
+        /// with what was found (when an Exa key is set and the budget allows).
+        /// </summary>
+        public async Task LookUpFlaggedAsync(IAIProvider provider, List<MovieMetadata> movies, CancellationToken cancellationToken)
         {
+            if (!ServerSettings.Current.WebLookupAuto) return;
+            var flagged = movies.Where(m => m.Issue is not null && m.WebNotes is null && !m.ManuallyEdited).ToList();
+            var withNotes = new List<MovieMetadata>();
+            foreach (var movie in flagged)
+            {
+                if (_web.Blocked() is { } why) { _logger.LogInformation("Web lookups paused: {Why}", why); break; }
+                try
+                {
+                    using (Activity.Begin($"Looking up {movie.Title} on the web"))
+                        movie.WebNotes = await _web.FindAsync(movie, cancellationToken) ?? "";
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning("Web lookup failed for {Title}: {Error}", movie.Title, ex.Message);
+                    break;
+                }
+                if (movie.WebNotes.Length > 0) withNotes.Add(movie);
+                else await _movieStore.SaveMoviesAsync(new[] { movie }, cancellationToken);
+            }
+            if (withNotes.Count == 0) return;
+            _logger.LogInformation("Tagging {Count} looked-up movie(s) again", withNotes.Count);
+            using (Activity.Begin($"Tagging {withNotes.Count} looked-up movie(s) again: waiting for {provider.Name}"))
+                await TagBatchAsync(provider, withNotes, cancellationToken);
+        }
+
+        /// <summary>One AI call for a batch: apply the tags, note what looks off, save.</summary>
+        private async Task TagBatchAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken)
+        {
+            var json = await provider.ClassifyMoviesAsync(batch, cancellationToken);
+            var known = ProcessClassificationResult(json, batch);
+            foreach (var movie in batch.Where(known.ContainsKey))
+            {
+                movie.Checked = false;
+                movie.Issue = Issues.Describe(movie, known[movie]);
+            }
+            var missing = batch.Count(m => !known.ContainsKey(m));
+            if (missing > 0) _logger.LogWarning("The AI left out {Count} of {Total} movie(s); they're tried again next time", missing, batch.Count);
+            await _movieStore.SaveMoviesAsync(batch.Where(known.ContainsKey), cancellationToken);
+        }
+
+        /// <summary>
+        /// Applies the AI's answer. Each answer must name its movie by Ref (or id, or exact
+        /// title); answers that can't be matched are dropped rather than guessed, so tags
+        /// never land on the wrong movie. Returns the movies that got an answer and how well
+        /// the AI said it knew them.
+        /// </summary>
+        internal Dictionary<MovieMetadata, string> ProcessClassificationResult(string? jsonResponse, List<MovieMetadata> batch)
+        {
+            var answered = new Dictionary<MovieMetadata, string>();
             if (string.IsNullOrEmpty(jsonResponse))
             {
-                _logger.LogWarning("Classification returned an empty response; skipping batch.");
-                return;
+                _logger.LogWarning("The AI returned an empty answer");
+                return answered;
             }
+            JsonElement moviesArray;
+            JsonDocument document;
             try
             {
-                var jsonToParse = jsonResponse.Trim();
-                
-                // Sometimes the LLM wraps it in ```json ... ```
-                var match = System.Text.RegularExpressions.Regex.Match(jsonToParse, @"```(?:json)?\s*([\s\S]*?)\s*```");
-                if (match.Success)
-                {
-                    jsonToParse = match.Groups[1].Value.Trim();
-                }
-                else
-                {
-                    // Fallback to searching for the first [ or { and the last ] or }
-                    int startIndex = jsonToParse.IndexOfAny(new[] { '[', '{' });
-                    int endIndex = jsonToParse.LastIndexOfAny(new[] { ']', '}' });
-                    if (startIndex >= 0 && endIndex > startIndex)
-                    {
-                        jsonToParse = jsonToParse.Substring(startIndex, endIndex - startIndex + 1);
-                    }
-                }
-
-                // Different providers might wrap the response slightly differently based on their JSON mode.
-                // We'll parse dynamically to find the array of movies.
-                using var document = JsonDocument.Parse(jsonToParse);
-                
-                JsonElement moviesArray;
-                if (document.RootElement.ValueKind == JsonValueKind.Array)
-                {
-                    moviesArray = document.RootElement;
-                }
-                else if (document.RootElement.TryGetProperty("movies", out var propArray))
-                {
-                    moviesArray = propArray;
-                }
-                else
-                {
-                    _logger.LogWarning("Could not find movies array in JSON response.");
-                    return;
-                }
-
-                int index = 0;
-                foreach (var element in moviesArray.EnumerateArray())
-                {
-                    MovieMetadata? movie = null;
-
-                    // 1. Try matching by ItemId or Id property
-                    if (TryGetPropertyIgnoreCase(element, "ItemId", out var idProp) || TryGetPropertyIgnoreCase(element, "id", out idProp))
-                    {
-                        var idString = idProp.ValueKind == JsonValueKind.String ? idProp.GetString() : idProp.ToString();
-                        if (Guid.TryParse(idString, out var itemId))
-                        {
-                            movie = batch.FirstOrDefault(m => m.ItemId == itemId);
-                        }
-                    }
-
-                    // 2. Fallback to Title matching if ItemId didn't match
-                    if (movie == null && (TryGetPropertyIgnoreCase(element, "Title", out var titleProp) || TryGetPropertyIgnoreCase(element, "title", out titleProp)))
-                    {
-                        var titleStr = titleProp.GetString();
-                        if (!string.IsNullOrWhiteSpace(titleStr))
-                        {
-                            movie = batch.FirstOrDefault(m => m.Title.Equals(titleStr, StringComparison.OrdinalIgnoreCase) || m.Title.StartsWith(titleStr, StringComparison.OrdinalIgnoreCase));
-                        }
-                    }
-
-                    // 3. Fallback to array index
-                    if (movie == null && index < batch.Count)
-                    {
-                        movie = batch[index];
-                    }
-
-                    if (movie == null)
-                    {
-                        index++;
-                        continue;
-                    }
-
-                    ApplyClassification(
-                        movie,
-                        GetStringArray(element, "Subcategories"),
-                        GetStringArray(element, "Moods"),
-                        GetStringArray(element, "Themes"),
-                        GetStringProperty(element, "NarrativeStyle"),
-                        GetStringProperty(element, "Accessibility"),
-                        GetStringProperty(element, "Intensity"),
-                        GetIntProperty(element, "CriticalAcclaimScore"));
-                    index++;
-                }
+                document = JsonDocument.Parse(ExtractJson(jsonResponse));
             }
-            catch (Exception ex)
+            catch (JsonException ex)
             {
-                _logger.LogWarning("Failed to parse JSON, attempting fallback text parsing. Error: {Msg}", ex.Message);
-                
-                var successCount = 0;
-                var lines = jsonResponse.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
-                {
-                    var match = System.Text.RegularExpressions.Regex.Match(line, @"\*\s*\*(?<title>[^*]+)\*:\s*(?<subcategories>[^.]+)\.\s*Moods:\s*(?<moods>[^.]+)\.\s*Themes:\s*(?<themes>[^.]+)\.\s*Style:\s*(?<style>[^.]+)\.\s*Accessibility:\s*(?<acc>[^.]+)\.\s*Intensity:\s*(?<int>[^.]+)\.\s*Score:\s*(?<score>\d+)");
-                    if (match.Success)
-                    {
-                        var title = match.Groups["title"].Value.Trim();
-                        var movie = batch.FirstOrDefault(m => m.Title.StartsWith(title, StringComparison.OrdinalIgnoreCase) || m.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
-                        if (movie != null)
-                        {
-                            static List<string> SplitList(string value) => value
-                                .Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries)
-                                .Select(s => s.Trim())
-                                .Where(s => s.Length > 0)
-                                .ToList();
-                            int.TryParse(match.Groups["score"].Value, out int scoreVal);
-                            ApplyClassification(
-                                movie,
-                                SplitList(match.Groups["subcategories"].Value),
-                                SplitList(match.Groups["moods"].Value),
-                                SplitList(match.Groups["themes"].Value),
-                                match.Groups["style"].Value.Trim(),
-                                match.Groups["acc"].Value.Trim(),
-                                match.Groups["int"].Value.Trim(),
-                                scoreVal);
-                            successCount++;
-                        }
-                    }
-                }
-                
-                if (successCount == 0)
-                {
-                    _logger.LogError(ex, "Error parsing AI classification JSON and fallback failed: {Json}", jsonResponse);
-                }
-                else
-                {
-                    _logger.LogInformation("Successfully parsed {Count} movies using text fallback.", successCount);
-                }
+                _logger.LogWarning("The AI's answer wasn't valid JSON ({Error}); the batch is tried again next time", ex.Message);
+                return answered;
             }
+            using var _ = document;
+            if (document.RootElement.ValueKind == JsonValueKind.Array) moviesArray = document.RootElement;
+            else if (TryGetPropertyIgnoreCase(document.RootElement, "movies", out var prop) && prop.ValueKind == JsonValueKind.Array) moviesArray = prop;
+            else
+            {
+                _logger.LogWarning("Could not find the movies list in the AI's answer");
+                return answered;
+            }
+
+            foreach (var element in moviesArray.EnumerateArray())
+            {
+                var movie = Match(element, batch);
+                if (movie is null || answered.ContainsKey(movie)) continue;
+                ApplyClassification(
+                    movie,
+                    GetStringArray(element, "Subcategories"),
+                    GetStringArray(element, "Moods"),
+                    GetStringArray(element, "Themes"),
+                    GetStringProperty(element, "NarrativeStyle"),
+                    GetStringProperty(element, "Accessibility"),
+                    GetStringProperty(element, "Intensity"),
+                    GetIntProperty(element, "CriticalAcclaimScore"));
+                var knownRaw = (GetStringProperty(element, "Known") ?? "yes").Trim().ToLowerInvariant();
+                answered[movie] = knownRaw is "no" or "partly" ? knownRaw : "yes";
+            }
+            return answered;
+        }
+
+        internal static string ExtractJson(string text)
+        {
+            var trimmed = text.Trim();
+            // Sometimes the LLM wraps it in ```json ... ```
+            var fence = System.Text.RegularExpressions.Regex.Match(trimmed, @"```(?:json)?\s*([\s\S]*?)\s*```");
+            if (fence.Success) return fence.Groups[1].Value.Trim();
+            var start = trimmed.IndexOfAny(new[] { '[', '{' });
+            var end = trimmed.LastIndexOfAny(new[] { ']', '}' });
+            return start >= 0 && end > start ? trimmed.Substring(start, end - start + 1) : trimmed;
+        }
+
+        internal static MovieMetadata? Match(JsonElement element, List<MovieMetadata> batch)
+        {
+            if (TryGetPropertyIgnoreCase(element, "Ref", out var refProp))
+            {
+                var r = (refProp.ValueKind == JsonValueKind.String ? refProp.GetString() : refProp.ToString())?.Trim().ToLowerInvariant().TrimStart('m');
+                if (int.TryParse(r, out var n) && n >= 1 && n <= batch.Count) return batch[n - 1];
+            }
+            if (TryGetPropertyIgnoreCase(element, "ItemId", out var idProp) || TryGetPropertyIgnoreCase(element, "id", out idProp))
+                if (Guid.TryParse(idProp.ToString(), out var itemId) && batch.FirstOrDefault(m => m.ItemId == itemId) is { } byId) return byId;
+            if (TryGetPropertyIgnoreCase(element, "Title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String)
+            {
+                var title = BrowserApi.Fold(titleProp.GetString());
+                var same = batch.Where(m => BrowserApi.Fold(m.Title) == title).ToList();
+                if (same.Count == 1) return same[0];
+            }
+            return null;
         }
 
         private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)

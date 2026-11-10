@@ -229,6 +229,26 @@
   .strip { display: flex; gap: 10px; overflow-x: auto; padding: 4px 0 14px; }
   .strip .poster { width: 92px; flex: none; }
   .row-name { font: 600 15px/1.3 var(--sans); margin: 22px 0 10px; }
+  /* issues */
+  .nav sup.alert { color: var(--accent); font-weight: 650; }
+  .issue { display: grid; grid-template-columns: 60px 1fr auto; gap: 18px; padding: 18px 0; border-bottom: 1px solid var(--line); align-items: start; }
+  .issue .poster { width: 60px; cursor: pointer; }
+  .issue .t { font-weight: 600; font-size: 15px; cursor: pointer; }
+  .issue .t:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .issue ul, .issue-box ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+  .issue ul li, .issue-box ul li { margin: 2px 0; }
+  .issue .tagsnow { font-size: 13px; color: var(--faint); margin-top: 6px; }
+  .issue .acts { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .issue .acts .btn { height: 32px; padding: 0 12px; font-size: 13.5px; justify-content: center; }
+  .issue-box { border: 1px solid var(--line-strong); border-left: 3px solid var(--accent); border-radius: 6px; padding: 12px 16px; margin: 0 0 24px; }
+  .issue-box b { font-weight: 600; }
+  .issue-box .actions { margin-top: 10px; }
+  .summary-line { display: flex; gap: 10px 26px; flex-wrap: wrap; color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+  .summary-line b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  details.web { margin-top: 4px; }
+  details.web summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
+  details.web p { font-size: 13px; color: var(--muted); white-space: pre-wrap; margin: 8px 0 0; }
+  @media (max-width: 560px) { .issue { grid-template-columns: 48px 1fr; } .issue .poster { width: 48px; } .issue .acts { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; } }
   /* editable rows */
   .row-edit { padding: 22px 0 8px; border-top: 1px solid var(--line); }
   .row-edit:first-of-type { border-top: 0; padding-top: 0; }
@@ -309,6 +329,7 @@
       <nav class="primary">
         <button class="nav active" data-page="users">People<sup id="count-users"></sup></button>
         <button class="nav" data-page="movies">Movies</button>
+        <button class="nav" data-page="issues">Issues<sup id="count-issues"></sup></button>
         <button class="nav" data-page="libraries">Libraries</button>
         <button class="nav" data-page="ai">AI</button>
         <button class="nav" data-page="rows">Tuning</button>
@@ -341,7 +362,7 @@
       </div></div>
       <div class="filters">
         <input type="search" id="m-q" placeholder="Title, director or year">
-        <div class="seg" id="m-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited</button></div>
+        <div class="seg" id="m-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited</button><button type="button" data-v="issues">Issues</button></div>
         <select id="m-tag"><option value="">Any tag</option></select>
         <select id="m-lib"><option value="">All libraries</option></select>
         <select id="m-sort"><option value="title">A–Z</option><option value="added">Recently added</option><option value="acclaim">Highest rated</option><option value="year">Newest film</option></select>
@@ -349,6 +370,17 @@
       </div>
       <div class="shelf" id="movies"></div>
       <div class="more"><button class="btn hidden" id="m-more">Show more</button></div>
+    </section>
+
+    <!-- ISSUES -->
+    <section data-page="issues" class="hidden">
+      <div class="page-head"><div>
+        <h1>Issues</h1>
+        <p>Movies whose tags may be wrong: the AI didn't know the film, the tags don't fit the genres Jellyfin has, or a second AI disagreed. Correct them by hand, look them up on the web and tag them again, or mark them as fine.</p>
+      </div></div>
+      <div class="summary-line" id="iss-sum"></div>
+      <div class="actions" style="margin-bottom:8px"><button class="btn" id="iss-all">Look up all on the web and tag again</button><span class="note" id="iss-note"></span></div>
+      <div id="issues"><div class="empty">Loading…</div></div>
     </section>
 
     <!-- LIBRARIES -->
@@ -388,6 +420,31 @@
           <div class="control"><input type="text" id="CustomEndpoint" placeholder="Provider default"></div>
         </div>
         <div class="setting-foot"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" id="test-ai">Test connection</button><span class="note" id="ai-note"></span></div>
+      </form>
+
+      <h2 class="group-title">Checking the AI's work</h2>
+      <form id="check-form" class="settings">
+        <div class="setting">
+          <div><h3>Second opinion</h3><p class="why">A different model reviews every movie's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged movies show up under Issues.</p></div>
+          <div class="control">
+            <label class="switch"><input type="checkbox" id="CheckEnabled"><span></span></label>
+            <div><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="check-models"></div>
+          </div>
+        </div>
+        <datalist id="check-models"><option value="openai/gpt-oss-120b:free"><option value="nvidia/nemotron-3-super-120b-a12b:free"><option value="google/gemma-4-31b-it:free"><option value="openai/gpt-oss-20b:free"><option value="google/gemini-2.5-flash"></datalist>
+        <div class="setting">
+          <div><h3>Web lookups with Exa <span class="state" id="exa-state"></span></h3><p class="why">For films the AI doesn't know: a web search finds a real description (Wikipedia, Letterboxd, TMDB…), and the film is described again with it. About one cent per film. A key comes from dashboard.exa.ai.</p></div>
+          <div class="control"><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
+        </div>
+        <div class="setting">
+          <div><h3>Look up flagged films on their own</h3><p class="why">When the AI says it doesn't know a film, or something looks off, look it up and describe it again right away. Each film is looked up once.</p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="WebLookupAuto"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>Monthly limit</h3><p class="why">Lookups stop for the month at this amount. <span id="exa-usage"></span></p></div>
+          <div class="control"><div class="inline"><div class="prefixed" style="flex:0 1 140px"><span>$</span><input type="number" id="WebLookupBudget" min="0" step="1"></div></div></div>
+        </div>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="check-note"></span></div>
       </form>
 
       <h2 class="group-title">TMDB</h2>
@@ -542,6 +599,8 @@ function go(page) {
   $$('main section').forEach(s => s.classList.toggle('hidden', s.dataset.page !== page));
   if (page === 'libraries') loadLibraries();
   if (page === 'movies') loadMovies(true);
+  if (page === 'issues') loadIssues();
+  if (page === 'ai') loadExaUsage();
   if (page === 'status') loadStatus();
   if (page === 'users') loadUsers();
   history.replaceState(null, '', '#' + page);
@@ -580,17 +639,23 @@ async function loadSettings() {
   $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
+  $('#CheckEnabled').checked = settings.CheckEnabled; $('#CheckModel').value = settings.CheckModel || '';
+  $('#ExaApiKey').value = ''; $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
+  $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
 }
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
 $('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
   AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
   ChatModel: $('#ChatModel').value, ClassificationModel: $('#ClassificationModel').value, CustomEndpoint: $('#CustomEndpoint').value }, $('#ai-note')); });
+$('#check-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
+  CheckEnabled: $('#CheckEnabled').checked, CheckModel: $('#CheckModel').value, ExaApiKey: $('#ExaApiKey').value,
+  WebLookupAuto: $('#WebLookupAuto').checked, WebLookupBudget: Number($('#WebLookupBudget').value) || 0 }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts with the next library sync, which starts now.'); });
 $('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
 const tuningValues = () => ({
   BecauseRows: Number(segValue($('#because-seg'))), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
@@ -703,9 +768,13 @@ async function openMovie(id) {
   const subs = [...m.Subcategories], moods = [...m.Moods];
   const who = !m.Tagged ? 'Not described yet' : m.Edited ? 'Described by you; the AI leaves it alone' : 'Described by the AI';
   $('#d-body').innerHTML = `
+    ${d.Issue ? `<div class="issue-box"><b>These tags may be wrong</b><ul>${d.Issue.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+      <div class="actions"><button class="btn" id="i-fine">They're fine</button><button class="btn" id="i-look">Look up on the web and describe again</button><span class="note" id="i-note"></span></div></div>` : ''}
     <div class="film-top">${poster(m.Id, m.Title)}
       <div class="facts">
         <div class="label" style="margin-bottom:6px">${who}</div>
+        ${d.OriginalTitle ? `<div>Original title <b>${esc(d.OriginalTitle)}</b></div>` : ''}
+        ${d.Genres?.length ? `<div>Genres <b>${esc(d.Genres.join(', '))}</b>${d.Countries ? ` · ${esc(d.Countries)}` : ''}</div>` : ''}
         ${d.Director ? `<div>Directed by <b>${esc(d.Director)}</b></div>` : ''}
         ${d.Cast ? `<div>With <b>${esc(d.Cast)}</b></div>` : ''}
         ${m.Libraries.filter(l => l !== '?').length ? `<div>In <b>${esc(m.Libraries.filter(l => l !== '?').join(', '))}</b>${m.Excluded ? ' (switched off)' : ''}</div>` : ''}
@@ -718,6 +787,7 @@ async function openMovie(id) {
     <div class="edit-row"><label class="field-label">TMDB keywords</label>${d.Keywords.length
       ? `<div class="tags">${d.Keywords.map(k => `<span class="tag">${esc(k)}</span>`).join('')}</div>`
       : `<div class="note">${d.KeywordsFetched ? 'TMDB has no keywords for this movie.' : 'Not fetched yet. They are fetched at the next library sync, if a TMDB key is set.'}</div>`}</div>
+    ${d.WebNotes ? `<div class="edit-row"><details class="web"><summary>What the web lookup found</summary><p>${esc(d.WebNotes)}</p></details></div>` : d.WebNotes === '' ? '<div class="edit-row note">Looked up on the web; nothing useful found.</div>' : ''}
     <div class="edit-row"><label class="field-label" for="e-themes">Themes</label><input type="text" id="e-themes" value="${esc(d.Themes.join(', '))}"><div class="sub">Free text, separated by commas.</div></div>
     <div class="edit-row two">
       <div><label class="field-label" for="e-narr">Storytelling</label><select id="e-narr">${options(vocab.NarrativeStyles, d.NarrativeStyle)}</select></div>
@@ -738,8 +808,14 @@ async function openMovie(id) {
         NarrativeStyle: $('#e-narr').value, Accessibility: $('#e-acc').value, Intensity: $('#e-int').value,
         CriticalAcclaimScore: Number($('#e-score').value) || 0,
       });
-      toast('Saved. The AI will leave it alone.'); openMovie(id); refreshMovieList();
+      toast('Saved. The AI will leave it alone.'); openMovie(id); afterIssueChange();
     } catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; }
+  };
+  if ($('#i-fine')) $('#i-fine').onclick = async () => { await call('POST', `/api/movies/${id}/fine`); toast('Marked as fine'); openMovie(id); afterIssueChange(); };
+  if ($('#i-look')) $('#i-look').onclick = async e => {
+    e.target.disabled = true; $('#i-note').className = 'note'; $('#i-note').textContent = 'Searching the web, then asking the AI…';
+    try { await call('POST', `/api/movies/${id}/lookup`); toast('Looked up and described again'); openMovie(id); afterIssueChange(); }
+    catch (err) { $('#i-note').textContent = err.message; $('#i-note').className = 'note err'; e.target.disabled = false; }
   };
   $('#e-retag').onclick = async e => {
     e.target.disabled = true; $('#e-note').className = 'note'; $('#e-note').textContent = 'Asking the AI… free models can take a few minutes.';
@@ -747,6 +823,55 @@ async function openMovie(id) {
     catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; e.target.disabled = false; }
   };
 }
+function afterIssueChange() { refreshMovieList(); if (!$('section[data-page="issues"]').classList.contains('hidden')) loadIssues(); loadStatus(); }
+
+// ---------- issues ----------
+async function loadIssues() {
+  const r = await call('GET', '/api/issues');
+  const w = r.Web;
+  $('#iss-sum').innerHTML = [
+    `<span><b>${r.Items.length.toLocaleString()}</b> to look at</span>`,
+    r.CheckEnabled ? `<span>Second opinion: <b>${r.Checked.toLocaleString()}</b> of ${r.Tagged.toLocaleString()} reviewed</span>` : '<span>Second opinion is off (AI page)</span>',
+    w.Configured ? `<span>Web lookups this month: <b>${w.Lookups}</b> · $${w.Dollars.toFixed(2)} of $${w.Budget}</span>` : '<span>No Exa key (AI page)</span>',
+  ].join('');
+  const all = $('#iss-all');
+  all.disabled = !w.Configured || !!w.Blocked || !r.Items.length || r.LookingUpAll;
+  all.textContent = r.LookingUpAll ? 'Looking up… (see Status)' : 'Look up all on the web and tag again';
+  $('#iss-note').textContent = w.Blocked && w.Configured ? w.Blocked : '';
+  const box = $('#issues');
+  if (!r.Items.length) { box.innerHTML = `<div class="empty">Nothing to look at.${r.CheckEnabled ? '' : ' Switch on the second opinion on the AI page to have every movie reviewed.'}</div>`; return; }
+  box.innerHTML = '';
+  r.Items.forEach(it => {
+    const m = it.Summary;
+    const el = document.createElement('div');
+    el.className = 'issue';
+    el.innerHTML = `${poster(m.Id, m.Title)}
+      <div><div class="t">${esc(m.Title)} <span class="y" style="color:var(--faint);font-weight:400">${m.Year ?? ''}</span></div>
+        <ul>${it.Lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+        <div class="tagsnow">${m.Tagged ? 'Now: ' + esc([...m.Subcategories, ...m.Moods].join(', ')) : 'No tags yet'}${it.LookedUp ? (it.FoundOnWeb ? ' · already looked up on the web' : ' · nothing found on the web') : ''}</div></div>
+      <div class="acts"><button class="btn open">Open</button>${w.Configured ? '<button class="btn look">Look up again</button>' : ''}<button class="btn quiet fine">They're fine</button></div>`;
+    el.querySelector('.look') && (el.querySelector('.look').textContent = it.LookedUp ? 'Look up again' : 'Look up on the web');
+    const open = () => openMovie(m.Id);
+    $('.poster', el).onclick = open; $('.t', el).onclick = open; $('.open', el).onclick = open;
+    $('.fine', el).onclick = async () => { await call('POST', `/api/movies/${m.Id}/fine`); el.remove(); toast('Marked as fine'); loadStatus(); };
+    if ($('.look', el)) $('.look', el).onclick = async e => {
+      e.target.disabled = true; e.target.textContent = 'Looking up…';
+      try { await call('POST', `/api/movies/${m.Id}/lookup`); toast(`${m.Title}: looked up and described again`); loadIssues(); loadStatus(); }
+      catch (err) { toast(err.message); e.target.disabled = false; e.target.textContent = 'Look up on the web'; }
+    };
+    box.appendChild(el);
+  });
+  checkPosters(box);
+}
+$('#iss-all').addEventListener('click', async e => {
+  e.target.disabled = true;
+  try { await call('POST', '/api/issues/lookup-all'); toast('Looking up every flagged movie; progress on the Status page'); setTimeout(loadIssues, 1500); }
+  catch (err) { toast(err.message); e.target.disabled = false; }
+});
+async function loadExaUsage() {
+  try { const r = await call('GET', '/api/issues'); $('#exa-usage').textContent = r.Web.Configured ? `This month so far: ${r.Web.Lookups} lookups, $${r.Web.Dollars.toFixed(2)}.` : ''; } catch {}
+}
+
 function refreshMovieList() { if (!$('section[data-page="movies"]').classList.contains('hidden')) loadMovies(true); }
 
 // ---------- one person: Letterboxd, history, rows ----------
@@ -1041,10 +1166,11 @@ async function loadStatus() {
     const wait = s.Waiting ? ` · ${Math.floor(s.Waiting / 60)}:${String(s.Waiting % 60).padStart(2, '0')}` : '';
     const eta = s.TaggingLeft ? ` · about ${dur(s.TaggingLeft)} left` : '';
     const progress = busy && s.Movies && s.Classified < s.Movies ? ` · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} described${eta}` : '';
-    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + progress : `Idle · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} movies described`;
+    $('#count-issues').textContent = s.Issues ? s.Issues.toLocaleString() : ''; $('#count-issues').className = s.Issues ? 'alert' : '';
+    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + progress + (progress ? '' : eta) : `Idle · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} movies described`;
     $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : busy ? 'busy' : 'ok');
     $('#lib-count').textContent = s.Classified.toLocaleString();
-    $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described${eta}`;
+    $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described${s.Classified < s.Movies ? eta : ''}`;
     $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';
     $('#lib-synced').textContent = ago(s.LibrarySynced);
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
