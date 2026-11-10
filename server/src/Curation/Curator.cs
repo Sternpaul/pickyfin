@@ -84,15 +84,22 @@ public sealed class Curator
             .Select(g => g.OrderByDescending(m => m.IsClassified).First())
             .ToList();
 
+        // Tuning: skip weakly rated films (only where a rating is known)
+        if (Settings.MinRating > 0)
+            candidates = candidates.Where(m => m.CommunityRating is not > 0 || m.CommunityRating >= Settings.MinRating).ToList();
+
         if (candidates.Count == 0)
             return new CurationResult(new(), "Nothing left to recommend: this user has seen everything they can access.");
+
+        // What they were shown last time, so rows change between refreshes
+        var shownBefore = await LastPicksAsync(user.UserId, cancellationToken);
 
         // 2. Shortlist
         var recentHistory = history.Take(30).ToList();
         // Taste: recent watches here plus films they rated well on Letterboxd
         var taste = recentHistory.Concat(lb.Liked.Take(20)).DistinctBy(Identity).ToList();
         var scored = candidates
-            .Select(m => (Movie: m, Score: Score(m, brief, taste) + LetterboxdNudge(m, lb)))
+            .Select(m => (Movie: m, Score: Score(m, brief, taste) + LetterboxdNudge(m, lb) + TuningNudge(m, shownBefore)))
             .OrderByDescending(x => x.Score)
             .ToList();
         var shortlist = Diversify(scored.Select(x => x.Movie), Settings.ShortlistSize);
@@ -231,20 +238,58 @@ public sealed class Curator
     {
         var hasBrief = brief is { IsEmpty: false };
         var hasHistory = history.Count > 0;
-        var acclaim = Math.Clamp(movie.Acclaim / 10.0, 0, 1);
+        var quality = Quality(movie);
+        var briefShare = Math.Clamp(Settings.BriefWeight, 0, 100) / 100.0;
 
-        if (hasBrief && hasHistory) return BriefScore(movie, brief!) * 0.55 + HistoryScore(movie, history) * 0.30 + acclaim * 0.15;
-        if (hasBrief) return BriefScore(movie, brief!) * 0.80 + acclaim * 0.20;
-        if (hasHistory) return HistoryScore(movie, history) * 0.80 + acclaim * 0.20;
+        if (hasBrief && hasHistory)
+            return BriefScore(movie, brief!) * 0.85 * briefShare + HistoryScore(movie, history) * 0.85 * (1 - briefShare) + quality * 0.15;
+        if (hasBrief) return BriefScore(movie, brief!) * 0.80 + quality * 0.20;
+        if (hasHistory) return HistoryScore(movie, history) * 0.80 + quality * 0.20;
         // Nothing known: well-regarded films, a little preference for newer additions
         var freshness = Math.Max(0, 1 - (DateTime.UtcNow - movie.DateAdded).TotalDays / 365.0);
-        return acclaim * 0.85 + freshness * 0.15;
+        return quality * 0.85 + freshness * 0.15;
     }
 
-    /// <summary>Takes the best-scored movies, but no first-subcategory may fill more than a quarter.</summary>
+    /// <summary>
+    /// Safe picks lean on acclaim; discoveries lean on films few people know (TMDB
+    /// popularity: blockbusters are in the hundreds, obscure films below 1).
+    /// </summary>
+    private static double Quality(MovieMetadata movie)
+    {
+        var acclaim = Math.Clamp(movie.Acclaim / 10.0, 0, 1);
+        var discovery = Math.Clamp(Settings.Discovery, 0, 100) / 100.0;
+        var obscurity = movie.Popularity > 0 ? 1 - Math.Clamp(Math.Log10(movie.Popularity + 1) / 2.0, 0, 1) : 0.5;
+        // Discoveries still need to be good: acclaim never drops below half the weight
+        return acclaim * (1 - 0.5 * discovery) + obscurity * 0.5 * discovery;
+    }
+
+    /// <summary>New arrivals move up; last time's picks move down.</summary>
+    private static double TuningNudge(MovieMetadata movie, HashSet<Guid> shownBefore)
+    {
+        var nudge = 0.0;
+        var days = (DateTime.UtcNow - movie.DateAdded).TotalDays;
+        if (days < 30)
+        {
+            var strength = Settings.NewArrivals switch { "lots" => 0.15, "some" => 0.06, _ => 0 };
+            nudge += strength * (1 - days / 30);
+        }
+        if (shownBefore.Contains(movie.ItemId))
+            nudge -= Settings.Rotation switch { "high" => 0.2, "medium" => 0.07, _ => 0 };
+        return nudge;
+    }
+
+    private async Task<HashSet<Guid>> LastPicksAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var db = _database.Open();
+        var rows = await db.Playlists.AsNoTracking().Where(p => p.UserId == userId).Select(p => p.Items).ToListAsync(cancellationToken);
+        return rows.SelectMany(r => r.Split(',', StringSplitOptions.RemoveEmptyEntries)).Select(x => Guid.TryParse(x, out var g) ? g : Guid.Empty).ToHashSet();
+    }
+
+    /// <summary>Takes the best-scored movies, but no first-subcategory may fill more than its share (Variety).</summary>
     private static List<MovieMetadata> Diversify(IEnumerable<MovieMetadata> ranked, int size)
     {
-        var cap = Math.Max(3, size / 4);
+        var share = Settings.Variety switch { "low" => 0.4, "high" => 0.15, _ => 0.25 };
+        var cap = Math.Max(3, (int)(size * share));
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var result = new List<MovieMetadata>();
         var overflow = new List<MovieMetadata>();
@@ -292,7 +337,20 @@ public sealed class Curator
         prompt.AppendLine("Candidates (★ = on their Letterboxd watchlist, a strong hint they want to see it):");
         for (var i = 0; i < shortlist.Count; i++) prompt.AppendLine($"{i + 1}. {(lb.WatchlistIds.Contains(shortlist[i].ItemId) ? "★ " : "")}{Line(shortlist[i])}");
         prompt.AppendLine();
-        prompt.AppendLine("Rules: follow the description first; mix well-known and lesser-known films; avoid near-duplicates (several films of one franchise or the same niche); never invent numbers.");
+        var lean = Settings.Discovery switch
+        {
+            < 34 => "lean towards well-known, highly regarded films",
+            > 66 => "lean towards lesser-known gems they probably haven't heard of",
+            _ => "mix well-known and lesser-known films",
+        };
+        var variety = Settings.Variety switch
+        {
+            "low" => "staying close to what they love is fine",
+            "high" => "spread the picks over many different kinds of film",
+            _ => "avoid near-duplicates (several films of one franchise or the same niche)",
+        };
+        var first = Settings.BriefWeight >= 50 ? "follow the description first" : "follow what they actually watched first, the description second";
+        prompt.AppendLine($"Rules: {first}; {lean}; {variety}; never invent numbers.");
         prompt.AppendLine($@"Answer with ONLY a JSON object: {{""picks"": [numbers from the list, {count} of them, best first]}}");
 
         var system = "You are a thoughtful film curator choosing for one specific person. Output only JSON.";

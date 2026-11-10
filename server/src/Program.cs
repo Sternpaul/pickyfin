@@ -170,14 +170,17 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
 
     // Anything that changes what gets picked: everyone gets fresh picks
     var picksChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g))
-        || before.BecauseRows != settings.BecauseRows || before.PicksPerRow != settings.PicksPerRow;
+        || before.BecauseRows != settings.BecauseRows || before.PicksPerRow != settings.PicksPerRow
+        || before.BriefWeight != settings.BriefWeight || before.Discovery != settings.Discovery || before.Variety != settings.Variety
+        || before.NewArrivals != settings.NewArrivals || before.Rotation != settings.Rotation || before.MinRating != settings.MinRating;
     if (picksChanged)
     {
         await using var db = database.Open();
         await db.Users.Where(u => u.Enabled).ExecuteUpdateAsync(u => u.SetProperty(x => x.RefreshRequested, true), ct);
     }
     // A library switched back on may have movies that were never classified
-    worker.Wake(syncLibrary: picksChanged || before.ApiKey != settings.ApiKey);
+    var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
+    worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey);
     return Results.Ok(SettingsView.From(settings));
 });
 
@@ -307,6 +310,12 @@ record SettingsView
     public int PicksPerRow { get; init; }
     public int BecauseRows { get; init; }
     public List<Guid> ExcludedLibraries { get; init; } = new();
+    public int BriefWeight { get; init; }
+    public int Discovery { get; init; }
+    public string Variety { get; init; } = "medium";
+    public string NewArrivals { get; init; } = "some";
+    public string Rotation { get; init; } = "medium";
+    public double MinRating { get; init; }
 
     public static SettingsView From(ServerSettings s) => new()
     {
@@ -323,6 +332,12 @@ record SettingsView
         PicksPerRow = s.PicksPerRow,
         BecauseRows = s.BecauseRows,
         ExcludedLibraries = s.ExcludedLibraries,
+        BriefWeight = s.BriefWeight,
+        Discovery = s.Discovery,
+        Variety = s.Variety,
+        NewArrivals = s.NewArrivals,
+        Rotation = s.Rotation,
+        MinRating = s.MinRating,
     };
 
     /// <summary>Empty secret fields mean "keep the current value".</summary>
@@ -343,5 +358,11 @@ record SettingsView
         s.PicksPerRow = Math.Clamp(PicksPerRow, 5, 50);
         s.BecauseRows = Math.Clamp(BecauseRows, 0, 2);
         s.ExcludedLibraries = ExcludedLibraries.Distinct().ToList();
+        s.BriefWeight = Math.Clamp(BriefWeight, 0, 100);
+        s.Discovery = Math.Clamp(Discovery, 0, 100);
+        s.Variety = Variety is "low" or "medium" or "high" ? Variety : "medium";
+        s.NewArrivals = NewArrivals is "off" or "some" or "lots" ? NewArrivals : "some";
+        s.Rotation = Rotation is "low" or "medium" or "high" ? Rotation : "medium";
+        s.MinRating = Math.Clamp(MinRating, 0, 9);
     }
 }

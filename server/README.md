@@ -36,6 +36,10 @@ watched films and the watchlist). Films they've
 watched there are never recommended, good ratings shape their taste, films close
 to ones they disliked move down, and watchlist films move up.
 
+**Tuning page**: six plain settings for everyone: description or watch history,
+safe picks or discoveries, variety, new arrivals, how much rows change between
+refreshes, and skipping weakly rated films; plus the number and size of rows.
+
 **Movies page**: browse everything the AI tagged, filter by tag or library, and
 correct tags by hand. Movies you edit are never re-tagged by the AI.
 

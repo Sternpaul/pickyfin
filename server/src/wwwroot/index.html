@@ -89,6 +89,7 @@
   input[type=date] { width: auto; }
   input::placeholder, textarea::placeholder { color: var(--faint); }
   input[type=range] { width: 100%; accent-color: var(--accent); }
+  .ends { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: -4px; }
 
   .btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line-strong);
     background: transparent; color: var(--text); font: 550 14px var(--sans); cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s; }
@@ -284,7 +285,7 @@
         <button class="nav" data-page="movies">Movies</button>
         <button class="nav" data-page="libraries">Libraries</button>
         <button class="nav" data-page="ai">AI</button>
-        <button class="nav" data-page="rows">Rows</button>
+        <button class="nav" data-page="rows">Tuning</button>
         <button class="nav" data-page="status">Status</button>
       </nav>
       <div class="tools">
@@ -373,26 +374,57 @@
       </form>
     </section>
 
-    <!-- ROWS -->
+    <!-- TUNING -->
     <section data-page="rows" class="hidden">
       <div class="page-head"><div>
-        <h1>Rows</h1>
-        <p>What each person finds on their home screen, and how often it changes.</p>
+        <h1>Tuning</h1>
+        <p>How picks are chosen, for everyone. Changes apply at the next picks; saving asks for fresh picks right away.</p>
       </div></div>
-      <form id="rows-form" class="settings">
-        <div class="setting">
-          <div><h3>"Because You Watched …"</h3><p class="why">Rows built around the latest films the person finished. "Recommended for you" is always there.</p></div>
-          <div class="control"><div><div class="seg" id="because-seg"><button type="button" data-v="0">None</button><button type="button" data-v="1">One</button><button type="button" data-v="2">Two</button></div></div></div>
+      <form id="rows-form">
+        <h2 class="group-title">What gets picked</h2>
+        <div class="settings">
+          <div class="setting">
+            <div><h3>Description or watch history</h3><p class="why">When both exist, which one the picks follow more. On shared TVs, the description is usually the better guide.</p></div>
+            <div class="control"><div class="ends"><span>Watch history</span><span>Description</span></div><input type="range" id="BriefWeight" min="0" max="100" step="5"></div>
+          </div>
+          <div class="setting">
+            <div><h3>Safe picks or discoveries</h3><p class="why">Well-known, highly rated films, or lesser-known ones they probably haven't heard of. Discoveries still need decent ratings.</p></div>
+            <div class="control"><div class="ends"><span>Safe picks</span><span>Discoveries</span></div><input type="range" id="Discovery" min="0" max="100" step="5"></div>
+          </div>
+          <div class="setting">
+            <div><h3>Variety</h3><p class="why">How many films of the same kind may appear together. "Little" stays close to what they love.</p></div>
+            <div class="control"><div><div class="seg" id="Variety"><button type="button" data-v="low">Little</button><button type="button" data-v="medium">Some</button><button type="button" data-v="high">Lots</button></div></div></div>
+          </div>
+          <div class="setting">
+            <div><h3>New arrivals</h3><p class="why">Push films added in the last 30 days, so new additions get noticed.</p></div>
+            <div class="control"><div><div class="seg" id="NewArrivals"><button type="button" data-v="off">Off</button><button type="button" data-v="some">A little</button><button type="button" data-v="lots">A lot</button></div></div></div>
+          </div>
+          <div class="setting">
+            <div><h3>Change between refreshes</h3><p class="why">How strongly last time's picks move down, so rows don't show the same films day after day.</p></div>
+            <div class="control"><div><div class="seg" id="Rotation"><button type="button" data-v="low">Little</button><button type="button" data-v="medium">Some</button><button type="button" data-v="high">Lots</button></div></div></div>
+          </div>
+          <div class="setting">
+            <div><h3>Skip weakly rated films</h3><p class="why">Leave out films with a low audience rating in Jellyfin. Films without a rating are kept.</p></div>
+            <div class="control"><select id="MinRating" style="width:auto"><option value="0">Off</option><option value="5">Below 5</option><option value="6">Below 6</option><option value="6.5">Below 6.5</option><option value="7">Below 7</option></select></div>
+          </div>
         </div>
-        <div class="setting">
-          <div><h3>Movies per row <span class="state" id="picks-value"></span></h3><p class="why">More is not always better on a TV; around twenty fills a row without padding.</p></div>
-          <div class="control"><input type="range" id="PicksPerRow" min="5" max="40" step="1"></div>
+
+        <h2 class="group-title">Rows</h2>
+        <div class="settings">
+          <div class="setting">
+            <div><h3>"Because You Watched …"</h3><p class="why">Rows built around the latest films the person finished. "Recommended for you" is always there.</p></div>
+            <div class="control"><div><div class="seg" id="because-seg"><button type="button" data-v="0">None</button><button type="button" data-v="1">One</button><button type="button" data-v="2">Two</button></div></div></div>
+          </div>
+          <div class="setting">
+            <div><h3>Movies per row <span class="state" id="picks-value"></span></h3><p class="why">Around twenty fills a TV row without padding.</p></div>
+            <div class="control"><input type="range" id="PicksPerRow" min="5" max="40" step="1"></div>
+          </div>
+          <div class="setting">
+            <div><h3>Fresh picks at least every</h3><p class="why">Also right after someone finishes a film, and whenever you change what you wrote about them.</p></div>
+            <div class="control"><select id="RefreshHours" style="width:auto"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">day</option><option value="48">2 days</option><option value="168">week</option></select></div>
+          </div>
         </div>
-        <div class="setting">
-          <div><h3>Fresh picks at least every</h3><p class="why">Also right after someone finishes a film, and whenever you change what you wrote about them.</p></div>
-          <div class="control"><select id="RefreshHours" style="width:auto"><option value="6">6 hours</option><option value="12">12 hours</option><option value="24">day</option><option value="48">2 days</option><option value="168">week</option></select></div>
-        </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="rows-note"></span></div>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><button class="btn quiet" type="button" id="tuning-defaults">Back to defaults</button><span class="note" id="rows-note"></span></div>
       </form>
     </section>
 
@@ -516,6 +548,9 @@ async function loadSettings() {
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
   $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
+  $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery;
+  seg($('#Variety'), settings.Variety); seg($('#NewArrivals'), settings.NewArrivals); seg($('#Rotation'), settings.Rotation);
+  const mr = $('#MinRating'); mr.value = [...mr.options].some(o => Number(o.value) === settings.MinRating) ? String(settings.MinRating) : '0';
   $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
@@ -531,8 +566,16 @@ $('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
   AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
   ChatModel: $('#ChatModel').value, ClassificationModel: $('#ClassificationModel').value, CustomEndpoint: $('#CustomEndpoint').value }, $('#ai-note')); });
 $('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
-$('#rows-form').addEventListener('submit', e => { e.preventDefault(); save({
-  BecauseRows: Number(segValue($('#because-seg'))), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value) }, $('#rows-note')); });
+const tuningValues = () => ({
+  BecauseRows: Number(segValue($('#because-seg'))), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
+  BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value),
+  Variety: segValue($('#Variety')), NewArrivals: segValue($('#NewArrivals')), Rotation: segValue($('#Rotation')), MinRating: Number($('#MinRating').value),
+});
+$('#rows-form').addEventListener('submit', async e => { e.preventDefault(); if (await save(tuningValues(), $('#rows-note'))) toast('Saved. Everyone gets fresh picks shortly.'); });
+$('#tuning-defaults').addEventListener('click', async () => {
+  if (!confirm('Set all tuning back to the defaults?')) return;
+  if (await save({ BecauseRows: 2, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, Discovery: 40, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
+});
 $('#test-ai').addEventListener('click', async e => {
   const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';
   const r = await call('POST', '/api/settings/test-ai').catch(err => ({ Ok: false, Message: err.message }));

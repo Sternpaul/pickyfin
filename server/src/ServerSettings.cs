@@ -43,6 +43,20 @@ public sealed class ServerSettings
     /// <summary>Picks are refreshed at least this often, and also soon after a user finishes something.</summary>
     public int RefreshHours { get; set; } = 24;
     public int PicksPerRow { get; set; } = 20;
+    // ---- tuning: what gets picked ----
+    /// <summary>0 = follow watch history, 100 = follow the description.</summary>
+    public int BriefWeight { get; set; } = 65;
+    /// <summary>0 = safe, well-known picks, 100 = lesser-known discoveries.</summary>
+    public int Discovery { get; set; } = 40;
+    /// <summary>"low", "medium" or "high": how mixed the genres are.</summary>
+    public string Variety { get; set; } = "medium";
+    /// <summary>"off", "some" or "lots": push movies added in the last 30 days.</summary>
+    public string NewArrivals { get; set; } = "some";
+    /// <summary>"low", "medium" or "high": how strongly last time's picks move down.</summary>
+    public string Rotation { get; set; } = "medium";
+    /// <summary>Skip films whose audience rating is below this (0 = off).</summary>
+    public double MinRating { get; set; }
+
     /// <summary>Candidates the AI chooses from per user.</summary>
     public int ShortlistSize { get; set; } = 150;
 
