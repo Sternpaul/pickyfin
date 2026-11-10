@@ -19,7 +19,7 @@ namespace Pickyfin.Server.Library
         private readonly ILogger<MovieClassifier> _logger;
         private readonly WebLookup _web;
 
-        private const int BatchSize = 20;
+        public const int BatchSize = 20;
 
         public MovieClassifier(
             MovieStore movieStore,

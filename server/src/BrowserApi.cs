@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pickyfin.Server.Ai;
 using Microsoft.EntityFrameworkCore;
 using Pickyfin.Server.Curation;
 using Pickyfin.Server.Data;
@@ -289,7 +290,7 @@ public static class BrowserApi
         });
 
         // Every open issue: look up on the web and tag again, in the background
-        admin.MapPost("/issues/lookup-all", (MovieStore store, MovieClassifier classifier, WebLookup web, IHostApplicationLifetime life, ILoggerFactory logs) =>
+        admin.MapPost("/issues/lookup-all", (MovieStore store, MovieClassifier classifier, AIProviderFactory ai, WebLookup web, IHostApplicationLifetime life, ILoggerFactory logs) =>
         {
             if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Problem("No AI key set (AI page).", statusCode: 400);
             if (web.Blocked() is { } why) return Results.Problem(why, statusCode: 400);
@@ -303,16 +304,27 @@ public static class BrowserApi
                     var open = (await store.GetAllMoviesAsync(ct))
                         .Where(m => m.Issue is not null && !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
                     log.LogInformation("Looking up {Count} flagged movie(s) on the web", open.Count);
+                    // Look up 20, then describe those 20 in one AI call: no flood of requests to the provider
                     var done = 0;
-                    foreach (var movie in open)
+                    var provider = ai.GetProvider();
+                    var size = MovieClassifier.BatchSize;
+                    TaggingEta.Start(open.Count, size);
+                    try
                     {
-                        if (web.Blocked() is { } stop) { log.LogInformation("Stopped: {Why}", stop); break; }
-                        try { await classifier.LookUpAndTagAsync(movie, ct); done++; }
-                        catch (Exception error) when (error is not OperationCanceledException)
+                        for (var i = 0; i < open.Count; i += size)
                         {
-                            log.LogWarning("Lookup failed for {Title}: {Error}", movie.Title, error.Message);
+                            if (web.Blocked() is { } stop) { log.LogInformation("Stopped: {Why}", stop); break; }
+                            var batch = open.Skip(i).Take(size).ToList();
+                            TaggingEta.BatchStarted(open.Count - i);
+                            try { done += await classifier.LookUpAndTagManyAsync(provider, batch, ct); }
+                            catch (Exception error) when (error is not OperationCanceledException)
+                            {
+                                log.LogWarning("Lookup of movies {Start}–{End} failed: {Error}", i + 1, i + batch.Count, error.Message);
+                            }
+                            TaggingEta.BatchDone();
                         }
                     }
+                    finally { TaggingEta.Stop(); }
                     var left = (await store.GetAllMoviesAsync(ct)).Count(m => m.Issue is not null);
                     log.LogInformation("Looked up and tagged again: {Done}; {Left} issue(s) left", done, left);
                 }
