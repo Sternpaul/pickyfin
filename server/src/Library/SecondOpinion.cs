@@ -38,7 +38,7 @@ public sealed class SecondOpinion
 
         List<MovieMetadata> pending;
         await using (var db = _database.Open())
-            pending = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.Checked && !m.ManuallyEdited).ToListAsync(cancellationToken);
+            pending = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.Checked && !m.ManuallyEdited && (m.WebNotes == null || m.WebNotes == "")).ToListAsync(cancellationToken);
         pending = pending.Where(m => !settings.IsLibraryExcluded(m.Libraries)).OrderBy(m => m.Title).ToList();
         if (pending.Count == 0) return;
 

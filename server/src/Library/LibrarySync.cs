@@ -114,8 +114,26 @@ public sealed class LibrarySync
     /// </summary>
     private async Task GenreSweepAsync(CancellationToken cancellationToken)
     {
-        var flagged = (await _store.GetAllMoviesAsync(cancellationToken))
-            .Where(m => m.IsClassified && !m.ManuallyEdited && !m.Checked && m.Issue is null)
+        var movies = await _store.GetAllMoviesAsync(cancellationToken);
+
+        // Looked-up films were described from the web: drop genre-check flags left on them
+        var cleared = movies.Where(m => m.Issue is not null && !string.IsNullOrEmpty(m.WebNotes)).ToList()
+            .Where(m =>
+            {
+                var kept = m.Issue!.Split('\n').Where(l => !GenreCheck.IsGenreLine(l)).ToList();
+                var issue = kept.Count == 0 ? null : string.Join("\n", kept);
+                if (issue == m.Issue) return false;
+                m.Issue = issue;
+                return true;
+            }).ToList();
+        if (cleared.Count > 0)
+        {
+            await _store.SaveMoviesAsync(cleared, cancellationToken);
+            _logger.LogInformation("Genre check: cleared {Count} looked-up movie(s)", cleared.Count);
+        }
+
+        var flagged = movies
+            .Where(m => m.IsClassified && !m.ManuallyEdited && !m.Checked && m.Issue is null && string.IsNullOrEmpty(m.WebNotes))
             .Select(m => (Movie: m, Problems: GenreCheck.Problems(m)))
             .Where(x => x.Problems.Count > 0)
             .ToList();

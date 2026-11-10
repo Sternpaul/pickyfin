@@ -80,6 +80,10 @@ public static class GenreCheck
     public static List<string> KnownGenres(MovieMetadata movie) =>
         movie.GenreList.Select(g => GenreNames.GetValueOrDefault(g.Trim())).Where(g => g is not null).Select(g => g!).Distinct().ToList();
 
+    /// <summary>Whether an issue line came from this check (so it can be cleared once a film is looked up).</summary>
+    public static bool IsGenreLine(string line) =>
+        line.Contains("doesn't fit the genres Jellyfin has") || line.StartsWith("Jellyfin says ") || line.StartsWith("Jellyfin lists it as");
+
     /// <summary>What looks off, in plain words; empty when nothing does.</summary>
     public static List<string> Problems(MovieMetadata movie)
     {

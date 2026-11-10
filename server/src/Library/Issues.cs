@@ -17,7 +17,8 @@ public static class Issues
         var lookedUp = !string.IsNullOrEmpty(movie.WebNotes);
         if (known == "no" && !lookedUp) lines.Add(Unknown);
         if (known == "partly" && !lookedUp) lines.Add(Unsure);
-        lines.AddRange(GenreCheck.Problems(movie));
+        // The genre check only guards against the AI's memory; a web lookup beats Jellyfin's coarse genres
+        if (!lookedUp) lines.AddRange(GenreCheck.Problems(movie));
         return lines.Count == 0 ? null : string.Join("\n", lines);
     }
 

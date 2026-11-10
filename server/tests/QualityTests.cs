@@ -35,6 +35,16 @@ public class QualityTests
     }
 
     [Fact]
+    public void LookedUpFilmsSkipTheGenreCheck()
+    {
+        var movie = M("A Clockwork Orange", new[] { "Crime", "Science Fiction" }, new[] { "Dystopian", "Satire" });
+        Assert.NotNull(Issues.Describe(movie, "yes"));
+        movie.WebNotes = "Kubrick's satire of...";
+        Assert.Null(Issues.Describe(movie, "yes"));
+        Assert.True(GenreCheck.IsGenreLine(GenreCheck.Problems(movie)[0]));
+    }
+
+    [Fact]
     public void AnswersAreMatchedByRefNeverByPosition()
     {
         var batch = new List<MovieMetadata> { M("A", new string[0], new string[0]), M("B", new string[0], new string[0]) };
