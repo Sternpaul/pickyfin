@@ -141,7 +141,7 @@ api.MapGet("/me", (HttpContext http) =>
 
 // ---------- status ----------
 
-admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, CancellationToken ct) =>
+admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, MovieHistory history, CancellationToken ct) =>
 {
     var s = ServerSettings.Current;
     int rescanned = 0, rescanOf = 0;
@@ -162,8 +162,22 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     var anyRunning = Jobs.Snapshot().Any(j => j.Running);
     var lookupAll = Jobs.Get("lookupall");
 
+    // Hover text per step: which models handled the films, and which failed since the start
+    var used = await history.ModelsByStepAsync(ct);
+    string? Tip(string step, string verb)
+    {
+        static string Short(string model) => model.Contains('/') ? model[(model.IndexOf('/') + 1)..].Replace(":free", "") : model;
+        var lines = new List<string>();
+        if (used.TryGetValue(step, out var models) && models.Count > 0)
+            lines.Add($"{verb}:\n" + string.Join("\n", models.Take(6).Select(m => $"  {Short(m.Model)}: {m.Films:N0} film{(m.Films == 1 ? "" : "s")}")));
+        var failed = OpenRouterModels.StepFailures.Where(f => f.Key.StartsWith(step + "|")).OrderByDescending(f => f.Value).ToList();
+        if (failed.Count > 0)
+            lines.Add("Failed since the server started:\n" + string.Join("\n", failed.Take(6).Select(f => $"  {Short(f.Key[(step.Length + 1)..])}: {f.Value}×")));
+        return lines.Count == 0 ? "No model used yet since history is kept" : string.Join("\n\n", lines);
+    }
+
     // One row per job, in the order a round runs them
-    object Row(string key, string title, bool on, string off, int? done = null, int? of = null, int queued = 0)
+    object Row(string key, string title, bool on, string off, int? done = null, int? of = null, int queued = 0, string? tip = null)
     {
         var j = Jobs.Get(key);
         var state = !on ? "off" : j is { Running: true } ? "running" : j is { Error: true } ? "paused"
@@ -174,7 +188,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
             Text = !on ? off : j?.Now ?? "",
             Next = on && state != "running" ? j?.Next : null,
             RunningFor = j is { Running: true } ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0,
-            Done = done, Of = of, Queued = queued,
+            Done = done, Of = of, Queued = queued, Tip = tip,
         };
     }
     var lookupKey = lookupAll is { Running: true } ? "lookupall" : "sweep";
@@ -182,11 +196,13 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     {
         Row("library", "Library sync", true, ""),
         Row("picks", "Rows for each person", true, ""),
-        Row("tagging", "1 · Describe", hasKey, "Off: no AI key", classified, total, queuedAgain),
-        Row("second", "2 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified),
+        // While a "describe again" pass runs, count what this pass has done
+        Row("tagging", "1 · Describe", hasKey, "Off: no AI key", queuedAgain > 0 ? Math.Max(0, classified - queuedAgain) : classified, total, queuedAgain,
+            Tip("describe", "Described with")),
+        Row("second", "2 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified, tip: Tip("check", "Checked with")),
         Row(lookupKey, "3 · Look up", WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto || lookupAll is { Running: true }),
-            WebLookup.Configured ? "Off" : "Off: no Exa key", lookedUp, classified),
-        Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf),
+            WebLookup.Configured ? "Off" : "Off: no Exa key", lookedUp, classified, tip: Tip("lookup", "Described again from the web with")),
+        Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
     };
 
     return Results.Ok(new

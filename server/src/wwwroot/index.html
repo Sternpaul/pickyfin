@@ -1624,9 +1624,9 @@ async function loadStatus() {
       const when = q.State === 'running' ? `for ${dur(Math.max(60, q.RunningFor))}`
         : q.State === 'paused' && q.Next ? `retry ${clock(q.Next)}`
         : q.Next && q.State !== 'off' ? `next ${clock(q.Next)} (${inMin(q.Next)})` : '';
-      return `<div class="q-row ${q.State}"><span class="dot ${q.State === 'paused' ? 'err' : q.State === 'running' ? 'busy' : q.State === 'off' ? '' : 'ok'}"></span>
-        <b>${esc(q.Title)}</b>${count}<span class="badge ${q.State}">${label[q.State] || (q.Of != null ? 'Done' : 'Idle')}</span>
-        <span class="text" title="${esc(text)}">${esc(text)}</span><span class="when">${when}</span></div>`;
+      return `<div class="q-row ${q.State}"${q.Tip ? ` title="${esc(q.Tip)}"` : ''}><span class="dot ${q.State === 'paused' ? 'err' : q.State === 'running' ? 'busy' : q.State === 'off' ? '' : 'ok'}"></span>
+        <b${q.Tip ? ' style="cursor:help;text-decoration:underline dotted var(--faint);text-underline-offset:3px"' : ''}>${esc(q.Title)}</b>${count}<span class="badge ${q.State}">${label[q.State] || (q.Of != null ? 'Done' : 'Idle')}</span>
+        <span class="text">${esc(text)}</span><span class="when">${when}</span></div>`;
     }).join('');
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
   } catch {}

@@ -80,6 +80,33 @@ public sealed class MovieHistory
 
     public Task AddAsync(HistoryEntry entry, CancellationToken cancellationToken) => AddAsync(new[] { entry }, cancellationToken);
 
+    private static readonly Dictionary<string, string[]> StepEntries = new()
+    {
+        ["describe"] = new[] { "describe", "describe-again" },
+        ["check"] = new[] { "check" },
+        ["lookup"] = new[] { "redescribe" },
+        ["rescan"] = new[] { "recheck" },
+    };
+    private (DateTime At, Dictionary<string, List<(string Model, int Films)>> Counts)? _modelCounts;
+
+    /// <summary>Per step, how many films each model handled last (from the history kept so far).</summary>
+    public async Task<Dictionary<string, List<(string Model, int Films)>>> ModelsByStepAsync(CancellationToken cancellationToken)
+    {
+        if (_modelCounts is { } cached && DateTime.UtcNow - cached.At < TimeSpan.FromMinutes(1)) return cached.Counts;
+        var all = StepEntries.Values.SelectMany(v => v).ToArray();
+        List<(Guid ItemId, string Step, string? Model, DateTime At)> rows;
+        await using (var db = _database.Open())
+            rows = (await db.History.AsNoTracking().Where(h => all.Contains(h.Step))
+                .Select(h => new { h.ItemId, h.Step, h.Model, h.At }).ToListAsync(cancellationToken))
+                .Select(h => (h.ItemId, h.Step, h.Model, h.At)).ToList();
+        var counts = StepEntries.ToDictionary(e => e.Key, e => rows
+            .Where(r => e.Value.Contains(r.Step))
+            .GroupBy(r => r.ItemId).Select(g => g.OrderByDescending(r => r.At).First().Model ?? "unknown")
+            .GroupBy(m => m).Select(g => (Model: g.Key, Films: g.Count())).OrderByDescending(x => x.Films).ToList());
+        _modelCounts = (DateTime.UtcNow, counts);
+        return counts;
+    }
+
     public async Task<List<HistoryEntry>> ForAsync(Guid itemId, CancellationToken cancellationToken)
     {
         await using var db = _database.Open();

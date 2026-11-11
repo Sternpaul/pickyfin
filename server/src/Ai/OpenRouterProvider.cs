@@ -99,6 +99,7 @@ namespace Pickyfin.Server.Ai
                         return result.Content;
                     }
                     OpenRouterModels.Record(model, result.Error);
+                    OpenRouterModels.StepFailures.AddOrUpdate($"{step}|{model}", 1, (_, n) => n + 1);
                     if (result.AbortChain)
                         throw new InvalidOperationException($"OpenRouter stopped: {result.Error}");
                     lastError = $"{model}: {result.Error}";

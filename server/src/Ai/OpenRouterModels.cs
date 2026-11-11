@@ -43,6 +43,9 @@ public static class OpenRouterModels
     public static List<string> LookupOrder(ServerSettings s) =>
         s.LookupModelsAuto || s.LookupModels.Count == 0 ? DescribeOrder(s) : s.LookupModels.ToList();
 
+    /// <summary>Calls that failed per step and model since the server started ("check|dots-3…" → 4).</summary>
+    public static readonly ConcurrentDictionary<string, int> StepFailures = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Which model last answered for each step ("describe", "check", "lookup", "pick"), and when.</summary>
     public static readonly ConcurrentDictionary<string, (string Model, DateTime At)> LastAnswered = new();
 
