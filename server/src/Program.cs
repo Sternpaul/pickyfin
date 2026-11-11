@@ -189,7 +189,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Steps = new object[]
         {
             new { Key = "describe", Title = "Describe", Text = "An AI describes each film from what it knows",
-                On = !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: no AI key yet (AI page)", Again = queuedAgain, Done = classified, Of = total, Unit = "described",
+                On = !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: no AI key yet (AI page)", Again = queuedAgain, AgainOf = Math.Max(queuedAgain, s.RedoDescribeTotal), Done = classified, Of = total, Unit = "described",
                 Job = Job("tagging"), Model = Model("describe", OpenRouterModels.DescribeOrder(s), s.ClassificationModel) },
             new { Key = "check", Title = "Check", Text = "A second AI reviews the tags and flags what looks wrong",
                 On = s.CheckEnabled && !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: switch on the second opinion on the AI page", Done = reviewed, Of = classified, Unit = "checked",
@@ -259,6 +259,7 @@ admin.MapPost("/steps/{step}/again", async (string step, Database database, Refr
     {
         case "describe":
             count = await db.Movies.Where(m => ids.Contains(m.ItemId)).ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, true), ct);
+            var redo = ServerSettings.Current.Clone(); redo.RedoDescribeTotal = count; ServerSettings.Save(redo);
             MovieClassifier.RetryNow();
             log.LogInformation("Step 1 runs again: {Count} films queued to be described again, 8 calls per round", count);
             break;

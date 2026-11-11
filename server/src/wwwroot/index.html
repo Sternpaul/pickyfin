@@ -1611,7 +1611,8 @@ async function loadStatus() {
         <div class="figure"><span class="big">${st.Done.toLocaleString()}</span><span class="of">of ${st.Of.toLocaleString()} ${esc(st.Unit)}</span></div>
         <div class="meter"><div style="width:${pct}%"></div></div>
         <div class="now">${esc(!st.On ? st.Off : j?.Now || 'Waiting for its turn')}</div>
-        ${st.On && st.Again ? `<div class="when">Describing everything again: ${st.Again.toLocaleString()} films still queued</div>` : ''}
+        ${st.On && st.Again ? `<div class="when"><b>Describing everything again:</b> ${(st.AgainOf - st.Again).toLocaleString()} of ${st.AgainOf.toLocaleString()} done, ${st.Again.toLocaleString()} to go. The films keep their current tags until their turn. 160 films per round; a round runs the steps one after another (1, 2, 3, 4), then waits 5 minutes.</div>` : ''}
+        ${st.On && st.Key === 'check' && (s.Steps[0].Again || 0) > 0 ? `<div class="when">Films described again need checking again, so this number drops while step 1 runs again and climbs back after.</div>` : ''}
         ${st.On && whenText(j) ? `<div class="when">${whenText(j)}</div>` : ''}
         ${model ? `<div class="model">${esc(model + same)}</div>` : ''}
       </div>`;

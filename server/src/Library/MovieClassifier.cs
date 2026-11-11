@@ -125,6 +125,13 @@ namespace Pickyfin.Server.Library
             }
             finally { TaggingEta.Stop(); }
             if (RetryAt is not null) return;
+            var left = total - unclassified.Count;
+            if (left > 0)
+            {
+                _logger.LogInformation("Tagging: round done, {Left} films still queued", left);
+                Jobs.Idle("tagging", "Describing films", $"Round done; {left:N0} films still queued for the next rounds");
+                return;
+            }
             _logger.LogInformation("Tagging finished");
             Jobs.Idle("tagging", "Describing films", "Up to date: every film is described");
         }

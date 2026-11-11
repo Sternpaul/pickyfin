@@ -53,6 +53,8 @@ public sealed class ServerSettings
     public int RescanMonths { get; set; }
     /// <summary>A re-check pass started by hand: every film re-checked before this time is due again.</summary>
     public DateTime? RescanPassStarted { get; set; }
+    /// <summary>How many films "describe every film again" queued, for the progress on Status.</summary>
+    public int RedoDescribeTotal { get; set; }
 
     /// <summary>Free models to fall back on until an order is set on the AI page.</summary>
     public static readonly string[] DefaultFreeModels =
