@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
+import org.jellyfin.androidtv.ui.base.interactionTracker
 
 object PopoverDefaults {
 	val Shape: Shape = RoundedCornerShape(4.dp)
@@ -39,13 +40,12 @@ fun Popover(
 	alignment: Alignment = Alignment.TopStart,
 	offset: DpOffset = DpOffset.Zero,
 	shape: Shape = PopoverDefaults.Shape,
-	backgroundColor: Color = JellyfinTheme.colorScheme.popover,
+	backgroundColor: Color = JellyfinTheme.colorScheme.surface,
 	content: @Composable BoxScope.() -> Unit,
 ) {
 	val density = LocalDensity.current
-	val focusRequester = remember { FocusRequester() }
 	val popupPositionProvider = remember(alignment, density, offset) {
-		PopoverMenuPositionProvider(
+		PopoverPositionProvider(
 			alignment = alignment,
 			offset = IntOffset(
 				x = with(density) { offset.x.roundToPx() },
@@ -60,6 +60,8 @@ fun Popover(
 	)
 
 	if (alpha != 0f) {
+		val focusRequester = remember { FocusRequester() }
+
 		Popup(
 			onDismissRequest = onDismissRequest,
 			properties = PopupProperties(
@@ -87,6 +89,7 @@ fun Popover(
 					.wrapContentSize()
 					.focusRequester(focusRequester)
 					.focusGroup()
+					.interactionTracker()
 			) {
 				content()
 			}

@@ -5,7 +5,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.add
 import androidx.fragment.app.commit
@@ -19,6 +18,7 @@ import org.jellyfin.androidtv.auth.model.ConnectingState
 import org.jellyfin.androidtv.auth.model.UnableToConnectState
 import org.jellyfin.androidtv.databinding.FragmentServerAddBinding
 import org.jellyfin.androidtv.ui.startup.ServerAddViewModel
+import org.jellyfin.androidtv.util.createBundle
 import org.jellyfin.androidtv.util.getSummary
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -110,9 +110,9 @@ class ServerAddFragment : Fragment() {
 					add<ServerFragment>(
 						R.id.content_view,
 						null,
-						bundleOf(
-							ServerFragment.ARG_SERVER_ID to state.id.toString()
-						)
+						createBundle {
+							putString(ServerFragment.ARG_SERVER_ID, state.id.toString())
+						}
 					)
 				}
 

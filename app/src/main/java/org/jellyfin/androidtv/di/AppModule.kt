@@ -1,7 +1,6 @@
 package org.jellyfin.androidtv.di
 
 import android.content.Context
-import android.os.Build
 import androidx.lifecycle.ProcessLifecycleOwner
 import coil3.ImageLoader
 import coil3.annotation.ExperimentalCoilApi
@@ -20,6 +19,7 @@ import org.jellyfin.androidtv.data.eventhandling.SocketHandler
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.CustomMessageRepository
 import org.jellyfin.androidtv.data.repository.CustomMessageRepositoryImpl
+import org.jellyfin.androidtv.data.repository.ExternalAppRepository
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemMutationRepositoryImpl
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
@@ -34,6 +34,12 @@ import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.navigation.NavigationRepositoryImpl
 import org.jellyfin.androidtv.ui.playback.PlaybackControllerContainer
+import org.jellyfin.androidtv.ui.playback.external.DefaultExternalPlayerApi
+import org.jellyfin.androidtv.ui.playback.external.ExternalPlayerApi
+import org.jellyfin.androidtv.ui.playback.external.MpvExternalPlayerApi
+import org.jellyfin.androidtv.ui.playback.external.MxExternalPlayerApi
+import org.jellyfin.androidtv.ui.playback.external.VimuExternalPlayerApi
+import org.jellyfin.androidtv.ui.playback.external.VlcExternalPlayerApi
 import org.jellyfin.androidtv.ui.playback.nextup.NextUpViewModel
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepositoryImpl
@@ -43,9 +49,12 @@ import org.jellyfin.androidtv.ui.search.SearchFragmentDelegate
 import org.jellyfin.androidtv.ui.search.SearchRepository
 import org.jellyfin.androidtv.ui.search.SearchRepositoryImpl
 import org.jellyfin.androidtv.ui.search.SearchViewModel
+import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
+import org.jellyfin.androidtv.ui.settings.screen.library.SettingsLibrariesScreenViewModel
 import org.jellyfin.androidtv.ui.startup.ServerAddViewModel
 import org.jellyfin.androidtv.ui.startup.StartupViewModel
 import org.jellyfin.androidtv.ui.startup.UserLoginViewModel
+import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.KeyProcessor
 import org.jellyfin.androidtv.util.MarkdownRenderer
 import org.jellyfin.androidtv.util.PlaybackHelper
@@ -61,6 +70,7 @@ import org.jellyfin.sdk.model.ClientInfo
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
+import org.koin.dsl.bind
 import org.koin.dsl.module
 import org.jellyfin.sdk.Jellyfin as JellyfinSdk
 
@@ -85,7 +95,7 @@ val appModule = module {
 
 			// Add client info
 			val clientName = buildString {
-				append("Jellyfin Android TV")
+				append("Jellyfin for Android TV")
 				if (BuildConfig.DEBUG) append(" (debug)")
 			}
 			clientInfo = ClientInfo(clientName, BuildConfig.VERSION_NAME)
@@ -127,7 +137,7 @@ val appModule = module {
 			components {
 				add(get<NetworkFetcher.Factory>())
 
-				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) add(AnimatedImageDecoder.Factory())
+				if (AndroidVersion.isAtLeastP) add(AnimatedImageDecoder.Factory())
 				else add(GifDecoder.Factory())
 				add(SvgDecoder.Factory())
 			}
@@ -147,15 +157,25 @@ val appModule = module {
 	single<NavigationRepository> { NavigationRepositoryImpl(Destinations.home) }
 	single<SearchRepository> { SearchRepositoryImpl(get()) }
 	single<MediaSegmentRepository> { MediaSegmentRepositoryImpl(get(), get()) }
+	single<ExternalAppRepository> { ExternalAppRepository(get(), getAll(), get<DefaultExternalPlayerApi>()) }
+
+	// External player APIs
+	single { VlcExternalPlayerApi() } bind ExternalPlayerApi::class
+	single { MxExternalPlayerApi() } bind ExternalPlayerApi::class
+	single { MpvExternalPlayerApi() } bind ExternalPlayerApi::class
+	single { VimuExternalPlayerApi() } bind ExternalPlayerApi::class
+	single { DefaultExternalPlayerApi() }
 
 	viewModel { StartupViewModel(get(), get(), get(), get()) }
 	viewModel { UserLoginViewModel(get(), get(), get(), get(defaultDeviceInfo)) }
 	viewModel { ServerAddViewModel(get()) }
 	viewModel { NextUpViewModel(get(), get(), get()) }
 	viewModel { StillWatchingViewModel(get(), get(), get(), get()) }
-	viewModel { PhotoPlayerViewModel(get()) }
+	viewModel { PhotoPlayerViewModel(get(), get()) }
 	viewModel { SearchViewModel(get()) }
 	viewModel { DreamViewModel(get(), get(), get(), get(), get()) }
+	viewModel { SettingsViewModel() }
+	viewModel { SettingsLibrariesScreenViewModel(get()) }
 
 	single { BackgroundService(get(), get(), get(), get(), get()) }
 

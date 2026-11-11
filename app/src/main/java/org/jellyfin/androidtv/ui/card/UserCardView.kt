@@ -2,10 +2,8 @@ package org.jellyfin.androidtv.ui.card
 
 import android.content.Context
 import android.graphics.Rect
-import android.os.Build
 import android.util.AttributeSet
 import android.view.KeyEvent
-import android.widget.ImageView
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -16,13 +14,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -36,19 +34,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.AbstractComposeView
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
-import org.jellyfin.androidtv.R
-import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.LocalTextStyle
+import org.jellyfin.androidtv.ui.base.ProfilePicture
 import org.jellyfin.androidtv.ui.base.ProvideTextStyle
 import org.jellyfin.androidtv.ui.base.Text
-import org.jellyfin.androidtv.ui.composable.AsyncImage
 import org.jellyfin.androidtv.util.MenuBuilder
 import org.jellyfin.androidtv.util.popupMenu
+import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.showIfNotEmpty
 
 @Composable
@@ -119,7 +114,7 @@ class UserCardView @JvmOverloads constructor(
 	init {
 		isFocusable = true
 		descendantFocusability = FOCUS_BLOCK_DESCENDANTS
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) defaultFocusHighlightEnabled = false
+		if (AndroidVersion.isAtLeastO) defaultFocusHighlightEnabled = false
 	}
 
 	fun setPopupMenu(init: MenuBuilder.() -> Unit) {
@@ -156,26 +151,17 @@ class UserCardView @JvmOverloads constructor(
 
 		UserCard(
 			image = {
-				if (image != null) {
-					AsyncImage(
-						modifier = Modifier.fillMaxSize(),
-						scaleType = ImageView.ScaleType.CENTER_CROP,
-						url = image,
-					)
-				} else {
-					Box(modifier = Modifier.fillMaxSize()) {
-						Icon(
-							imageVector = ImageVector.vectorResource(R.drawable.ic_user),
-							contentDescription = name,
-							modifier = Modifier
-								.size(48.dp)
-								.align(Alignment.Center)
-						)
-					}
-				}
+				ProfilePicture(
+					url = image,
+					iconPadding = PaddingValues(24.dp),
+					modifier = Modifier.fillMaxSize()
+				)
 			},
 			name = {
-				Text(name.orEmpty(), maxLines = 1)
+				Text(
+					text = name.orEmpty(),
+					maxLines = 1
+				)
 			},
 			modifier = Modifier
 				.padding(horizontal = 6.dp, vertical = 8.dp)

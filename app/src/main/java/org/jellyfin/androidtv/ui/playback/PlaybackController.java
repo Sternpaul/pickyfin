@@ -3,7 +3,6 @@ package org.jellyfin.androidtv.ui.playback;
 import static org.koin.java.KoinJavaComponent.get;
 import static org.koin.java.KoinJavaComponent.inject;
 
-import android.annotation.TargetApi;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.os.Handler;
@@ -86,6 +85,23 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     protected VideoOptions mCurrentOptions;
     private int mDefaultAudioIndex = -1;
     protected boolean burningSubs = false;
+
+    // The server does not update the subtitle delivery method when alwaysBurnInSubtitleWhenTranscoding
+    // is set, so we need to assume subs are burned in when transcoding with the option enabled.
+    protected boolean shouldBurnInSubtitles(PlayMethod playMethod) {
+        return userPreferences.getValue().get(UserPreferences.Companion.getSubtitlesBurnDuringTranscode())
+                && playMethod == PlayMethod.TRANSCODE;
+    }
+
+    private void updateBurningSubs(StreamInfo response) {
+        if (response.getSubtitleDeliveryMethod() == SubtitleDeliveryMethod.DROP) {
+            burningSubs = false;
+            return;
+        }
+
+        burningSubs = response.getSubtitleDeliveryMethod() == SubtitleDeliveryMethod.ENCODE
+                || shouldBurnInSubtitles(response.getPlayMethod());
+    }
     private float mRequestedPlaybackSpeed = -1.0f;
 
     private Runnable mReportLoop;
@@ -262,7 +278,6 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
     }
 
-    @TargetApi(23)
     private void getDisplayModes() {
         if (mFragment == null)
             return;
@@ -274,11 +289,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
     }
 
-    @TargetApi(23)
-    private Display.Mode findBestDisplayMode(MediaStream videoStream) {
-        if (mFragment == null || mDisplayModes == null || videoStream.getRealFrameRate() == null)
+    @Nullable
+    private Display.Mode findBestDisplayMode(@Nullable MediaStream videoStream) {
+        if (mFragment == null || mDisplayModes == null || videoStream == null || videoStream.getRealFrameRate() == null || videoStream.getWidth() == null || videoStream.getHeight() == null)
             return null;
-
 
         int curWeight = 0;
         Display.Mode bestMode = null;
@@ -331,7 +345,6 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         return bestMode;
     }
 
-    @TargetApi(23)
     private void setRefreshRate(MediaStream videoStream) {
         if (videoStream == null || mFragment == null) {
             Timber.e("Null video stream attempting to set refresh rate");
@@ -506,6 +519,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         VideoOptions internalOptions = new VideoOptions();
         internalOptions.setItemId(item.getId());
         internalOptions.setMediaSources(item.getMediaSources());
+        internalOptions.setAlwaysBurnInSubtitleWhenTranscoding(userPreferences.getValue().get(UserPreferences.Companion.getSubtitlesBurnDuringTranscode()));
         if (playbackRetries > 0 || (isLiveTv && !directStreamLiveTv)) internalOptions.setEnableDirectPlay(false);
         if (playbackRetries > 1) internalOptions.setEnableDirectStream(false);
         if (mCurrentOptions != null) {
@@ -568,7 +582,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                     if (mVideoManager == null)
                         return;
                     mCurrentOptions = internalOptions;
-                    if (internalOptions.getSubtitleStreamIndex() == null) burningSubs = internalResponse.getSubtitleDeliveryMethod() == SubtitleDeliveryMethod.ENCODE;
+                    updateBurningSubs(internalResponse);
                     startItem(item, position, internalResponse);
                 }
 
@@ -629,8 +643,32 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             return;
         }
 
-        // get subtitle info
-        mCurrentOptions.setSubtitleStreamIndex(response.getMediaSource().getDefaultSubtitleStreamIndex() != null ? response.getMediaSource().getDefaultSubtitleStreamIndex() : null);
+        // get subtitle info - prefer saved language preference over server default
+        String lastSubtitleLanguage = videoQueueManager.getValue().getLastPlayedSubtitleLanguageIsoCode();
+        if (lastSubtitleLanguage != null) {
+            if (lastSubtitleLanguage.isEmpty()) {
+                // User explicitly disabled subtitles
+                mCurrentOptions.setSubtitleStreamIndex(null);
+            } else if (response.getMediaSource().getMediaStreams() != null) {
+                // Find subtitle stream matching saved language, keeping the requested stream if it matches
+                // (e.g. when playback restarts to switch between baked and non-baked subtitles)
+                Integer requestedIndex = mCurrentOptions.getSubtitleStreamIndex();
+                Integer matchingIndex = null;
+                for (MediaStream stream : response.getMediaSource().getMediaStreams()) {
+                    if (stream.getType() == MediaStreamType.SUBTITLE && lastSubtitleLanguage.equals(stream.getLanguage())) {
+                        if (matchingIndex == null) matchingIndex = stream.getIndex();
+                        if (requestedIndex != null && requestedIndex == stream.getIndex()) {
+                            matchingIndex = requestedIndex;
+                            break;
+                        }
+                    }
+                }
+                mCurrentOptions.setSubtitleStreamIndex(matchingIndex);
+            }
+        } else {
+            // No saved preference, use server default
+            mCurrentOptions.setSubtitleStreamIndex(response.getMediaSource().getDefaultSubtitleStreamIndex());
+        }
         setDefaultAudioIndex(response);
         Timber.i("default audio index set to %s remote default %s", mDefaultAudioIndex, response.getMediaSource().getDefaultAudioStreamIndex());
         Timber.i("default sub index set to %s remote default %s", mCurrentOptions.getSubtitleStreamIndex(), response.getMediaSource().getDefaultSubtitleStreamIndex());
@@ -980,6 +1018,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 public void onResponse(StreamInfo response) {
                     if (!isActive()) return;
                     mCurrentStreamInfo = response;
+
+                    updateBurningSubs(response);
+
                     if (mVideoManager != null) {
                         mVideoManager.setMediaStreamInfo(api.getValue(), response);
                         mVideoManager.start();

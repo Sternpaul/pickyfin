@@ -7,16 +7,19 @@ import android.util.Range
 import android.view.Display
 import android.view.Surface
 import androidx.core.content.ContextCompat
+import androidx.media3.common.MimeTypes
 import kotlinx.serialization.json.Json
 import org.jellyfin.androidtv.BuildConfig
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.appendCodeBlock
 import org.jellyfin.androidtv.util.appendDetails
 import org.jellyfin.androidtv.util.appendItem
 import org.jellyfin.androidtv.util.appendSection
 import org.jellyfin.androidtv.util.appendValue
 import org.jellyfin.androidtv.util.buildMarkdown
+import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
 import org.jellyfin.sdk.api.client.util.ApiSerializer
 import org.jellyfin.sdk.model.ServerVersion
 import kotlin.time.Duration.Companion.nanoseconds
@@ -45,15 +48,6 @@ private val featureNames = setOf(
 	"secure-playback",
 	"tunneled-playback",
 )
-
-// API levels
-private val isN = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N // API 24
-private val isO = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O // API 26
-private val isQ = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q // API 29
-private val isR = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R // API 30
-private val isS = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S // API 31
-private val isUpsideDownCake = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE // API 34
-private val isBaklava = Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA // API 36
 
 // HDR formats to label strings
 enum class HdrFormats(val label: String) {
@@ -93,17 +87,17 @@ fun createDeviceProfileReport(
 	// Device capabilities used to generate profile
 	val codecs = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
 		.filter { !it.isEncoder }
-		.sortedBy { if (isQ) it.canonicalName else it.name }
+		.sortedBy { if (AndroidVersion.isAtLeastQ) it.canonicalName else it.name }
 
 	appendDetails("Device codec decoders") {
 		for (codec in codecs) {
-			if (isQ) appendLine("- **${codec.canonicalName} (${codec.name})**")
+			if (AndroidVersion.isAtLeastQ) appendLine("- **${codec.canonicalName} (${codec.name})**")
 			else appendLine("- **${codec.name}**")
 
-			if (isQ) appendLine("  - isVendor: ${codec.isVendor}")
-			if (isQ) appendLine("  - isHardwareAccelerated: ${codec.isHardwareAccelerated}")
-			if (isQ) appendLine("  - isSoftwareOnly: ${codec.isSoftwareOnly}")
-			if (isQ) appendLine("  - isAlias: ${codec.isAlias}")
+			if (AndroidVersion.isAtLeastQ) appendLine("  - isVendor: ${codec.isVendor}")
+			if (AndroidVersion.isAtLeastQ) appendLine("  - isHardwareAccelerated: ${codec.isHardwareAccelerated}")
+			if (AndroidVersion.isAtLeastQ) appendLine("  - isSoftwareOnly: ${codec.isSoftwareOnly}")
+			if (AndroidVersion.isAtLeastQ) appendLine("  - isAlias: ${codec.isAlias}")
 
 			for (type in codec.supportedTypes) {
 				val capabilities = codec.getCapabilitiesForType(type)
@@ -111,9 +105,9 @@ fun createDeviceProfileReport(
 				appendLine("  - **$type**")
 
 				capabilities.audioCapabilities?.let { audio ->
-					if (isS) appendLine("    - minInputChannelCount: ${audio.minInputChannelCount}")
+					if (AndroidVersion.isAtLeastS) appendLine("    - minInputChannelCount: ${audio.minInputChannelCount}")
 					appendLine("    - maxInputChannelCount: ${audio.maxInputChannelCount}")
-					if (isS) audio.inputChannelCountRanges.takeIf { it.isNotEmpty() }?.let {
+					if (AndroidVersion.isAtLeastS) audio.inputChannelCountRanges.takeIf { it.isNotEmpty() }?.let {
 						appendLine("    - inputChannelCountRanges: ${it.joinToString(", ") { it.prettyFormat() }}")
 					}
 					audio.bitrateRange?.let { appendLine("    - bitrateRange: ${it.prettyFormat()}") }
@@ -137,7 +131,7 @@ fun createDeviceProfileReport(
 					video.supportedHeights?.let {
 						appendLine("    - supportedHeights: ${it.prettyFormat()}")
 					}
-					if (isQ) video.supportedPerformancePoints?.takeIf { it.isNotEmpty() }?.let {
+					if (AndroidVersion.isAtLeastQ) video.supportedPerformancePoints?.takeIf { it.isNotEmpty() }?.let {
 						appendLine("    - supportedPerformancePoints: ${it.joinToString(", ")}")
 					}
 				}
@@ -172,6 +166,14 @@ fun createDeviceProfileReport(
 		}
 	}
 
+	appendDetails("Audio passthrough capabilities") {
+		appendLine("***AC3 (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_AC3)}")
+		appendLine("***EAC3 (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_E_AC3)}")
+		appendLine("***DTS (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_DTS)}")
+		appendLine("***TrueHD (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_TRUEHD)}")
+		appendLine()
+	}
+
 	appendDetails("Known media types") {
 		codecs
 			.flatMap { codec -> codec.supportedTypes.asIterable() }
@@ -181,7 +183,7 @@ fun createDeviceProfileReport(
 	}
 
 	appendDetails("Codec HDR Support") {
-		val mediaTest = MediaCodecCapabilitiesTest(context)
+		val mediaTest = MediaCodecCapabilitiesTest(userPreferences[UserPreferences.softwareCodecsEnabled])
 
 		val codecHDRSupport = buildMap<String, Map<HdrFormats, Boolean>> {
 			if (mediaTest.supportsAV1()) {
@@ -220,7 +222,7 @@ fun createDeviceProfileReport(
 		// Basic information
 		appendItem("Id") { appendValue(display.displayId.toString()) }
 		appendItem("Name") { appendValue(display.name) }
-		if (isS && display.deviceProductInfo != null) {
+		if (AndroidVersion.isAtLeastS && display.deviceProductInfo != null) {
 			val productInfo = requireNotNull(display.deviceProductInfo)
 			appendItem("Display product id") { appendValue(productInfo.productId) }
 			appendItem("Display bame") { appendValue(productInfo.name) }
@@ -241,34 +243,36 @@ fun createDeviceProfileReport(
 
 		// Refresh rate and timing
 		appendItem("Refresh rate") { appendValue(display.refreshRate.toString()) }
-		if (isBaklava) appendItem("Adaptive refresh rate") { appendValue(display.hasArrSupport().toString()) }
+		if (AndroidVersion.isAtLeastBaklava) appendItem("Adaptive refresh rate") { appendValue(display.hasArrSupport().toString()) }
 		appendItem("VSYNC offset") { appendValue(display.appVsyncOffsetNanos.nanoseconds.toString()) }
 		appendItem("Presentation deadline") { appendValue(display.presentationDeadlineNanos.nanoseconds.toString()) }
-		if (isR) appendItem("Minimal post processing") { appendValue(display.isMinimalPostProcessingSupported.toString()) }
+		if (AndroidVersion.isAtLeastR) appendItem("Minimal post processing") { appendValue(display.isMinimalPostProcessingSupported.toString()) }
 
 		// HDR
-		if (isO) appendItem("Any HDR") { appendValue(display.isHdr.toString()) }
-		if (isO) appendItem("Wide color gamut") { appendValue(display.isWideColorGamut.toString()) }
-		if (isQ) appendItem("Preferred wide color space") { appendValue(display.preferredWideGamutColorSpace.toString()) }
-		if (isN) {
+		if (AndroidVersion.isAtLeastO) appendItem("Any HDR") { appendValue(display.isHdr.toString()) }
+		if (AndroidVersion.isAtLeastO) appendItem("Wide color gamut") { appendValue(display.isWideColorGamut.toString()) }
+		if (AndroidVersion.isAtLeastQ) appendItem("Preferred wide color space") { appendValue(display.preferredWideGamutColorSpace.toString()) }
+		if (AndroidVersion.isAtLeastN) {
 			@Suppress("DEPRECATION")
-			val supportedHdrTypes = if (isUpsideDownCake) display.mode.supportedHdrTypes.toList()
-			else display.hdrCapabilities.supportedHdrTypes.toList()
+			val supportedHdrTypes = if (AndroidVersion.isAtLeastUpsideDownCake) display.mode.supportedHdrTypes.toList()
+			else display.hdrCapabilities?.supportedHdrTypes?.toList().orEmpty()
 
 			appendItem("HDR capabilities") {
 				appendLine()
 				appendLine("- ${HdrFormats.DOLBY_VISION.label}: ${supportedHdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)}")
 				appendLine("- ${HdrFormats.HDR10}: ${supportedHdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10)}")
-				if (isQ) appendLine("- ${HdrFormats.HDR10_PLUS.label}: ${supportedHdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS)}")
+				if (AndroidVersion.isAtLeastQ) {
+					appendLine("- ${HdrFormats.HDR10_PLUS.label}: ${supportedHdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS)}")
+				}
 				appendLine("- ${HdrFormats.HLG.label}: ${supportedHdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HLG)}")
 			}
 		}
 
-		if (isUpsideDownCake) appendItem("HDR/SDR ratio") {
+		if (AndroidVersion.isAtLeastUpsideDownCake) appendItem("HDR/SDR ratio") {
 			appendLine()
 			appendItem("Available") { appendValue(display.isHdrSdrRatioAvailable.toString()) }
 			appendItem("Ratio") { appendValue(display.hdrSdrRatio.toString()) }
-			if (isBaklava) {
+			if (AndroidVersion.isAtLeastBaklava) {
 				appendItem("Highest ratio") { appendValue(display.highestHdrSdrRatio.toString()) }
 			}
 		}
@@ -291,7 +295,7 @@ fun createDeviceProfileReport(
 		appendItem("Device model") { appendValue(Build.MODEL) }
 		appendItem("Device manufacturer") { appendValue(Build.MANUFACTURER) }
 		appendItem("Device codename") { appendValue(Build.DEVICE) }
-		if (isS) appendItem("Device SKU") { appendValue(Build.SKU) }
-		if (isS) appendItem("Device SOC") { appendValue(Build.SOC_MODEL) }
+		if (AndroidVersion.isAtLeastS) appendItem("Device SKU") { appendValue(Build.SKU) }
+		if (AndroidVersion.isAtLeastS) appendItem("Device SOC") { appendValue(Build.SOC_MODEL) }
 	}
 }

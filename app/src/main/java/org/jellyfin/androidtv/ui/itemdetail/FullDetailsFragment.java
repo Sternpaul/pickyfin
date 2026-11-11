@@ -547,7 +547,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
 
                 //Chapters
                 if (mBaseItem.getChapters() != null && !mBaseItem.getChapters().isEmpty()) {
-                    List<ChapterItemInfo> chapters = BaseItemExtensionsKt.buildChapterItems(mBaseItem, api.getValue());
+                    List<ChapterItemInfo> chapters = BaseItemExtensionsKt.buildChapterItems(mBaseItem);
                     ItemRowAdapter chapterAdapter = new ItemRowAdapter(requireContext(), chapters, new CardPresenter(true, 120), adapter);
                     addItemRow(adapter, chapterAdapter, 2, getString(R.string.lbl_chapters));
                 }
@@ -612,6 +612,12 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                 break;
 
             case EPISODE:
+                //Additional Parts
+                if (mBaseItem.getPartCount() != null && mBaseItem.getPartCount() > 0) {
+                    ItemRowAdapter additionalPartsAdapter = new ItemRowAdapter(requireContext(), new GetAdditionalPartsRequest(mBaseItem.getId()), new CardPresenter(), adapter);
+                    addItemRow(adapter, additionalPartsAdapter, 0, getString(R.string.lbl_additional_parts));
+                }
+
                 if (mBaseItem.getSeasonId() != null && mBaseItem.getIndexNumber() != null) {
                     // query index is zero-based but episode no is not
                     ItemRowAdapter nextAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createNextEpisodesRequest(mBaseItem.getSeasonId(), mBaseItem.getIndexNumber()), 0, false, true, new CardPresenter(true, 120), adapter);
@@ -632,7 +638,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
 
                 //Chapters
                 if (mBaseItem.getChapters() != null && !mBaseItem.getChapters().isEmpty()) {
-                    List<ChapterItemInfo> chapters = BaseItemExtensionsKt.buildChapterItems(mBaseItem, api.getValue());
+                    List<ChapterItemInfo> chapters = BaseItemExtensionsKt.buildChapterItems(mBaseItem);
                     ItemRowAdapter chapterAdapter = new ItemRowAdapter(requireContext(), chapters, new CardPresenter(true, 120), adapter);
                     addItemRow(adapter, chapterAdapter, 1, getString(R.string.lbl_chapters));
                 }
@@ -996,22 +1002,20 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             mDetailsOverviewRow.addAction(goToSeriesButton);
         }
 
-        if (userPreferences.getValue().get(UserPreferences.Companion.getMediaManagementEnabled())) {
-            boolean deletableItem = false;
-            UserDto currentUser = KoinJavaComponent.<UserRepository>get(UserRepository.class).getCurrentUser().getValue();
-            if (mBaseItem.getType() == BaseItemKind.RECORDING && currentUser.getPolicy().getEnableLiveTvManagement() && mBaseItem.getCanDelete() != null)
-                deletableItem = mBaseItem.getCanDelete();
-            else if (mBaseItem.getCanDelete() != null) deletableItem = mBaseItem.getCanDelete();
+        boolean deletableItem = false;
+        UserDto currentUser = KoinJavaComponent.<UserRepository>get(UserRepository.class).getCurrentUser().getValue();
+        if (mBaseItem.getType() == BaseItemKind.RECORDING && currentUser.getPolicy().getEnableLiveTvManagement() && mBaseItem.getCanDelete() != null)
+            deletableItem = mBaseItem.getCanDelete();
+        else if (mBaseItem.getCanDelete() != null) deletableItem = mBaseItem.getCanDelete();
 
-            if (deletableItem) {
-                deleteButton = TextUnderButton.create(requireContext(), R.drawable.ic_delete, buttonSize, 0, getString(R.string.lbl_delete), new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        deleteItem();
-                    }
-                });
-                mDetailsOverviewRow.addAction(deleteButton);
-            }
+        if (deletableItem) {
+            deleteButton = TextUnderButton.create(requireContext(), R.drawable.ic_delete, buttonSize, 0, getString(R.string.lbl_delete), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    deleteItem();
+                }
+            });
+            mDetailsOverviewRow.addAction(deleteButton);
         }
 
         if (mSeriesTimerInfo != null) {

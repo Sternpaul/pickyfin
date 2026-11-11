@@ -6,15 +6,17 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.add
 import androidx.fragment.app.commit
 import androidx.fragment.app.replace
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.work.WorkManager
+import androidx.work.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -24,12 +26,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jellyfin.androidtv.JellyfinApplication
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.SessionRepositoryState
 import org.jellyfin.androidtv.auth.repository.UserRepository
+import org.jellyfin.androidtv.data.eventhandling.SocketHandler
 import org.jellyfin.androidtv.databinding.ActivityStartupBinding
+import org.jellyfin.androidtv.integration.LeanbackChannelWorker
 import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.browsing.MainActivity
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
@@ -41,6 +44,7 @@ import org.jellyfin.androidtv.ui.startup.fragment.ServerFragment
 import org.jellyfin.androidtv.ui.startup.fragment.SplashFragment
 import org.jellyfin.androidtv.ui.startup.fragment.StartupToolbarFragment
 import org.jellyfin.androidtv.util.applyTheme
+import org.jellyfin.androidtv.util.createBundle
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
@@ -63,6 +67,8 @@ class StartupActivity : FragmentActivity() {
 	private val userRepository: UserRepository by inject()
 	private val navigationRepository: NavigationRepository by inject()
 	private val itemLauncher: ItemLauncher by inject()
+	private val workManager: WorkManager by inject()
+	private val socketListener: SocketHandler by inject()
 
 	private lateinit var binding: ActivityStartupBinding
 
@@ -138,13 +144,24 @@ class StartupActivity : FragmentActivity() {
 
 		Timber.i("Determining next activity (action=${intent.action}, itemId=$itemId, itemIsUserView=$itemIsUserView)")
 
-		// Start session
-		(application as? JellyfinApplication)?.onSessionStart()
+		// Update background worker
+		with(ProcessLifecycleOwner.get().lifecycleScope) {
+			launch {
+				// Cancel all current workers
+				workManager.cancelAllWork().await()
+
+				// Recreate periodic workers
+				LeanbackChannelWorker.enqueue(workManager)
+			}
+
+			// Update WebSockets
+			launch { socketListener.updateSession() }
+		}
 
 		// Create destination
 		val destination = when {
 			// Search is requested
-			intent.action === Intent.ACTION_SEARCH -> Destinations.search(
+			intent.action == Intent.ACTION_SEARCH -> Destinations.search(
 				query = intent.getStringExtra(SearchManager.QUERY)
 			)
 			// User view item is requested
@@ -185,9 +202,9 @@ class StartupActivity : FragmentActivity() {
 	private fun showServer(id: UUID) = supportFragmentManager.commit {
 		replace<StartupToolbarFragment>(R.id.content_view)
 		add<ServerFragment>(
-			R.id.content_view, null, bundleOf(
-				ServerFragment.ARG_SERVER_ID to id.toString()
-			)
+			R.id.content_view, null, createBundle {
+				putString(ServerFragment.ARG_SERVER_ID, id.toString())
+			}
 		)
 	}
 

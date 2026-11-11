@@ -4,20 +4,16 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import androidx.annotation.AnyRes
-import org.jellyfin.androidtv.util.apiclient.JellyfinImage
 import org.jellyfin.androidtv.util.apiclient.albumPrimaryImage
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
-import org.jellyfin.androidtv.util.apiclient.primaryImage
 import org.jellyfin.androidtv.util.apiclient.seriesPrimaryImage
 import org.jellyfin.androidtv.util.apiclient.seriesThumbImage
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
-import org.jellyfin.sdk.model.api.BaseItemPerson
 import org.jellyfin.sdk.model.api.ImageType
-import org.jellyfin.sdk.model.api.UserDto
 
 class ImageHelper(
 	private val api: ApiClient,
@@ -30,9 +26,6 @@ class ImageHelper(
 
 		const val MAX_PRIMARY_IMAGE_HEIGHT: Int = 370
 	}
-
-	fun getImageUrl(image: JellyfinImage, fillWidth: Int, fillHeight: Int): String =
-		image.getUrl(api, null, null, fillWidth, fillHeight)
 
 	fun getImageAspectRatio(item: BaseItemDto, preferParentThumb: Boolean): Double {
 		if (preferParentThumb && (item.parentThumbItemId != null || item.seriesThumbImageTag != null)) {
@@ -50,15 +43,6 @@ class ImageHelper(
 	}
 
 	fun getPrimaryImageUrl(
-		item: BaseItemPerson,
-		maxHeight: Int? = null,
-	): String? = item.primaryImage?.getUrl(api, maxHeight = maxHeight)
-
-	fun getPrimaryImageUrl(
-		item: UserDto,
-	): String? = item.primaryImage?.getUrl(api)
-
-	fun getPrimaryImageUrl(
 		item: BaseItemDto,
 		width: Int? = null,
 		height: Int? = null,
@@ -72,7 +56,7 @@ class ImageHelper(
 	): String? {
 		val image = when {
 			preferParentThumb && item.type == BaseItemKind.EPISODE -> item.parentImages[ImageType.THUMB] ?: item.seriesThumbImage
-			item.type == BaseItemKind.SEASON -> item.seriesPrimaryImage
+			item.type == BaseItemKind.SEASON -> item.itemImages[ImageType.PRIMARY] ?: item.seriesPrimaryImage
 			item.type == BaseItemKind.PROGRAM && item.imageTags?.containsKey(ImageType.THUMB) == true -> item.itemImages[ImageType.THUMB]
 			item.type == BaseItemKind.AUDIO -> item.albumPrimaryImage
 			else -> null
@@ -92,17 +76,6 @@ class ImageHelper(
 		val image = item?.itemImages[ImageType.LOGO] ?: item?.parentImages[ImageType.LOGO]
 		return image?.getUrl(api, maxWidth = maxWidth)
 	}
-
-	fun getThumbImageUrl(
-		item: BaseItemDto,
-		fillWidth: Int,
-		fillHeight: Int,
-	): String? = item.itemImages[ImageType.THUMB]?.getUrl(api, fillWidth = fillWidth, fillHeight = fillHeight)
-		?: getPrimaryImageUrl(item, true, fillWidth, fillHeight)
-
-	fun getBannerImageUrl(item: BaseItemDto, fillWidth: Int, fillHeight: Int): String? =
-		item.itemImages[ImageType.BANNER]?.getUrl(api, fillWidth = fillWidth, fillHeight = fillHeight)
-			?: getPrimaryImageUrl(item, true, fillWidth, fillHeight)
 
 	/**
 	 * A utility to return a URL reference to an image resource

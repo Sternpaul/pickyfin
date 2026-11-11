@@ -5,6 +5,11 @@ import androidx.media3.common.MimeTypes
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
+import org.jellyfin.androidtv.preference.constant.BitstreamAudioFormat
+import org.jellyfin.androidtv.preference.constant.BitstreamAudioMode
+import org.jellyfin.androidtv.preference.constant.HdrFormat
+import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
+import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
 import org.jellyfin.sdk.model.ServerVersion
 import org.jellyfin.sdk.model.api.CodecType
 import org.jellyfin.sdk.model.api.DlnaProfileType
@@ -45,6 +50,24 @@ private val supportedAudioCodecs = arrayOf(
 	Codec.Audio.VORBIS,
 )
 
+private val hlsMpegTsAudioCodecs = arrayOf(
+	Codec.Audio.AAC,
+	Codec.Audio.AC3,
+	Codec.Audio.EAC3,
+	Codec.Audio.MP3
+)
+
+private val hlsFmp4AudioCodecs = arrayOf(
+	Codec.Audio.AAC,
+	Codec.Audio.AC3,
+	Codec.Audio.EAC3,
+	Codec.Audio.MP3,
+	Codec.Audio.ALAC,
+	Codec.Audio.FLAC,
+	Codec.Audio.OPUS,
+	Codec.Audio.DTS,
+)
+
 private fun UserPreferences.getMaxBitrate(): Int {
 	var maxBitrate = this[UserPreferences.maxBitrate].toFloatOrNull()
 
@@ -55,43 +78,74 @@ private fun UserPreferences.getMaxBitrate(): Int {
 	return (maxBitrate * 1_000_000).roundToInt()
 }
 
+private fun UserPreferences.getHdrRangeTypesFor(mode: HdrOverrideMode): Set<VideoRangeType> =
+	HdrFormat.entries
+		.filter { this[it.preference] == mode }
+		.flatMapTo(mutableSetOf()) { it.videoRangeTypes }
+
+private fun UserPreferences.isBitstreamAudioEnabled(context: Context, format: BitstreamAudioFormat): Boolean =
+	when (this[format.preference]) {
+		BitstreamAudioMode.AUTO -> isPassthroughAudioAvailable(context, format.mimeType)
+		BitstreamAudioMode.ENABLE -> true
+		BitstreamAudioMode.DISABLE -> false
+	}
+
 fun createDeviceProfile(
 	context: Context,
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
 ) = createDeviceProfile(
-	mediaTest = MediaCodecCapabilitiesTest(context),
+	mediaTest = MediaCodecCapabilitiesTest(userPreferences[UserPreferences.softwareCodecsEnabled]),
 	maxBitrate = userPreferences.getMaxBitrate(),
-	isAC3Enabled = userPreferences[UserPreferences.ac3Enabled],
+	isAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.AC3),
+	isEAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.EAC3),
+	isDTSPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.DTS),
+	isTrueHDPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.TRUEHD),
 	downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
-	assDirectPlay = false,
+	assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
 	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
-	jellyfinTenEleven = serverVersion >= ServerVersion(10, 11, 0),
+	userAVCLevel = userPreferences[UserPreferences.userAVCLevel].level,
+	userHEVCLevel = userPreferences[UserPreferences.userHEVCLevel].level,
+	forceEnabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.ENABLE),
+	forceDisabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.DISABLE),
 )
 
 fun createDeviceProfile(
 	mediaTest: MediaCodecCapabilitiesTest,
 	maxBitrate: Int,
-	isAC3Enabled: Boolean,
+	isAC3PrefEnabled: Boolean,
+	isEAC3PrefEnabled: Boolean,
+	isDTSPrefEnabled: Boolean,
+	isTrueHDPrefEnabled: Boolean,
 	downMixAudio: Boolean,
 	assDirectPlay: Boolean,
 	pgsDirectPlay: Boolean,
-	jellyfinTenEleven: Boolean,
+	userAVCLevel: Int?,
+	userHEVCLevel: Int?,
+	forceEnabledHdr: Set<VideoRangeType>,
+	forceDisabledHdr: Set<VideoRangeType>
 ) = buildDeviceProfile {
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
-		!isAC3Enabled -> supportedAudioCodecs.filterNot { it == Codec.Audio.EAC3 || it == Codec.Audio.AC3 }.toTypedArray()
 		else -> supportedAudioCodecs
-	}
+	}.filter { supportedPassthroughAudioCodecs ->
+		when (supportedPassthroughAudioCodecs) {
+			Codec.Audio.AC3 -> isAC3PrefEnabled
+			Codec.Audio.EAC3 -> isEAC3PrefEnabled
+			Codec.Audio.TRUEHD -> isTrueHDPrefEnabled
+			Codec.Audio.DTS -> isDTSPrefEnabled
+			else -> true
+		}
+	}.toTypedArray()
 
 	val supportsHevc = mediaTest.supportsHevc()
 	val supportsHevcMain10 = mediaTest.supportsHevcMain10()
-	val hevcMainLevel = mediaTest.getHevcMainLevel()
-	val hevcMain10Level = mediaTest.getHevcMain10Level()
+	val hevcMainLevel = userHEVCLevel ?: mediaTest.getHevcMainLevel()
+	val hevcMain10Level = userHEVCLevel ?: mediaTest.getHevcMain10Level()
 	val supportsAVC = mediaTest.supportsAVC()
 	val supportsAVCHigh10 = mediaTest.supportsAVCHigh10()
-	val avcMainLevel = mediaTest.getAVCMainLevel()
-	val avcHigh10Level = mediaTest.getAVCHigh10Level()
+	val avcMainLevel = userAVCLevel ?: mediaTest.getAVCMainLevel()
+	val avcHigh10Level = userAVCLevel ?: mediaTest.getAVCHigh10Level()
 	val supportsAV1 = mediaTest.supportsAV1()
 	val supportsAV1Main10 = mediaTest.supportsAV1Main10()
 	val supportsVC1 = mediaTest.supportsVc1()
@@ -122,6 +176,11 @@ fun createDeviceProfile(
 
 	/// Transcoding profiles
 	// Video
+	val hlsVideoCodecs = listOfNotNull(
+		if (supportsHevc) Codec.Video.HEVC else null,
+		Codec.Video.H264
+	).toTypedArray()
+
 	transcodingProfile {
 		type = DlnaProfileType.VIDEO
 		context = EncodingContext.STREAMING
@@ -129,10 +188,22 @@ fun createDeviceProfile(
 		container = Codec.Container.TS
 		protocol = MediaStreamProtocol.HLS
 
-		if (supportsHevc) videoCodec(Codec.Video.HEVC)
-		videoCodec(Codec.Video.H264)
+		videoCodec(*hlsVideoCodecs)
+		audioCodec(*hlsMpegTsAudioCodecs.filter(allowedAudioCodecs::contains).toTypedArray())
 
-		audioCodec(*allowedAudioCodecs)
+		copyTimestamps = false
+		enableSubtitlesInManifest = true
+	}
+
+	transcodingProfile {
+		type = DlnaProfileType.VIDEO
+		context = EncodingContext.STREAMING
+
+		container = Codec.Container.MP4
+		protocol = MediaStreamProtocol.HLS
+
+		videoCodec(*hlsVideoCodecs)
+		audioCodec(*hlsFmp4AudioCodecs.filter(allowedAudioCodecs::contains).toTypedArray())
 
 		copyTimestamps = false
 		enableSubtitlesInManifest = true
@@ -390,52 +461,57 @@ fun createDeviceProfile(
 
 	/// HDR exclude list
 
-	// TODO Use VideoRangeType enum with Jellyfin 10.11 based SDK
 	val unsupportedRangeTypesAv1 = buildSet {
-		if (jellyfinTenEleven) add("DOVIInvalid")
+		add(VideoRangeType.DOVI_INVALID)
 
 		if (!supportsAV1DolbyVision) {
-			add(VideoRangeType.DOVI.serialName)
-			if (!supportsAV1HDR10) add(VideoRangeType.DOVI_WITH_HDR10.serialName)
-			if (jellyfinTenEleven && !supportsAV1HDR10Plus) add("DOVIWithHDR10Plus")
+			add(VideoRangeType.DOVI)
+			if (!supportsAV1HDR10) add(VideoRangeType.DOVI_WITH_HDR10)
+			if (!supportsAV1HDR10Plus) add(VideoRangeType.DOVI_WITH_HDR10_PLUS)
 		}
 
 		if (!supportsAV1HDR10Plus) {
-			add(VideoRangeType.HDR10_PLUS.serialName)
+			add(VideoRangeType.HDR10_PLUS)
 
-			if (!mediaTest.supportsAV1HDR10()) add(VideoRangeType.HDR10.serialName)
+			if (!mediaTest.supportsAV1HDR10()) add(VideoRangeType.HDR10)
 		}
-	}
+	} - forceEnabledHdr + forceDisabledHdr
 
-	// TODO Use VideoRangeType enum with Jellyfin 10.11 based SDK
 	val unsupportedRangeTypesHevc = buildSet {
-		if (jellyfinTenEleven) add("DOVIInvalid")
+		add(VideoRangeType.DOVI_INVALID)
 
 		if (!supportsHevcDolbyVisionEL) {
-			if (jellyfinTenEleven) {
-				add("DOVIWithEL")
-				if (!supportsHevcHDR10Plus && !KnownDefects.hevcDoviHdr10PlusBug) add("DOVIWithELHDR10Plus")
+			if (
+				!KnownDefects.unreportedDoviProfile7Support ||
+				!supportsHevcDolbyVision ||
+				!supportsHevcMain10 ||
+				!supportsHevcHDR10
+			) {
+				add(VideoRangeType.DOVI_WITH_EL)
+
+				if (!supportsHevcHDR10Plus && !KnownDefects.hevcDoviHdr10PlusBug) {
+					add(VideoRangeType.DOVI_WITH_ELHDR10_PLUS)
+				}
 			}
 
 			if (!supportsHevcDolbyVision) {
-				add(VideoRangeType.DOVI.serialName)
-				if (!supportsHevcHDR10) add(VideoRangeType.DOVI_WITH_HDR10.serialName)
-				if (jellyfinTenEleven && !supportsHevcHDR10Plus && !KnownDefects.hevcDoviHdr10PlusBug) add("DOVIWithHDR10Plus")
+				add(VideoRangeType.DOVI)
+				if (!supportsHevcHDR10) add(VideoRangeType.DOVI_WITH_HDR10)
+				if (!supportsHevcHDR10Plus && !KnownDefects.hevcDoviHdr10PlusBug) add(VideoRangeType.DOVI_WITH_HDR10_PLUS)
 			}
 		}
 
 		if (!supportsHevcHDR10Plus) {
-			add(VideoRangeType.HDR10_PLUS.serialName)
-			if (!supportsHevcHDR10) add(VideoRangeType.HDR10.serialName)
+			add(VideoRangeType.HDR10_PLUS)
+			if (!supportsHevcHDR10) add(VideoRangeType.HDR10)
 		}
 
-		if (jellyfinTenEleven && KnownDefects.hevcDoviHdr10PlusBug) {
-			add("DOVIWithHDR10Plus")
-			add("DOVIWithELHDR10Plus")
+		if (KnownDefects.hevcDoviHdr10PlusBug) {
+			add(VideoRangeType.DOVI_WITH_HDR10_PLUS)
+			add(VideoRangeType.DOVI_WITH_ELHDR10_PLUS)
 		}
-	}
+	} - forceEnabledHdr + forceDisabledHdr
 
-	// Display
 	// Note: The codec profiles use a workaround to create correct behavior
 	// The notEquals condition will always fail the ConditionProcessor test in the server so we use applyConditions to only have the codec
 	// profile be active when the media in question uses one of the unsupported range types. The server will then use the value of the
@@ -448,11 +524,11 @@ fun createDeviceProfile(
 		codec = Codec.Video.AV1
 
 		conditions {
-			ProfileConditionValue.VIDEO_RANGE_TYPE notEquals unsupportedRangeTypesAv1.joinToString("|")
+			ProfileConditionValue.VIDEO_RANGE_TYPE notEquals unsupportedRangeTypesAv1.joinToString("|") { it.serialName }
 		}
 
 		applyConditions {
-			ProfileConditionValue.VIDEO_RANGE_TYPE inCollection unsupportedRangeTypesAv1
+			ProfileConditionValue.VIDEO_RANGE_TYPE inCollection unsupportedRangeTypesAv1.map { it.serialName }
 		}
 	}
 
@@ -462,11 +538,11 @@ fun createDeviceProfile(
 		codec = Codec.Video.HEVC
 
 		conditions {
-			ProfileConditionValue.VIDEO_RANGE_TYPE notEquals unsupportedRangeTypesHevc.joinToString("|")
+			ProfileConditionValue.VIDEO_RANGE_TYPE notEquals unsupportedRangeTypesHevc.joinToString("|") { it.serialName }
 		}
 
 		applyConditions {
-			ProfileConditionValue.VIDEO_RANGE_TYPE inCollection unsupportedRangeTypesHevc
+			ProfileConditionValue.VIDEO_RANGE_TYPE inCollection unsupportedRangeTypesHevc.map { it.serialName }
 		}
 	}
 

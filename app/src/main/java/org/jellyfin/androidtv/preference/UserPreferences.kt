@@ -1,14 +1,18 @@
 package org.jellyfin.androidtv.preference
 
 import android.content.Context
-import android.view.KeyEvent
 import androidx.preference.PreferenceManager
 import org.jellyfin.androidtv.preference.UserPreferences.Companion.screensaverInAppEnabled
+import org.jellyfin.androidtv.preference.constant.AVCLevel
 import org.jellyfin.androidtv.preference.constant.AppTheme
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
+import org.jellyfin.androidtv.preference.constant.BackdropBehavior
+import org.jellyfin.androidtv.preference.constant.BitstreamAudioMode
+import org.jellyfin.androidtv.preference.constant.BufferLength
 import org.jellyfin.androidtv.preference.constant.ClockBehavior
+import org.jellyfin.androidtv.preference.constant.HEVCLevel
+import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
 import org.jellyfin.androidtv.preference.constant.NextUpBehavior
-import org.jellyfin.androidtv.preference.constant.RatingType
 import org.jellyfin.androidtv.preference.constant.RefreshRateSwitchingBehavior
 import org.jellyfin.androidtv.preference.constant.StillWatchingBehavior
 import org.jellyfin.androidtv.preference.constant.WatchedIndicatorBehavior
@@ -42,19 +46,9 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var appTheme = enumPreference("app_theme", AppTheme.DARK)
 
 		/**
-		 * Enable background images while browsing
+		 * Behavior of app background while browsing
 		 */
-		var backdropEnabled = booleanPreference("pref_show_backdrop", true)
-
-		/**
-		 * Show premieres on home screen
-		 */
-		var premieresEnabled = booleanPreference("pref_enable_premieres", false)
-
-		/**
-		 * Enable management of media like deleting items when the user has sufficient permissions.
-		 */
-		var mediaManagementEnabled = booleanPreference("enable_media_management", false)
+		var backdropBehavior = enumPreference("backdrop_behavior", BackdropBehavior.BACKDROP_WITH_BLUR)
 
 		/* Playback - General*/
 		/**
@@ -100,6 +94,11 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var useExternalPlayer = booleanPreference("external_player", false)
 
 		/**
+		 * Component name for the external playback application.
+		 */
+		var externalPlayerComponentName = stringPreference("external_player_component", "")
+
+		/**
 		 * Change refresh rate to match media when device supports it
 		 */
 		var refreshRateSwitchingBehavior = enumPreference("refresh_rate_switching_behavior", RefreshRateSwitchingBehavior.DISABLED)
@@ -108,6 +107,21 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 * Whether ExoPlayer should prefer FFmpeg renderers to core ones.
 		 */
 		var preferExoPlayerFfmpeg = booleanPreference("exoplayer_prefer_ffmpeg", defaultValue = false)
+
+		/**
+		 * User defined AVC level override. AUTO uses device-reported capabilities.
+		 */
+		var userAVCLevel = enumPreference("user_avc_level", AVCLevel.AUTO)
+
+		/**
+		 * User defined HEVC level override. AUTO uses device-reported capabilities.
+		 */
+		var userHEVCLevel = enumPreference("user_hevc_level", HEVCLevel.AUTO)
+
+		/**
+		 * Playback buffer size preset.
+		 */
+		var bufferLength = enumPreference("buffer_length", BufferLength.AUTO)
 
 		/* Playback - Audio related */
 		/**
@@ -121,25 +135,55 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var audioNightMode = enumPreference("audio_night_mode", false)
 
 		/**
-		 * Enable AC3
+		 * AC3 bitstream device profile override.
 		 */
-		var ac3Enabled = booleanPreference("pref_bitstream_ac3", true)
+		var bitstreamAc3 = enumPreference("bitstream_ac3_mode", BitstreamAudioMode.AUTO)
+
+		/**
+		 * EAC3 bitstream device profile override.
+		 */
+		var bitstreamEac3 = enumPreference("bitstream_eac3_mode", BitstreamAudioMode.AUTO)
+
+		/**
+		 * DTS bitstream device profile override.
+		 */
+		var bitstreamDts = enumPreference("bitstream_dts_mode", BitstreamAudioMode.AUTO)
+
+		/**
+		 * TrueHD bitstream device profile override.
+		 */
+		var bitstreamTrueHd = enumPreference("bitstream_truehd_mode", BitstreamAudioMode.AUTO)
+
+		/**
+		 * HDR10 device profile override.
+		 */
+		var hdr10Override = enumPreference("hdr10_override", HdrOverrideMode.AUTO)
+
+		/**
+		 * HDR10+ device profile override.
+		 */
+		var hdr10PlusOverride = enumPreference("hdr10_plus_override", HdrOverrideMode.AUTO)
+
+		/**
+		 * Dolby Vision Profile 5 device profile override.
+		 */
+		var doviProfile5Override = enumPreference("dovi_profile_5_override", HdrOverrideMode.AUTO)
+
+		/**
+		 * Dolby Vision Profile 7 device profile override.
+		 */
+		var doviProfile7Override = enumPreference("dovi_profile_7_override", HdrOverrideMode.AUTO)
+
+		/**
+		 * Dolby Vision Profile 8 device profile override.
+		 */
+		var doviProfile8Override = enumPreference("dovi_profile_8_override", HdrOverrideMode.AUTO)
 
 		/* Live TV */
 		/**
 		 * Use direct play
 		 */
 		var liveTvDirectPlayEnabled = booleanPreference("pref_live_direct", true)
-
-		/**
-		 * Shortcut used for changing the audio track
-		 */
-		var shortcutAudioTrack = intPreference("shortcut_audio_track", KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK)
-
-		/**
-		 * Shortcut used for changing the subtitle track
-		 */
-		var shortcutSubtitleTrack = intPreference("shortcut_subtitle_track", KeyEvent.KEYCODE_CAPTIONS)
 
 		/* Developer options */
 		/**
@@ -158,11 +202,6 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var clockBehavior = enumPreference("pref_clock_behavior", ClockBehavior.ALWAYS)
 
 		/**
-		 * Set which ratings provider should show on MyImageCardViews
-		 */
-		var defaultRatingType = enumPreference("pref_rating_type", RatingType.RATING_TOMATOES)
-
-		/**
 		 * Set when watched indicators should show on MyImageCardViews
 		 */
 		var watchedIndicatorBehavior = enumPreference("pref_watched_indicator_behavior", WatchedIndicatorBehavior.ALWAYS)
@@ -171,6 +210,12 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 * Enable series thumbnails in home screen rows
 		 */
 		var seriesThumbnailsEnabled = booleanPreference("pref_enable_series_thumbnails", true)
+
+		/**
+		 * Maximum days since last watch to show an item in next up.
+		 * Set to 0 to disable (no cutoff).
+		 */
+		var homeNextUpMaxDays = intPreference("home_next_up_max_days", 0)
 
 		/**
 		 * Subtitles foreground color
@@ -195,7 +240,7 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		/**
 		 * Subtitles font size
 		 */
-		var subtitlesTextSize = floatPreference("subtitles_text_size", 1f)
+		var subtitlesTextSize = floatPreference("subtitles_text_size", 24f)
 
 		/**
 		 * Subtitles offset
@@ -244,14 +289,34 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var playerZoomMode = enumPreference("player_zoom_mode", ZoomMode.FIT)
 
 		/**
-		 * Enable TrickPlay in legacy player user interface while seeking.
+		 * Enable libass.
 		 */
-		var trickPlayEnabled = booleanPreference("trick_play_enabled", false)
+		var assDirectPlay = booleanPreference("libass_enabled", false)
 
 		/**
-  		 * Enable PGS subtitle direct-play.
+		 * Always burn in subtitles when transcoding.
+		 */
+		var subtitlesBurnDuringTranscode = booleanPreference("subtitles_burn_during_transcode", false)
+
+		/**
+		 * Enable PGS subtitle direct-play.
 		 */
 		var pgsDirectPlay = booleanPreference("pgs_enabled", true)
+
+		/**
+		 * Enable the use of software-based codecs.
+		 */
+		var softwareCodecsEnabled = booleanPreference("software_codecs_enabled", true)
+
+		/**
+		 * Stores the interval for the photo player.
+		 */
+		var photoPlayerPresentationDelay = longPreference("photo_player_presentation_delay", 8000)
+
+		/**
+		 * Integrate with androidx.tvprovider for the Android TV home screen.
+		 */
+		var tvProviderEnabled = booleanPreference("tv_provider_enabled", true)
 	}
 
 	init {
@@ -274,6 +339,19 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 				// Set subtitle text stroke color to black if it was enabled in a previous version
 				val subtitleStrokeSize = it.getInt("subtitles_stroke_size", 0)
 				putLong("subtitles_text_stroke_color", if (subtitleStrokeSize > 0) 0XFF000000L else 0X00FFFFFFL)
+			}
+
+			// v0.19.0 to v0.20.0
+			migration(toVersion = 9) {
+				// Reset subtitle text size as we changed from fractional sizing to absolute sizing
+				remove("subtitles_text_size")
+
+				// Set the BackdropBehavior if it was enabled in a previous version
+				val backdropEnabled = it.getBoolean("pref_show_backdrop", true)
+				putString(
+					"backdrop_behavior",
+					if (backdropEnabled) BackdropBehavior.BACKDROP_WITH_BLUR.name else BackdropBehavior.DISABLED.name
+				)
 			}
 		}
 	}
