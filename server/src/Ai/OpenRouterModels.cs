@@ -39,6 +39,13 @@ public static class OpenRouterModels
     public static List<string> DescribeOrder(ServerSettings s) =>
         s.ClassificationModelsAuto && Free.Count > 0 ? Free.Take(AutoCount).ToList() : ServerSettings.Chain(s.ClassificationModels, s.ClassificationModel);
 
+    /// <summary>Step 3, describing again from the web text: the describing order unless set apart.</summary>
+    public static List<string> LookupOrder(ServerSettings s) =>
+        s.LookupModelsAuto || s.LookupModels.Count == 0 ? DescribeOrder(s) : s.LookupModels.ToList();
+
+    /// <summary>Which model last answered for each step ("describe", "check", "lookup", "pick"), and when.</summary>
+    public static readonly ConcurrentDictionary<string, (string Model, DateTime At)> LastAnswered = new();
+
     /// <summary>The order for the second opinion. Automatic: the same ranking, but describing's first model goes last, so another model reviews.</summary>
     public static List<string> CheckOrder(ServerSettings s)
     {

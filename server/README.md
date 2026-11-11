@@ -49,15 +49,15 @@ movie costs a share of one call per 20 movies.
 
 ## Checking the AI's work
 
-Tags can be wrong, especially for lesser-known films. Pickyfin catches that in three ways, and lists what it finds on the **Issues** page:
+Tags can be wrong, especially for lesser-known films. Every film goes through three steps, and the Status page shows how far each one is, what it's doing and which model it uses:
 
-- **The AI says when it doesn't know a film.** It gets every fact Jellyfin and TMDB have (genres, original title, countries, director, cast, keywords, plot) and answers "I know it", "partly" or "no".
-- **A genre check.** Subcategories that don't fit any of Jellyfin's genres (a "Slasher" with only Crime and Drama) are flagged. Nothing is changed; you decide.
-- **A second opinion** (AI page, off by default). A different model reviews every movie's tags, 40 per call, and names only what looks wrong. A free OpenRouter model works.
+1. **Describe.** An AI describes the film from what it knows, with every fact Jellyfin and TMDB have (genres, original title, countries, director, cast, keywords, plot). It also says whether it knows the film ("yes", "partly" or "no"). A genre check flags subcategories that fit none of Jellyfin's genres (a "Slasher" with only Crime and Drama).
+2. **Check** (off by default). A second model reviews the tags, 40 films per call, and names only what looks wrong.
+3. **Look up** (needs an [Exa](https://exa.ai) key). Exa finds real text about the film (Wikipedia, Letterboxd, TMDB, …), and an AI describes it again from everything together: the web text, the first description, what the second opinion said, Jellyfin's genres and TMDB's keywords. Flagged films can be looked up right away; "Look up the whole library" works through every film a few at a time, after the second opinion has checked it. Under one cent per film; the free plan includes $10 a month, and a monthly limit stops lookups before that.
 
-With an [Exa](https://exa.ai) key, flagged films are looked up on the web (Wikipedia, Letterboxd, TMDB, …) and described again from what was found. That costs under one cent per film; the free plan includes $10 a month, and a monthly limit on the AI page stops lookups before that.
+With OpenRouter, each step has a model order: tried from the top, three tries per model, then the next. By default steps 1 and 2 follow the most used free models on OpenRouter this week, and step 3 uses the same order as step 1. Any order can be changed on the AI page.
 
-To go further, "Look up the whole library" (AI page) works through every film a few at a time, up to a number per day, flagged and lesser-known films first. The page shows how long it will take and what it costs per month; the spend shown is what Exa reports.
+What looks wrong goes to the **Issues** page.
 
 Every movie shows how far its tags can be trusted: checked by you, looked up on the web, second opinion agrees, or AI only. The Movies page can filter by that, and any movie can be marked as checked.
 

@@ -61,6 +61,12 @@ public sealed class RefreshService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await LogStartupAsync(stoppingToken);
+        const string turn = "Waiting for its turn (the jobs run one after another, every 5 minutes)";
+        Jobs.Ensure("library", "Library sync", turn);
+        Jobs.Ensure("tagging", "Describing films", turn);
+        Jobs.Ensure("second", "Second opinion", turn);
+        Jobs.Ensure("sweep", "Looking up the whole library", turn);
+        Jobs.Ensure("picks", "Rows for each person", turn);
         while (!stoppingToken.IsCancellationRequested)
         {
             try

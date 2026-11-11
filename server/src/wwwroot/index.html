@@ -101,6 +101,19 @@
   .chain .stat.bad { color: var(--err); }
   .chain .acts { display: flex; gap: 4px; }
   .chain .acts .btn, .chain ul .btn { height: 28px; padding: 0 9px; font-size: 13px; }
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 4px 0 28px; }
+  @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+  .step { border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .step.off { opacity: .6; }
+  .step-head { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+  .step-head .num { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; background: var(--accent-soft); color: var(--text); }
+  .step-head .dot { margin-left: auto; }
+  .step .what { font-size: 13px; color: var(--muted); margin: 0; }
+  .step .figure { margin: 4px 0 0; }
+  .step .big { font-size: 26px; }
+  .step .now { font-size: 13.5px; overflow-wrap: anywhere; }
+  .step.error .now { color: var(--err); }
+  .step .when, .step .model { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
   .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
   .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .job .dot { align-self: center; }
@@ -419,7 +432,7 @@
     <section data-page="ai" class="hidden">
       <div class="page-head"><div>
         <h1>AI</h1>
-        <p>The AI describes every movie once, reads what you write about each person, and picks their main row. One call per person per refresh.</p>
+        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (Exa finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Status shows how far each step is.</p>
       </div></div>
       <form id="ai-form" class="settings">
         <div class="setting">
@@ -431,55 +444,67 @@
           <div class="control"><input type="password" id="ApiKey" placeholder="Paste a new key" autocomplete="off"></div>
         </div>
         <div class="setting">
-          <div><h3>Models</h3><p class="why">Picking reads your descriptions and decides, so it deserves a capable model. Describing movies runs once per movie; a fast, cheap one is fine.</p></div>
-          <div class="control two">
-            <div><label class="field-label" for="ChatModel">For picking</label><input type="text" id="ChatModel" list="models"></div>
-            <div id="describe-single"><label class="field-label" for="ClassificationModel">For describing movies</label><input type="text" id="ClassificationModel" list="models"></div>
-          </div>
-        </div>
-        <div class="setting openrouter-only">
-          <div><h3>Order for describing movies</h3><p class="why">Tried from the top. Each model gets 3 tries (waiting a little between them when it's busy or failing), then the next one takes over. Turn off the ones that keep failing. The numbers count calls since the server last started.</p></div>
-          <div class="control"><div class="chain" id="describe-chain"></div></div>
+          <div><h3>Model for picking</h3><p class="why">Reads what you wrote about each person and picks their "Recommended for you" row. It deserves a capable model; if it fails, the describing order below takes over.</p></div>
+          <div class="control"><input type="text" id="ChatModel" list="models"></div>
         </div>
         <datalist id="models"></datalist>
+        <datalist id="models-all"></datalist>
         <div class="setting">
           <div><h3>Custom endpoint</h3><p class="why">Only for a self-hosted or proxy endpoint that speaks the provider's API.</p></div>
           <div class="control"><input type="text" id="CustomEndpoint" placeholder="Provider default"></div>
         </div>
+
+        <h2 class="group-title">1 · Describe</h2>
+        <div class="setting" id="describe-single">
+          <div><h3>Model for describing</h3><p class="why">Runs once per film, 20 films per call; a fast, cheap model is fine.</p></div>
+          <div class="control"><input type="text" id="ClassificationModel" list="models"></div>
+        </div>
+        <div class="setting openrouter-only">
+          <div><h3>Model order</h3><p class="why">Tried from the top. Each model gets 3 tries (waiting a little between them when it's busy or failing), then the next one takes over. Turn off the ones that keep failing. The numbers count calls since the server last started.</p></div>
+          <div class="control"><div class="chain" id="describe-chain"></div></div>
+        </div>
         <div class="setting-foot"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" id="test-ai">Test connection</button><span class="note" id="ai-note"></span></div>
       </form>
 
-      <h2 class="group-title">Checking the AI's work</h2>
+      <h2 class="group-title">2 · Check</h2>
       <form id="check-form" class="settings">
         <div class="setting">
-          <div><h3>Second opinion</h3><p class="why">A different model reviews every movie's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged movies show up under Issues.</p></div>
+          <div><h3>Second opinion</h3><p class="why">A different model reviews every film's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged films show up under Issues.</p></div>
           <div class="control">
             <label class="switch"><input type="checkbox" id="CheckEnabled"><span></span></label>
             <div id="check-single"><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="models"></div>
           </div>
         </div>
         <div class="setting openrouter-only">
-          <div><h3>Order for the second opinion</h3><p class="why">Same as for describing: from the top, 3 tries each. Best with different models than describing, so they catch different mistakes.</p></div>
+          <div><h3>Model order</h3><p class="why">Same as for describing: from the top, 3 tries each. Best with different models than describing, so they catch different mistakes.</p></div>
           <div class="control"><div class="chain" id="check-chain"></div></div>
         </div>
-        <datalist id="models-all"></datalist>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="check-note"></span></div>
+      </form>
+
+      <h2 class="group-title">3 · Look up on the web</h2>
+      <form id="lookup-form" class="settings">
         <div class="setting">
-          <div><h3>Web lookups with Exa <span class="state" id="exa-state"></span></h3><p class="why">For films the AI doesn't know: a web search finds a real description (Wikipedia, Letterboxd, TMDB…), and the film is described again with it. Under one cent per film. Any movie can also be looked up by hand from its page under Movies. A key comes from dashboard.exa.ai.</p></div>
+          <div><h3>Exa key <span class="state" id="exa-state"></span></h3><p class="why">Exa is a search engine. For each film it finds real text (Wikipedia, Letterboxd, TMDB…), and an AI describes the film again from that text together with both earlier opinions. Under one cent per film. A key comes from dashboard.exa.ai.</p></div>
           <div class="control"><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
         </div>
         <div class="setting">
-          <div><h3>Look up flagged films on their own</h3><p class="why">When the AI says it doesn't know a film, or something looks off, look it up and describe it again right away. Each film is looked up once.</p></div>
+          <div><h3>Look up flagged films right away</h3><p class="why">When the AI doesn't know a film, or something looks off, look it up and describe it again at once. Each film is looked up once.</p></div>
           <div class="control"><label class="switch"><input type="checkbox" id="WebLookupAuto"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>Look up the whole library</h3><p class="why">Slowly works through every film, a few every few minutes: flagged films first, then lesser-known ones. With the second opinion on, a film waits until it has been checked, so all three steps happen in order. <span id="sweep-estimate"></span></p></div>
+          <div class="control"><div class="inline" style="align-items:center"><input type="number" id="WebLookupsPerDay" min="0" step="5" style="width:110px"><span class="note">films a day (0 = off)</span></div></div>
         </div>
         <div class="setting">
           <div><h3>Monthly limit</h3><p class="why">Lookups stop for the month at this amount. <span id="exa-usage"></span></p></div>
           <div class="control"><div class="inline"><div class="prefixed" style="flex:0 1 140px"><span>$</span><input type="number" id="WebLookupBudget" min="0" step="1"></div></div></div>
         </div>
-        <div class="setting">
-          <div><h3>Look up the whole library</h3><p class="why">Slowly works through every film, a few every few minutes, flagged and lesser-known films first. Each film is described again from what was found. <span id="sweep-estimate"></span></p></div>
-          <div class="control"><div class="inline" style="align-items:center"><input type="number" id="WebLookupsPerDay" min="0" step="5" style="width:110px"><span class="note">films a day (0 = off)</span></div></div>
+        <div class="setting openrouter-only">
+          <div><h3>Model order for describing again</h3><p class="why">By default the same order as step 1. Set it apart if you want a stronger model only for looked-up films; they're few, so even a paid model costs little here.</p></div>
+          <div class="control"><div class="chain" id="lookup-chain"></div></div>
         </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="check-note"></span></div>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="lookup-note"></span></div>
       </form>
 
       <h2 class="group-title">TMDB</h2>
@@ -565,10 +590,9 @@
     <!-- STATUS -->
     <section data-page="status" class="hidden">
       <div class="page-head"><div><h1>Status</h1><p>What the server is doing and what it did recently.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
-      <div class="figure"><span class="big" id="lib-count">–</span><span class="of" id="lib-of"></span></div>
-      <div class="meter"><div id="lib-bar"></div></div>
-      <div id="check-wrap" class="hidden" style="margin-top:14px"><div class="of" id="check-of" style="margin-bottom:6px"></div><div class="meter"><div id="check-bar"></div></div></div>
-      <div class="label" style="margin:28px 0 8px">What each part is doing</div>
+      <div class="label" style="margin:24px 0 8px">Every film goes through three steps</div>
+      <div class="steps" id="steps"></div>
+      <div class="label" style="margin:0 0 8px">Also running</div>
       <div class="jobs" id="jobs"></div>
       <div class="facts-grid">
         <div><div class="label">Library synced</div><div id="lib-synced">–</div></div>
@@ -684,12 +708,14 @@ function fillModels(provider) {
   const or = provider === 'OpenRouter';
   $$('.openrouter-only').forEach(el => el.classList.toggle('hidden', !or));
   $('#describe-single').classList.toggle('hidden', or); $('#check-single').classList.toggle('hidden', or);
+  if (!or) renderChains();
 }
 
 // ---- model order (OpenRouter) ----
-const chains = { describe: [], check: [] }, openOff = {}, chainsAuto = { describe: true, check: true };
+const chains = { describe: [], check: [], lookup: [] }, openOff = {}, chainsAuto = { describe: true, check: true, lookup: true };
 // Automatic order: the most used free models on OpenRouter this week (the second opinion moves describing's first to the end)
 function autoChain(key) {
+  if (key === 'lookup') return [...chains.describe]; // step 3 follows step 1 unless set apart
   const top = (modelInfo?.Free || []).slice(0, modelInfo?.AutoCount || 5);
   if (key === 'describe' || !top.length) return top;
   const first = (chainsAuto.describe ? top : chains.describe)[0];
@@ -712,17 +738,20 @@ function modelStat(id) {
   const err = lastFailedLatest && st.LastError ? ` · failed last at ${clock(st.LastFailed)}: ${st.LastError.length > 90 ? st.LastError.slice(0, 90) + '…' : st.LastError}` : '';
   return { text: `${pop}${st.Ok} answered · ${st.Failed} failed${err}`, bad: lastFailedLatest };
 }
-function renderChains() { renderChain('describe'); renderChain('check'); }
+function renderChains() { renderChain('describe'); renderChain('check'); renderChain('lookup'); }
 function renderChain(key) {
   const box = $(`#${key}-chain`);
   if (!box) return;
-  if (chainsAuto[key] && modelInfo?.Free?.length) chains[key] = autoChain(key);
+  if (chainsAuto[key] && (key === 'lookup' || modelInfo?.Free?.length)) chains[key] = autoChain(key);
   const on = chains[key];
   // Any change by hand makes it the admin's own order
   const mine = fn => (...args) => { chainsAuto[key] = false; fn(...args); };
   const off = (modelInfo?.Free || []).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
   const statHtml = m => { const s = modelStat(m); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
-  const head = chainsAuto[key]
+  const head = key === 'lookup' ? (chainsAuto[key]
+    ? `<p class="note" style="margin:0">Same as step 1, describing. Changing anything gives step 3 its own order.</p>`
+    : `<div class="inline" style="align-items:center"><span class="note">Its own order.</span><button type="button" class="btn quiet" data-auto>Back to the same as describing</button></div>`)
+    : chainsAuto[key]
     ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free models on OpenRouter this week (by tokens), most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. Changing anything makes it your own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Your own order.</span><button type="button" class="btn quiet" data-auto>Back to most used this week</button></div>`;
   box.innerHTML = head + `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${esc(m)}</b>${statHtml(m)}</div>
@@ -748,6 +777,7 @@ async function loadSettings() {
   seg($('#provider-seg'), settings.AIProvider, fillModels); fillModels(settings.AIProvider);
   chains.describe = [...(settings.ClassificationModels || [])]; chains.check = [...(settings.CheckModels || [])];
   chainsAuto.describe = settings.ClassificationModelsAuto !== false; chainsAuto.check = settings.CheckModelsAuto !== false;
+  chains.lookup = [...(settings.LookupModels || [])]; chainsAuto.lookup = settings.LookupModelsAuto !== false;
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
@@ -805,9 +835,12 @@ $('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
   ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
   ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }) }, $('#ai-note')); });
 $('#check-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
-  CheckEnabled: $('#CheckEnabled').checked, ExaApiKey: $('#ExaApiKey').value,
-  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }),
-  WebLookupAuto: $('#WebLookupAuto').checked, WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0 }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts within a few minutes.'); });
+  CheckEnabled: $('#CheckEnabled').checked,
+  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts within a few minutes.'); });
+$('#lookup-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
+  ExaApiKey: $('#ExaApiKey').value, WebLookupAuto: $('#WebLookupAuto').checked,
+  WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
+  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }, $('#lookup-note'))) loadExaUsage(); });
 $('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
 const tuningValues = () => ({
   BecauseRows: Number(segValue($('#because-seg'))),
@@ -1357,23 +1390,31 @@ async function loadStatus() {
     $('#count-issues').textContent = s.Issues ? s.Issues.toLocaleString() : ''; $('#count-issues').className = s.Issues ? 'alert' : '';
     $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + progress + (progress ? '' : eta) : `Idle · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} movies described`;
     $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : busy ? 'busy' : 'ok');
-    $('#lib-count').textContent = s.Classified.toLocaleString();
-    $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described${s.Classified < s.Movies ? eta : ''}`;
-    $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';
     $('#lib-synced').textContent = ago(s.LibrarySynced);
-    $('#jobs').innerHTML = (s.Jobs || []).map(j => {
-      const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const inMin = t => { const m = Math.max(0, Math.round((new Date(t) - Date.now()) / 60000)); return m < 1 ? 'any moment' : `in ${dur(m * 60)}`; };
-      const when = j.Running ? `running for ${dur(Math.max(60, j.RunningFor))}`
-        : j.Next ? `${j.Error ? 'tries again' : 'next'} at ${clock(j.Next)} (${inMin(j.Next)})` : '';
-      return `<div class="job${j.Error ? ' error' : ''}"><span class="dot ${j.Error ? 'err' : j.Running ? 'busy' : 'ok'}"></span><b>${esc(j.Title)}</b><span class="now">${esc(j.Now)}</span><span class="when">${when}</span></div>`;
-    }).join('') || '<div class="job"><span></span><span class="now">Starting up…</span></div>';
-    $('#check-wrap').classList.toggle('hidden', !s.CheckEnabled);
-    if (s.CheckEnabled) {
-      const checking = s.State.startsWith('Second opinion');
-      $('#check-of').textContent = `Second opinion: ${s.Reviewed.toLocaleString()} of ${s.Classified.toLocaleString()} described movies checked or looked up${checking ? eta : ''}`;
-      $('#check-bar').style.width = s.Classified ? (100 * s.Reviewed / s.Classified) + '%' : '0';
-    }
+    const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const inMin = t => { const m = Math.max(0, Math.round((new Date(t) - Date.now()) / 60000)); return m < 1 ? 'any moment' : `in ${dur(m * 60)}`; };
+    const whenText = j => !j ? '' : j.Running ? `running for ${dur(Math.max(60, j.RunningFor))}${s.TaggingLeft ? ` · about ${dur(s.TaggingLeft)} left` : ''}`
+      : j.Next ? `${j.Error ? 'tries again' : 'next'} at ${clock(j.Next)} (${inMin(j.Next)})` : '';
+    $('#steps').innerHTML = (s.Steps || []).map((st, i) => {
+      const j = st.Job, m = st.Model;
+      const pct = st.Of ? Math.min(100, 100 * st.Done / st.Of) : 0;
+      const model = !st.On ? '' : m.LastAnswered
+        ? `Model: ${m.LastAnswered}, answered last at ${clock(m.LastAt)}${m.Count > 1 ? ` · order starts with ${m.First}` : ''}`
+        : `Model: ${m.First || 'not set'}${m.Count > 1 ? ` (then ${m.Count - 1} more in its order)` : ''}`;
+      const same = st.Key === 'lookup' && st.SameAsDescribe ? ' · same order as describing' : '';
+      return `<div class="step${st.On ? '' : ' off'}${j?.Error ? ' error' : ''}">
+        <div class="step-head"><span class="num">${i + 1}</span>${esc(st.Title)}<span class="dot ${!st.On ? '' : j?.Error ? 'err' : j?.Running ? 'busy' : 'ok'}"></span></div>
+        <p class="what">${esc(st.Text)}</p>
+        <div class="figure"><span class="big">${st.Done.toLocaleString()}</span><span class="of">of ${st.Of.toLocaleString()} ${esc(st.Unit)}</span></div>
+        <div class="meter"><div style="width:${pct}%"></div></div>
+        <div class="now">${esc(!st.On ? st.Off : j?.Now || 'Waiting for its turn')}</div>
+        ${st.On && whenText(j) ? `<div class="when">${whenText(j)}</div>` : ''}
+        ${model ? `<div class="model">${esc(model + same)}</div>` : ''}
+      </div>`;
+    }).join('');
+    $('#jobs').innerHTML = (s.Jobs || []).map(j =>
+      `<div class="job${j.Error ? ' error' : ''}"><span class="dot ${j.Error ? 'err' : j.Running ? 'busy' : 'ok'}"></span><b>${esc(j.Title)}</b><span class="now">${esc(j.Now)}</span><span class="when">${whenText(j)}</span></div>`
+    ).join('') || '<div class="job"><span></span><span class="now">Starting up…</span></div>';
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
   } catch {}
 }

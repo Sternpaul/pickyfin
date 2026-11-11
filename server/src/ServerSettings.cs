@@ -46,6 +46,9 @@ public sealed class ServerSettings
     /// <summary>True: follow OpenRouter's most used free models this week instead of the lists above.</summary>
     public bool ClassificationModelsAuto { get; set; } = true;
     public bool CheckModelsAuto { get; set; } = true;
+    /// <summary>Step 3, describing again after a web lookup. Auto = the same order as describing.</summary>
+    public List<string> LookupModels { get; set; } = new();
+    public bool LookupModelsAuto { get; set; } = true;
 
     /// <summary>Free models to fall back on until an order is set on the AI page.</summary>
     public static readonly string[] DefaultFreeModels =

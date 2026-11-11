@@ -31,10 +31,18 @@ namespace Pickyfin.Server.Ai
             Keywords = m.KeywordSet.Items.Count > 0 ? m.KeywordSet.Items.Take(15) : null,
             Plot = Cut(m.Plot, plotChars),
             FromTheWeb = string.IsNullOrWhiteSpace(m.WebNotes) ? null : Cut(m.WebNotes, 2500),
-            // A flagged film being decided again: both sides of the argument
-            EarlierTags = withReview && m.Issue is not null && m.IsClassified ? new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items } : null,
-            Concerns = withReview && m.Issue is not null ? m.Issue.Split('\n') : null,
+            // Described again (flagged, or looked up on the web): the first opinion and what the review said
+            EarlierTags = withReview && Reviewed(m) ? new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items } : null,
+            Review = withReview && Reviewed(m) ? ReviewLines(m) : null,
         };
+
+        private static bool Reviewed(MovieMetadata m) =>
+            m.IsClassified && (m.Issue is not null || !string.IsNullOrWhiteSpace(m.WebNotes));
+
+        private static string[] ReviewLines(MovieMetadata m) =>
+            m.Issue is not null ? m.Issue.Split('\n')
+            : m.Checked ? new[] { "A second AI reviewed these tags and found nothing wrong" }
+            : new[] { "Not reviewed by a second AI" };
 
         private static readonly JsonSerializerOptions Compact = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 
@@ -43,7 +51,7 @@ namespace Pickyfin.Server.Ai
             var moviesJson = JsonSerializer.Serialize(movies.Select((m, i) => Facts(m, i, withReview: true)), Compact);
             return $@"You classify movies for a recommendation engine. Use what you know about each film together with the facts given (genres, keywords, plot, and text from the web when present). The facts are reliable; don't contradict them.
 
-Some movies were tagged before and questioned. They carry ""EarlierTags"" (what an AI said before) and ""Concerns"" (objections from a reviewing AI or an automatic genre check). Both are arguments, not facts, and either side can be wrong. Weigh them against the facts and the web text, keep earlier tags that fit, replace the ones that don't, and make your own decision.
+Some movies are being described again. They carry ""EarlierTags"" (what an AI said the first time) and ""Review"" (what a second AI and an automatic genre check said about those tags: objections, or that they found nothing wrong). These are opinions, not facts, and any of them can be wrong. When ""FromTheWeb"" is there, it is the strongest evidence. Weigh everything together, keep earlier tags that fit, replace the ones that don't, and make your own decision.
 
 Return a JSON object with a ""movies"" array, one entry per input movie, with these fields:
 - ""Ref"": copy the input Ref exactly (""m1"", ""m2"", …).

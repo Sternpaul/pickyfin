@@ -141,7 +141,23 @@ api.MapGet("/me", (HttpContext http) =>
 
 admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, LogBuffer log, CancellationToken ct) =>
 {
-    var (total, classified, issues, reviewed) = await store.GetStatsAsync(ct);
+    var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
+    var s = ServerSettings.Current;
+    var openRouter = s.AIProvider == AIProviderType.OpenRouter;
+    // Which model a step uses: the one that answered last, else the first in its order
+    object Model(string step, List<string> order, string single)
+    {
+        var last = OpenRouterModels.LastAnswered.TryGetValue(step, out var l) ? l : default;
+        return new
+        {
+            First = openRouter ? order.FirstOrDefault() : single,
+            Count = openRouter ? order.Count : 1,
+            LastAnswered = last.Model,
+            LastAt = last.Model is null ? (DateTime?)null : last.At,
+        };
+    }
+    object Job(string key) => Jobs.Get(key) is { } j ? new { j.Title, j.Now, j.Running, j.Error, j.Next, RunningFor = j.Running ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0 } : null!;
+    var lookupAll = Jobs.Get("lookupall");
     var (waitingFor, seconds) = Activity.Current;
     return Results.Ok(new
     {
@@ -155,7 +171,22 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Issues = issues,
         CheckEnabled = ServerSettings.Current.CheckEnabled,
         Reviewed = reviewed,
-        Jobs = Jobs.Snapshot().Select(j => new { j.Key, j.Title, j.Now, j.Running, j.Error, j.Next,
+        // The three steps every film goes through
+        Steps = new object[]
+        {
+            new { Key = "describe", Title = "Describe", Text = "An AI describes each film from what it knows",
+                On = !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: no AI key yet (AI page)", Done = classified, Of = total, Unit = "described",
+                Job = Job("tagging"), Model = Model("describe", OpenRouterModels.DescribeOrder(s), s.ClassificationModel) },
+            new { Key = "check", Title = "Check", Text = "A second AI reviews the tags and flags what looks wrong",
+                On = s.CheckEnabled && !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: switch on the second opinion on the AI page", Done = reviewed, Of = classified, Unit = "checked",
+                Job = Job("second"), Model = Model("check", OpenRouterModels.CheckOrder(s), s.CheckModel) },
+            new { Key = "lookup", Title = "Look up", Text = "Exa finds real text about the film; an AI describes it again from everything",
+                On = WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto),
+                Off = !WebLookup.Configured ? "Off: no Exa key yet (AI page)" : "Off: set films a day, or switch on looking up flagged films (AI page)", Done = lookedUp, Of = classified, Unit = "looked up",
+                Job = lookupAll is { Running: true } ? Job("lookupall") : Job("sweep"), Model = Model("lookup", OpenRouterModels.LookupOrder(s), s.ClassificationModel),
+                SameAsDescribe = !openRouter || s.LookupModelsAuto },
+        },
+        Jobs = Jobs.Snapshot().Where(j => j.Key is "library" or "picks").Select(j => new { j.Key, j.Title, j.Now, j.Running, j.Error, j.Next,
             RunningFor = j.Running ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0 }),
         Log = log.Lines.Reverse().Take(80),
     });
@@ -358,6 +389,8 @@ record SettingsView
     public List<string>? CheckModels { get; init; }
     public bool? ClassificationModelsAuto { get; init; }
     public bool? CheckModelsAuto { get; init; }
+    public List<string>? LookupModels { get; init; }
+    public bool? LookupModelsAuto { get; init; }
     public bool HasExaApiKey { get; init; }
     public string? ExaApiKey { get; init; }
     public bool WebLookupAuto { get; init; }
@@ -394,6 +427,8 @@ record SettingsView
         CheckModels = OpenRouterModels.CheckOrder(s),
         ClassificationModelsAuto = s.ClassificationModelsAuto,
         CheckModelsAuto = s.CheckModelsAuto,
+        LookupModels = OpenRouterModels.LookupOrder(s),
+        LookupModelsAuto = s.LookupModelsAuto,
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
@@ -423,6 +458,8 @@ record SettingsView
         if (s.AIProvider == AIProviderType.OpenRouter && CheckModels is { Count: > 0 } check) { s.CheckModels = Clean(check); s.CheckModel = s.CheckModels[0]; }
         if (ClassificationModelsAuto is { } describeAuto) s.ClassificationModelsAuto = describeAuto;
         if (CheckModelsAuto is { } checkAuto) s.CheckModelsAuto = checkAuto;
+        if (s.AIProvider == AIProviderType.OpenRouter && LookupModels is { Count: > 0 } lookup) s.LookupModels = Clean(lookup);
+        if (LookupModelsAuto is { } lookupAuto) s.LookupModelsAuto = lookupAuto;
         s.WebLookupAuto = WebLookupAuto;
         s.WebLookupBudget = Math.Clamp(WebLookupBudget, 0, 1000);
         s.WebLookupsPerDay = Math.Clamp(WebLookupsPerDay, 0, 2000);

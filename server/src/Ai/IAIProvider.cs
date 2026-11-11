@@ -22,6 +22,10 @@ namespace Pickyfin.Server.Ai
             List<MovieMetadata> movies, 
             CancellationToken cancellationToken = default);
 
+        /// <summary>Describing again after a web lookup (step 3). OpenRouter can use its own model order for this.</summary>
+        Task<string> ClassifyLookedUpAsync(List<MovieMetadata> movies, CancellationToken cancellationToken = default) =>
+            ClassifyMoviesAsync(movies, cancellationToken);
+
         /// <summary>
         /// Sends a user chat query and returns the AI's response.
         /// </summary>

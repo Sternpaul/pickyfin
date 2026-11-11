@@ -52,8 +52,20 @@ public class QualityTests
         var fresh = M("Heat", new[] { "Crime" }, new string[0]);
         var prompt = Pickyfin.Server.Ai.ClassificationPrompt.Build(new List<MovieMetadata> { flagged, fresh });
         Assert.Contains("\"EarlierTags\":{\"Subcategories\":[\"Western\",\"Time Travel\"]", prompt);
-        Assert.Contains("\"Concerns\":[", prompt);
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(prompt, "\"Concerns\":").Count);
+        Assert.Contains("\"Review\":[", prompt);
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(prompt, "\"Review\":").Count);
+    }
+
+    [Fact]
+    public void ALookedUpFilmCarriesBothOpinions()
+    {
+        var film = M("Harakiri", new[] { "Drama" }, new[] { "Samurai", "Historical Epic" });
+        film.WebNotes = "Kobayashi's 1962 jidaigeki...";
+        film.Checked = true;
+        var prompt = Pickyfin.Server.Ai.ClassificationPrompt.Build(new List<MovieMetadata> { film });
+        Assert.Contains("\"EarlierTags\":", prompt);
+        Assert.Contains("found nothing wrong", prompt);
+        Assert.Contains("\"FromTheWeb\":", prompt);
     }
 
     [Fact]

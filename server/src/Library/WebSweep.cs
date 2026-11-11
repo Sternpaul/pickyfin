@@ -30,6 +30,10 @@ public sealed class WebSweep
     public static bool Wanted(Data.Models.MovieMetadata m) =>
         m.IsClassified && m.WebNotes is null && !m.ManuallyEdited && !m.Verified && !ServerSettings.Current.IsLibraryExcluded(m.Libraries);
 
+    /// <summary>Step 3 comes after step 2: with the second opinion on, a film waits until it has been checked (flagged films can go any time).</summary>
+    public static bool Ready(Data.Models.MovieMetadata m) =>
+        !ServerSettings.Current.CheckEnabled || m.Checked || m.Issue is not null;
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         const string key = "sweep", title = "Looking up the whole library";
@@ -42,8 +46,10 @@ public sealed class WebSweep
 
         var todo = (await _store.GetAllMoviesAsync(cancellationToken)).Where(Wanted).ToList();
         if (todo.Count == 0) { Jobs.Idle(key, title, "Done: every film is looked up"); return; }
+        var ready = todo.Where(Ready).ToList();
+        if (ready.Count == 0) { Jobs.Idle(key, title, $"{todo.Count:N0} to go; waiting for the second opinion to check films first", DateTime.UtcNow.AddMinutes(5)); return; }
         Jobs.Running(key, title, $"Looking up {Math.Min(PerRound, left)} films, then describing them again");
-        var batch = todo
+        var batch = ready
             .OrderByDescending(m => m.Issue is not null)
             .ThenBy(m => m.Popularity)
             .Take(Math.Min(PerRound, left))

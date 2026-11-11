@@ -107,6 +107,17 @@ public static class Jobs
         lock (Gate) All[key] = new Job(key, title, now, false, error, next, DateTime.UtcNow);
     }
 
+    /// <summary>A line for a job that hasn't run yet, so Status always lists every job.</summary>
+    public static void Ensure(string key, string title, string now)
+    {
+        lock (Gate) All.TryAdd(key, new Job(key, title, now, false, false, null, DateTime.UtcNow));
+    }
+
+    public static Job? Get(string key)
+    {
+        lock (Gate) return All.GetValueOrDefault(key);
+    }
+
     public static List<Job> Snapshot()
     {
         lock (Gate) return All.Values.OrderBy(j => Array.IndexOf(Order, j.Key) is var i && i < 0 ? 99 : i).ToList();

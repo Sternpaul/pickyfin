@@ -53,7 +53,7 @@ namespace Pickyfin.Server.Library
             movie.ManuallyEdited = false;
             var provider = _aiProviderFactory.GetProvider();
             using (Activity.Begin($"Tagging {movie.Title}: waiting for {provider.Name}"))
-                await TagBatchAsync(provider, new List<MovieMetadata> { movie }, cancellationToken);
+                await TagBatchAsync(provider, new List<MovieMetadata> { movie }, cancellationToken, lookedUp: true);
             return movie;
         }
 
@@ -152,14 +152,16 @@ namespace Pickyfin.Server.Library
             if (withNotes.Count == 0) return looked;
             _logger.LogInformation("Tagging {Count} looked-up movie(s) again", withNotes.Count);
             using (Activity.Begin($"Tagging {withNotes.Count} looked-up movie(s) again: waiting for {provider.Name}"))
-                await TagBatchAsync(provider, withNotes, cancellationToken);
+                await TagBatchAsync(provider, withNotes, cancellationToken, lookedUp: true);
             return looked;
         }
 
         /// <summary>One AI call for a batch: apply the tags, note what looks off, save.</summary>
-        private async Task TagBatchAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken)
+        private async Task TagBatchAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken, bool lookedUp = false)
         {
-            var json = await provider.ClassifyMoviesAsync(batch, cancellationToken);
+            var json = lookedUp
+                ? await provider.ClassifyLookedUpAsync(batch, cancellationToken)
+                : await provider.ClassifyMoviesAsync(batch, cancellationToken);
             var known = ProcessClassificationResult(json, batch);
             foreach (var movie in batch.Where(known.ContainsKey))
             {
