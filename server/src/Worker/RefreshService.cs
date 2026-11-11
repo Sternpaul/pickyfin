@@ -65,7 +65,7 @@ public sealed class RefreshService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await LogStartupAsync(stoppingToken);
-        const string turn = "Waiting for its turn (the jobs run one after another, every 5 minutes)";
+        const string turn = "";
         Jobs.Ensure("library", "Library sync", turn);
         Jobs.Ensure("tagging", "Describing films", turn);
         Jobs.Ensure("second", "Second opinion", turn);
@@ -104,7 +104,7 @@ public sealed class RefreshService : BackgroundService
         if (_librarySyncRequested || _library.LastSync is null || DateTime.UtcNow - _library.LastSync > LibraryInterval)
         {
             State = "Syncing and classifying the library";
-            Jobs.Running("library", "Library sync", "Reading the library from Jellyfin");
+            Jobs.Running("library", "Library sync", "Reading Jellyfin");
             _librarySyncRequested = false;
             var started = DateTime.UtcNow;
             _logger.LogInformation("Library sync started");
@@ -112,11 +112,11 @@ public sealed class RefreshService : BackgroundService
             catch (Exception error) when (error is not OperationCanceledException)
             {
                 _librarySyncRequested = true; // try again at the next tick
-                Jobs.Idle("library", "Library sync", $"Failed: {error.Message}", DateTime.UtcNow + Tick, error: true);
+                Jobs.Idle("library", "Library sync", $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + Tick, error: true);
                 throw;
             }
             _logger.LogInformation("Library sync finished in {Duration}", Pretty(DateTime.UtcNow - started));
-            Jobs.Idle("library", "Library sync", $"Last sync at {DateTime.Now:HH:mm}, took {Pretty(DateTime.UtcNow - started)}", DateTime.UtcNow + LibraryInterval);
+            Jobs.Idle("library", "Library sync", $"Done at {DateTime.Now:HH:mm}", DateTime.UtcNow + LibraryInterval);
 
             // New movies may now match someone's Letterboxd films
             await using var db = _database.Open();
@@ -146,7 +146,7 @@ public sealed class RefreshService : BackgroundService
             }
         }
 
-        Jobs.Idle("picks", "Rows for each person", "Everyone's rows are up to date; checked every 5 minutes for new watches", DateTime.UtcNow + Tick);
+        Jobs.Idle("picks", "Rows for each person", "Up to date", DateTime.UtcNow + Tick);
 
         // Tagging that stopped on an error tries again on its own, not only at the next library sync;
         // films queued to be described again go 8 calls per round

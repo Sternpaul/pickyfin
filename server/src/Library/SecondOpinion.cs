@@ -53,7 +53,7 @@ public sealed class SecondOpinion
         var settings = ServerSettings.Current;
         if (!settings.CheckEnabled || string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.CheckModel))
         {
-            Jobs.Idle(Key, Title, "Off (AI page)");
+            Jobs.Idle(Key, Title, "Off");
             return;
         }
 
@@ -66,15 +66,15 @@ public sealed class SecondOpinion
         var setAside = all.Count(m => SetAsideUntil.ContainsKey(m.ItemId));
         var pending = all.Where(m => !SetAsideUntil.ContainsKey(m.ItemId))
             .OrderBy(m => FailedTimes.GetValueOrDefault(m.ItemId)).ThenBy(m => m.Title).ToList();
-        var asideText = setAside > 0 ? $"; {setAside} set aside until tomorrow (the model kept rejecting them)" : "";
+        var asideText = setAside > 0 ? $" ({setAside} set aside until tomorrow)" : "";
         if (pending.Count == 0)
         {
-            Jobs.Idle(Key, Title, $"Up to date: every described film is checked{asideText}");
+            Jobs.Idle(Key, Title, $"Up to date{asideText}");
             return;
         }
         if (_retryAt > now)
         {
-            Jobs.Idle(Key, Title, $"Paused after an error, {pending.Count} films to go{asideText}", _retryAt, error: true);
+            Jobs.Idle(Key, Title, $"Paused after an error{asideText}", _retryAt, error: true);
             return;
         }
 
@@ -92,7 +92,7 @@ public sealed class SecondOpinion
                 if (cancellationToken.IsCancellationRequested) break;
                 var batch = thisRound.Skip(i).Take(BatchSize).ToList();
                 TaggingEta.BatchStarted(pending.Count - i);
-                Jobs.Running(Key, Title, $"Checking films {i + 1}–{i + batch.Count} of {pending.Count} with {settings.CheckModel}");
+                Jobs.Running(Key, Title, $"Films {i + 1}–{i + batch.Count} of {pending.Count}");
                 string answer;
                 try
                 {
@@ -115,7 +115,7 @@ public sealed class SecondOpinion
                     _logger.LogError("Second opinion paused: {Error}. Trying again at {When}.", ex.Message, Jobs.When(_retryAt));
                     if (aside.Count > 0)
                         _logger.LogWarning("Second opinion: this batch failed 3 times; its {Count} films are set aside until tomorrow and the rest carries on", aside.Count);
-                    Jobs.Idle(Key, Title, $"Paused after an error: {Short(ex.Message)}", _retryAt, error: true);
+                    Jobs.Idle(Key, Title, $"Paused: {Jobs.Short(ex.Message)}", _retryAt, error: true);
                     break;
                 }
 
@@ -146,7 +146,7 @@ public sealed class SecondOpinion
         if (failed) return;
         var left = pending.Count - thisRound.Count;
         _logger.LogInformation("Second opinion: round done, {Count} movie(s) flagged; {Left} to go", flaggedTotal, left);
-        Jobs.Idle(Key, Title, left > 0 ? $"{left} films to go; next round in a few minutes{asideText}" : $"Up to date: every described film is checked{asideText}");
+        Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} films to go{asideText}" : $"Up to date{asideText}", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
     }
 
     private static string Short(string message) => message.Length <= 160 ? message : message[..160] + "…";

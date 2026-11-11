@@ -73,17 +73,17 @@ namespace Pickyfin.Server.Library
         public static void RetryNow() { if (RetryAt is not null) RetryAt = DateTime.UtcNow; _errorsInARow = 0; }
 
         /// <param name="maxBatches">Calls this round (the "run again" queue goes a few calls per round, so picks don't wait); null = all.</param>
-        public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default, int? maxBatches = null)
+        public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default, int? maxBatches = null, bool onlyNew = false)
         {
             RetryAt = null;
             // Re-tagging movies classified under an older vocabulary costs one AI call
             // per batch, so it only happens when the admin opts in.
             var includeOutdated = ServerSettings.Current.ReclassifyOutdatedMovies;
-            var unclassified = await _movieStore.GetMoviesNeedingClassificationAsync(includeOutdated, cancellationToken);
+            var unclassified = await _movieStore.GetMoviesNeedingClassificationAsync(includeOutdated, cancellationToken, includeQueued: !onlyNew);
             if (!unclassified.Any())
             {
                 _logger.LogInformation("All movies are tagged");
-                Jobs.Idle("tagging", "Describing films", "Up to date: every film is described");
+                if (!onlyNew) Jobs.Idle("tagging", "Describing films", "Up to date");
                 return;
             }
 
@@ -104,7 +104,7 @@ namespace Pickyfin.Server.Library
                     {
                         var started = DateTime.UtcNow;
                         TaggingEta.BatchStarted(unclassified.Count - i);
-                        Jobs.Running("tagging", "Describing films", $"Films {i + 1}–{i + batch.Count} of {unclassified.Count} with {ServerSettings.Current.ClassificationModel}");
+                        Jobs.Running("tagging", "Describing films", $"Films {i + 1}–{i + batch.Count} of {unclassified.Count}");
                         using (Activity.Begin($"Tagging movies {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
                             await TagBatchAsync(provider, batch, cancellationToken);
                         _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
@@ -117,8 +117,7 @@ namespace Pickyfin.Server.Library
                         _errorsInARow++;
                         RetryAt = DateTime.UtcNow.AddMinutes(Math.Min(60, 10 * Math.Pow(2, _errorsInARow - 1)));
                         _logger.LogError("Tagging paused: {Error}. Trying again at {When}.", ex.Message, Jobs.When(RetryAt.Value));
-                        var shortError = ex.Message.Length <= 160 ? ex.Message : ex.Message[..160] + "…";
-                        Jobs.Idle("tagging", "Describing films", $"Paused after an error: {shortError}", RetryAt, error: true);
+                        Jobs.Idle("tagging", "Describing films", $"Paused: {Jobs.Short(ex.Message)}", RetryAt, error: true);
                         break;
                     }
                 }
@@ -129,11 +128,11 @@ namespace Pickyfin.Server.Library
             if (left > 0)
             {
                 _logger.LogInformation("Tagging: round done, {Left} films still queued", left);
-                Jobs.Idle("tagging", "Describing films", $"Round done; {left:N0} films still queued for the next rounds");
+                Jobs.Idle("tagging", "Describing films", $"{left:N0} films queued", DateTime.UtcNow.AddMinutes(5));
                 return;
             }
             _logger.LogInformation("Tagging finished");
-            Jobs.Idle("tagging", "Describing films", "Up to date: every film is described");
+            Jobs.Idle("tagging", "Describing films", "Up to date");
         }
 
         /// <summary>

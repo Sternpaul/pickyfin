@@ -68,8 +68,8 @@ public sealed class Rescan
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         var s = ServerSettings.Current;
-        if (s.RescanMonths <= 0 && s.RescanPassStarted is null) { Jobs.Idle(Key, Title, "Off (AI page)"); return; }
-        if (string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(Key, Title, "Off: no AI key yet (AI page)"); return; }
+        if (s.RescanMonths <= 0 && s.RescanPassStarted is null) { Jobs.Idle(Key, Title, "Off"); return; }
+        if (string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(Key, Title, "Off: no AI key"); return; }
 
         var movies = (await _store.GetAllMoviesAsync(cancellationToken)).Where(Eligible).ToList();
         var cutoff = Cutoff(s);
@@ -85,29 +85,29 @@ public sealed class Rescan
             // The pass started by hand is through
             var done = s.Clone(); done.RescanPassStarted = null; ServerSettings.Save(done);
             _logger.LogInformation("Re-check: the pass started by hand is done");
-            if (s.RescanMonths <= 0) { Jobs.Idle(Key, Title, "The pass you started is done: every film was re-checked"); return; }
+            if (s.RescanMonths <= 0) { Jobs.Idle(Key, Title, "Pass done"); return; }
         }
         if (due.Count == 0)
         {
             var next = movies.Where(m => m.Rescanned is not null).Select(m => m.Rescanned!.Value).DefaultIfEmpty(DateTime.UtcNow).Min().AddMonths(s.RescanMonths);
-            Jobs.Idle(Key, Title, "This pass is done: every film was re-checked", next);
+            Jobs.Idle(Key, Title, "Pass done", next);
             return;
         }
         if (doneToday >= perDay)
         {
-            Jobs.Idle(Key, Title, $"Today's {perDay} done; {due.Count:N0} to go in this pass", tomorrow);
+            Jobs.Idle(Key, Title, $"Today's {perDay} done", tomorrow);
             return;
         }
         var lookUp = WebLookup.Configured;
         if (lookUp && _web.Blocked() is { } why)
         {
             var firstOfNextMonth = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
-            Jobs.Idle(Key, Title, $"Paused: {why} {due.Count:N0} to go in this pass", firstOfNextMonth, error: true);
+            Jobs.Idle(Key, Title, "Paused: monthly Exa limit reached", firstOfNextMonth, error: true);
             return;
         }
 
         var batch = due.Take(Math.Min(PerRound, perDay - doneToday)).ToList();
-        Jobs.Running(Key, Title, $"{(lookUp ? "Looking up and describing again" : "Describing again")}: {batch.Count} films ({due.Count:N0} to go in this pass)");
+        Jobs.Running(Key, Title, $"{batch.Count} films");
         var before = batch.ToDictionary(m => m.ItemId, Tags);
 
         if (lookUp)
@@ -140,14 +140,14 @@ public sealed class Rescan
         catch (Exception error) when (error is not OperationCanceledException)
         {
             _logger.LogWarning("Re-check paused: {Error}. Trying again in a few minutes.", error.Message);
-            Jobs.Idle(Key, Title, $"Paused after an error: {(error.Message.Length > 160 ? error.Message[..160] + "…" : error.Message)}", DateTime.UtcNow.AddMinutes(10), error: true);
+            Jobs.Idle(Key, Title, $"Paused: {Jobs.Short(error.Message)}", DateTime.UtcNow.AddMinutes(10), error: true);
             return;
         }
 
         var changed = batch.Where(m => before.TryGetValue(m.ItemId, out var was) && was != Tags(m)).Select(m => m.Title).ToList();
         _logger.LogInformation("Re-check: {Count} films described again, {Changed} changed{Names}; {Left} to go in this pass",
             batch.Count, changed.Count, changed.Count > 0 ? ": " + string.Join(", ", changed.Take(8)) + (changed.Count > 8 ? ", …" : "") : "", due.Count - batch.Count);
-        Jobs.Idle(Key, Title, $"{due.Count - batch.Count:N0} to go in this pass; last round changed {changed.Count} of {batch.Count}", DateTime.UtcNow.AddMinutes(5));
+        Jobs.Idle(Key, Title, $"Last round changed {changed.Count} of {batch.Count}", DateTime.UtcNow.AddMinutes(5));
     }
 
     private static string Tags(MovieMetadata m) =>

@@ -123,6 +123,17 @@ public static class Jobs
         lock (Gate) return All.Values.OrderBy(j => Array.IndexOf(Order, j.Key) is var i && i < 0 ? 99 : i).ToList();
     }
 
+    /// <summary>An error in a few words for Status ("HTTP 400", "busy"); the full text is in the log.</summary>
+    public static string Short(string message)
+    {
+        var http = System.Text.RegularExpressions.Regex.Match(message, @"HTTP (\d{3})");
+        if (message.Contains("every model in your order failed") || message.Contains("failed on all models"))
+            return "every model failed" + (http.Success ? $" (last: HTTP {http.Groups[1].Value})" : "");
+        if (message.Contains("busy") || message.Contains("429")) return "the models are busy";
+        if (http.Success) return $"HTTP {http.Groups[1].Value}";
+        return message.Length <= 60 ? message : message[..60] + "…";
+    }
+
     /// <summary>"09:10 (in 23 min)" in the server's local time, for log lines.</summary>
     public static string When(DateTime utc)
     {

@@ -100,7 +100,7 @@ public sealed class LibrarySync
 
         if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey))
         {
-            await _classifier.ClassifyPendingMoviesAsync(cancellationToken);
+            await _classifier.ClassifyPendingMoviesAsync(cancellationToken, onlyNew: true);
             await GenreSweepAsync(cancellationToken);
         }
         else

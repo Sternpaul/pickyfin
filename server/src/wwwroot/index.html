@@ -130,6 +130,22 @@
   details.again { margin: 14px 0 0; padding: 12px 0; border-top: 1px dashed var(--line); }
   details.again summary { cursor: pointer; color: var(--muted); font-size: 14px; }
   details.again .again-body { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; max-width: 72ch; }
+  .now-box { margin: 20px 0 26px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; display: flex; gap: 12px; align-items: baseline; }
+  .now-box .dot { align-self: center; }
+  .now-box .what { font-weight: 650; }
+  .now-box .detail { color: var(--muted); font-size: 13.5px; }
+  .queue { border-top: 1px solid var(--line); margin-bottom: 28px; }
+  .q-row { display: grid; grid-template-columns: 14px 190px 140px 84px 1fr auto; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .q-row .count { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); }
+  .q-row .count .meter { margin-top: 4px; height: 4px; }
+  .q-row .badge { font-size: 12px; font-weight: 650; padding: 2px 8px; border-radius: 999px; text-align: center; background: var(--line); color: var(--muted); }
+  .q-row .badge.running { background: var(--accent-soft); color: var(--text); }
+  .q-row .badge.paused { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+  .q-row .badge.waiting { background: transparent; border: 1px solid var(--line); }
+  .q-row.off { opacity: .5; }
+  .q-row .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .q-row .when { color: var(--muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  @media (max-width: 760px) { .q-row { grid-template-columns: 14px 1fr auto; } .q-row .count, .q-row .text { grid-column: 2 / -1; } .q-row .when { grid-column: 2 / -1; } }
   .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
   .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .job .dot { align-self: center; }
@@ -618,10 +634,9 @@
     <!-- STATUS -->
     <section data-page="status" class="hidden">
       <div class="page-head"><div><h1>Status</h1><p>What the server is doing and what it did recently.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
-      <div class="label" style="margin:24px 0 8px">The steps every film goes through</div>
-      <div class="steps" id="steps"></div>
-      <div class="label" style="margin:0 0 8px">Also running</div>
-      <div class="jobs" id="jobs"></div>
+      <div class="now-box" id="now"></div>
+      <div class="label" style="margin:0 0 8px" title="Every 5 minutes the server runs these one after another, top to bottom">Queue, in the order they run</div>
+      <div class="queue" id="queue"></div>
       <div class="facts-grid">
         <div><div class="label">Library synced</div><div id="lib-synced">–</div></div>
         <div><div class="label">Jellyfin</div><div id="jf-url">–</div></div>
@@ -1586,40 +1601,33 @@ function dur(sec) {
 async function loadStatus() {
   try {
     const s = await call('GET', '/api/status');
-    const busy = s.State !== 'Idle';
-    const wait = s.Waiting ? ` · ${Math.floor(s.Waiting / 60)}:${String(s.Waiting % 60).padStart(2, '0')}` : '';
-    const eta = s.TaggingLeft ? ` · about ${dur(s.TaggingLeft)} left` : '';
-    const progress = busy && s.Movies && s.Classified < s.Movies ? ` · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} described${eta}` : '';
-    $('#count-issues').textContent = s.Issues ? s.Issues.toLocaleString() : ''; $('#count-issues').className = s.Issues ? 'alert' : '';
-    $('#state').textContent = s.LastError ? `Problem: ${s.LastError}` : busy ? s.State + wait + progress + (progress ? '' : eta) : `Idle · ${s.Classified.toLocaleString()} of ${s.Movies.toLocaleString()} movies described`;
-    $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : busy ? 'busy' : 'ok');
-    $('#lib-synced').textContent = ago(s.LibrarySynced);
+    const n = x => (x ?? 0).toLocaleString();
     const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const inMin = t => { const m = Math.max(0, Math.round((new Date(t) - Date.now()) / 60000)); return m < 1 ? 'any moment' : `in ${dur(m * 60)}`; };
-    const whenText = j => !j ? '' : j.Running ? `running for ${dur(Math.max(60, j.RunningFor))}${s.TaggingLeft ? ` · about ${dur(s.TaggingLeft)} left` : ''}`
-      : j.Next ? `${j.Error ? 'tries again' : 'next'} at ${clock(j.Next)} (${inMin(j.Next)})` : '';
-    $('#steps').innerHTML = (s.Steps || []).map((st, i) => {
-      const j = st.Job, m = st.Model;
-      const pct = st.Of ? Math.min(100, 100 * st.Done / st.Of) : 0;
-      const model = !st.On ? '' : m.LastAnswered
-        ? `Model: ${m.LastAnswered}, answered last at ${clock(m.LastAt)}${m.Count > 1 ? ` · order starts with ${m.First}` : ''}`
-        : `Model: ${m.First || 'not set'}${m.Count > 1 ? ` (then ${m.Count - 1} more in its order)` : ''}`;
-      const same = st.Key === 'lookup' && st.SameAsDescribe ? ' · same order as describing' : '';
-      return `<div class="step${st.On ? '' : ' off'}${j?.Error ? ' error' : ''}">
-        <div class="step-head"><span class="num">${i + 1}</span>${esc(st.Title)}<span class="dot ${!st.On ? '' : j?.Error ? 'err' : j?.Running ? 'busy' : 'ok'}"></span></div>
-        <p class="what">${esc(st.Text)}</p>
-        <div class="figure"><span class="big">${st.Done.toLocaleString()}</span><span class="of">of ${st.Of.toLocaleString()} ${esc(st.Unit)}</span></div>
-        <div class="meter"><div style="width:${pct}%"></div></div>
-        <div class="now">${esc(!st.On ? st.Off : j?.Now || 'Waiting for its turn')}</div>
-        ${st.On && st.Again ? `<div class="when"><b>Describing everything again:</b> ${(st.AgainOf - st.Again).toLocaleString()} of ${st.AgainOf.toLocaleString()} done, ${st.Again.toLocaleString()} to go. The films keep their current tags until their turn. 160 films per round; a round runs the steps one after another (1, 2, 3, 4), then waits 5 minutes.</div>` : ''}
-        ${st.On && st.Key === 'check' && (s.Steps[0].Again || 0) > 0 ? `<div class="when">Films described again need checking again, so this number drops while step 1 runs again and climbs back after.</div>` : ''}
-        ${st.On && whenText(j) ? `<div class="when">${whenText(j)}</div>` : ''}
-        ${model ? `<div class="model">${esc(model + same)}</div>` : ''}
-      </div>`;
+    const inMin = t => { const m = Math.round((new Date(t) - Date.now()) / 60000); return m < 1 ? 'any moment' : `in ${dur(m * 60)}`; };
+    const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
+    $('#count-issues').textContent = s.Issues ? n(s.Issues) : ''; $('#count-issues').className = s.Issues ? 'alert' : '';
+    $('#lib-synced').textContent = ago(s.LibrarySynced);
+
+    // What is happening right now
+    const running = (s.Queue || []).find(q => q.State === 'running');
+    const now = s.LastError ? `Problem: ${s.LastError}` : s.Now || (running ? running.Title : 'Idle');
+    const detail = [s.NowDetail, s.Waiting ? mmss(s.Waiting) : '', s.TaggingLeft && running ? `about ${dur(s.TaggingLeft)} left` : ''].filter(Boolean).join(' · ');
+    $('#state').textContent = now + (detail ? ' · ' + detail : '');
+    $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : s.Now || running ? 'busy' : 'ok');
+    $('#now').innerHTML = `<span class="dot ${s.LastError ? 'err' : s.Now || running ? 'busy' : 'ok'}"></span><div><div class="what">${esc(now)}</div>${detail ? `<div class="detail">${esc(detail)}</div>` : ''}</div>`;
+
+    // The queue, in the order a round runs
+    const label = { running: 'Running', waiting: 'Waiting', paused: 'Paused', off: 'Off' };
+    $('#queue').innerHTML = (s.Queue || []).map(q => {
+      const count = q.Of != null ? `<div class="count">${n(q.Done)} / ${n(q.Of)}<div class="meter"><div style="width:${q.Of ? Math.min(100, 100 * q.Done / q.Of) : 0}%"></div></div></div>` : '<div class="count"></div>';
+      const text = q.Queued ? `${n(q.Queued)} queued to describe again${q.State === 'running' && q.Text ? ' · now ' + q.Text.toLowerCase() : ''}` : q.Text;
+      const when = q.State === 'running' ? `for ${dur(Math.max(60, q.RunningFor))}`
+        : q.State === 'paused' && q.Next ? `retry ${clock(q.Next)}`
+        : q.Next && q.State !== 'off' ? `next ${clock(q.Next)} (${inMin(q.Next)})` : '';
+      return `<div class="q-row ${q.State}"><span class="dot ${q.State === 'paused' ? 'err' : q.State === 'running' ? 'busy' : q.State === 'off' ? '' : 'ok'}"></span>
+        <b>${esc(q.Title)}</b>${count}<span class="badge ${q.State}">${label[q.State] || (q.Of != null ? 'Done' : 'Idle')}</span>
+        <span class="text" title="${esc(text)}">${esc(text)}</span><span class="when">${when}</span></div>`;
     }).join('');
-    $('#jobs').innerHTML = (s.Jobs || []).map(j =>
-      `<div class="job${j.Error ? ' error' : ''}"><span class="dot ${j.Error ? 'err' : j.Running ? 'busy' : 'ok'}"></span><b>${esc(j.Title)}</b><span class="now">${esc(j.Now)}</span><span class="when">${whenText(j)}</span></div>`
-    ).join('') || '<div class="job"><span></span><span class="now">Starting up…</span></div>';
     $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
   } catch {}
 }

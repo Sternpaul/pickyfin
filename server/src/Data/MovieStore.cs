@@ -17,11 +17,11 @@ public sealed class MovieStore
         return await db.Movies.AsNoTracking().ToListAsync(cancellationToken);
     }
 
-    public async Task<List<MovieMetadata>> GetMoviesNeedingClassificationAsync(bool includeOutdated, CancellationToken cancellationToken = default)
+    public async Task<List<MovieMetadata>> GetMoviesNeedingClassificationAsync(bool includeOutdated, CancellationToken cancellationToken = default, bool includeQueued = true)
     {
         await using var db = _database.Open();
         var pending = await db.Movies.AsNoTracking()
-            .Where(m => !m.ManuallyEdited && (!m.IsClassified || m.RedoDescribe || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
+            .Where(m => !m.ManuallyEdited && (!m.IsClassified || (includeQueued && m.RedoDescribe) || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
             .ToListAsync(cancellationToken);
         // New films first, then the ones queued to be described again
         pending = pending.OrderBy(m => m.IsClassified).ThenBy(m => m.Title).ToList();

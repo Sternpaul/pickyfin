@@ -369,7 +369,7 @@ public static class BrowserApi
                     }
                     var left = (await store.GetAllMoviesAsync(ct)).Count(m => m.Issue is not null);
                     log.LogInformation("Look up all finished: {Done} looked up and described again; {Left} issue(s) left", done, left);
-                    Jobs.Idle("lookupall", "Look up all flagged films", $"Finished at {DateTime.Now:HH:mm}: {done} looked up, {left} issue(s) left");
+                    Jobs.Idle("lookupall", "Look up all flagged films", $"Done at {DateTime.Now:HH:mm}");
                 }
                 catch (OperationCanceledException) { }
                 finally { Interlocked.Exchange(ref _lookupAllRunning, 0); }

@@ -143,39 +143,57 @@ api.MapGet("/me", (HttpContext http) =>
 
 admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, CancellationToken ct) =>
 {
+    var s = ServerSettings.Current;
     int rescanned = 0, rescanOf = 0;
     var queuedAgain = await store.CountRedoAsync(ct);
-    if (ServerSettings.Current.RescanMonths > 0 || ServerSettings.Current.RescanPassStarted is not null)
+    if (s.RescanMonths > 0 || s.RescanPassStarted is not null)
     {
-        var cutoff = Rescan.Cutoff(ServerSettings.Current);
+        var cutoff = Rescan.Cutoff(s);
         await using var db = database.Open();
         var rows = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.ManuallyEdited && !m.Verified)
             .Select(m => new { m.Libraries, m.Rescanned }).ToListAsync(ct);
-        var eligible = rows.Where(r => !ServerSettings.Current.IsLibraryExcluded(r.Libraries)).ToList();
+        var eligible = rows.Where(r => !s.IsLibraryExcluded(r.Libraries)).ToList();
         rescanOf = eligible.Count;
         rescanned = eligible.Count(r => r.Rescanned >= cutoff);
     }
     var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
-    var s = ServerSettings.Current;
-    var openRouter = s.AIProvider == AIProviderType.OpenRouter;
-    // Which model a step uses: the one that answered last, else the first in its order
-    object Model(string step, List<string> order, string single)
+    var (waitingFor, seconds) = Activity.Current;
+    var hasKey = !string.IsNullOrWhiteSpace(s.ApiKey);
+    var anyRunning = Jobs.Snapshot().Any(j => j.Running);
+    var lookupAll = Jobs.Get("lookupall");
+
+    // One row per job, in the order a round runs them
+    object Row(string key, string title, bool on, string off, int? done = null, int? of = null, int queued = 0)
     {
-        var last = OpenRouterModels.LastAnswered.TryGetValue(step, out var l) ? l : default;
+        var j = Jobs.Get(key);
+        var state = !on ? "off" : j is { Running: true } ? "running" : j is { Error: true } ? "paused"
+            : queued > 0 || (of is { } o && done < o) ? "waiting" : "idle";
         return new
         {
-            First = openRouter ? order.FirstOrDefault() : single,
-            Count = openRouter ? order.Count : 1,
-            LastAnswered = last.Model,
-            LastAt = last.Model is null ? (DateTime?)null : last.At,
+            Key = key, Title = title, State = state,
+            Text = !on ? off : j?.Now ?? "",
+            Next = on && state != "running" ? j?.Next : null,
+            RunningFor = j is { Running: true } ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0,
+            Done = done, Of = of, Queued = queued,
         };
     }
-    object Job(string key) => Jobs.Get(key) is { } j ? new { j.Title, j.Now, j.Running, j.Error, j.Next, RunningFor = j.Running ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0 } : null!;
-    var lookupAll = Jobs.Get("lookupall");
-    var (waitingFor, seconds) = Activity.Current;
+    var lookupKey = lookupAll is { Running: true } ? "lookupall" : "sweep";
+    var queue = new[]
+    {
+        Row("library", "Library sync", true, ""),
+        Row("picks", "Rows for each person", true, ""),
+        Row("tagging", "1 · Describe", hasKey, "Off: no AI key", classified, total, queuedAgain),
+        Row("second", "2 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified),
+        Row(lookupKey, "3 · Look up", WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto || lookupAll is { Running: true }),
+            WebLookup.Configured ? "Off" : "Off: no Exa key", lookedUp, classified),
+        Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf),
+    };
+
     return Results.Ok(new
     {
-        State = waitingFor is not null && Activity.Detail is { } detail ? $"{waitingFor} ({detail})" : waitingFor ?? Activity.Background ?? worker.State,
+        // What is happening this second: the job, what it waits for, which model and which try
+        Now = waitingFor ?? Activity.Background ?? (worker.State == "Idle" ? null : worker.State),
+        NowDetail = waitingFor is not null ? Activity.Detail : null,
         Waiting = waitingFor is null ? 0 : seconds,
         TaggingLeft = TaggingEta.SecondsLeft,
         worker.LastError,
@@ -183,31 +201,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Movies = total,
         Classified = classified,
         Issues = issues,
-        CheckEnabled = ServerSettings.Current.CheckEnabled,
-        Reviewed = reviewed,
-        // The three steps every film goes through
-        Steps = new object[]
-        {
-            new { Key = "describe", Title = "Describe", Text = "An AI describes each film from what it knows",
-                On = !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: no AI key yet (AI page)", Again = queuedAgain, AgainOf = Math.Max(queuedAgain, s.RedoDescribeTotal), Done = classified, Of = total, Unit = "described",
-                Job = Job("tagging"), Model = Model("describe", OpenRouterModels.DescribeOrder(s), s.ClassificationModel) },
-            new { Key = "check", Title = "Check", Text = "A second AI reviews the tags and flags what looks wrong",
-                On = s.CheckEnabled && !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: switch on the second opinion on the AI page", Done = reviewed, Of = classified, Unit = "checked",
-                Job = Job("second"), Model = Model("check", OpenRouterModels.CheckOrder(s), s.CheckModel) },
-            new { Key = "lookup", Title = "Look up", Text = "Exa finds real text about the film; an AI describes it again from everything",
-                On = WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto),
-                Off = !WebLookup.Configured ? "Off: no Exa key yet (AI page)" : "Off: set films a day, or switch on looking up flagged films (AI page)", Done = lookedUp, Of = classified, Unit = "looked up",
-                Job = lookupAll is { Running: true } ? Job("lookupall") : Job("sweep"), Model = Model("lookup", OpenRouterModels.LookupOrder(s), s.ClassificationModel),
-                SameAsDescribe = !openRouter || s.LookupModelsAuto },
-            new { Key = "rescan", Title = "Re-check", Text = (s.RescanMonths <= 0 ? "A pass you started: each film" : $"Every {(s.RescanMonths == 12 ? "year" : s.RescanMonths == 1 ? "month" : $"{s.RescanMonths} months")}, each film") + " goes through step 3 again: a fresh lookup, then described again",
-                On = (s.RescanMonths > 0 || s.RescanPassStarted is not null) && !string.IsNullOrWhiteSpace(s.ApiKey),
-                Off = s.RescanMonths <= 0 ? "Off: choose how often on the AI page" : "Off: no AI key yet (AI page)",
-                Done = rescanned, Of = rescanOf, Unit = "re-checked in this pass",
-                Job = Job("rescan"), Model = Model("lookup", OpenRouterModels.LookupOrder(s), s.ClassificationModel),
-                SameAsDescribe = !openRouter || s.LookupModelsAuto },
-        },
-        Jobs = Jobs.Snapshot().Where(j => j.Key is "library" or "picks").Select(j => new { j.Key, j.Title, j.Now, j.Running, j.Error, j.Next,
-            RunningFor = j.Running ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0 }),
+        Queue = queue,
         Log = log.Lines.Reverse().Take(80),
     });
 });
