@@ -54,6 +54,7 @@ public sealed class RefreshService : BackgroundService
 
     public string State { get; private set; } = "Starting";
     public string? LastError { get; private set; }
+    public DateTime? LastErrorAt { get; private set; }
 
     /// <summary>Run the loop now instead of waiting for the next tick.</summary>
     public void Wake(bool syncLibrary = false)
@@ -86,6 +87,7 @@ public sealed class RefreshService : BackgroundService
             catch (Exception error)
             {
                 LastError = error.Message;
+                LastErrorAt = DateTime.UtcNow;
                 _logger.LogError("Refresh failed: {Error}", error.Message);
             }
             if (_jellyfin.IsConfigured) State = "Idle";
@@ -126,6 +128,7 @@ public sealed class RefreshService : BackgroundService
 
         State = "Checking users";
         await SyncUsersAsync(cancellationToken);
+        LastError = null; // Jellyfin answered: an earlier connection problem is over, no need to wait for the end of the round
 
         List<UserProfile> users;
         await using (var db = _database.Open())

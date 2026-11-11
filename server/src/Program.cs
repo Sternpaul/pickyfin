@@ -213,6 +213,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Waiting = waitingFor is null ? 0 : seconds,
         TaggingLeft = TaggingEta.SecondsLeft,
         worker.LastError,
+        LastErrorAt = worker.LastErrorAt,
         LibrarySynced = library.LastSync,
         Movies = total,
         Classified = classified,

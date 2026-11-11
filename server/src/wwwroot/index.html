@@ -1610,7 +1610,7 @@ async function loadStatus() {
 
     // What is happening right now
     const running = (s.Queue || []).find(q => q.State === 'running');
-    const now = s.LastError ? `Problem: ${s.LastError}` : s.Now || (running ? running.Title : 'Idle');
+    const now = s.LastError ? `Problem since ${clock(s.LastErrorAt)}: ${s.LastError}` : s.Now || (running ? running.Title : 'Idle');
     const detail = [s.NowDetail, s.Waiting ? mmss(s.Waiting) : '', s.TaggingLeft && running ? `about ${dur(s.TaggingLeft)} left` : ''].filter(Boolean).join(' · ');
     $('#state').textContent = now + (detail ? ' · ' + detail : '');
     $('#state-dot').className = 'dot ' + (s.LastError ? 'err' : s.Now || running ? 'busy' : 'ok');
