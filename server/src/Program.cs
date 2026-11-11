@@ -145,7 +145,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     var (waitingFor, seconds) = Activity.Current;
     return Results.Ok(new
     {
-        State = waitingFor ?? Activity.Background ?? worker.State,
+        State = waitingFor is not null && Activity.Detail is { } detail ? $"{waitingFor} ({detail})" : waitingFor ?? Activity.Background ?? worker.State,
         Waiting = waitingFor is null ? 0 : seconds,
         TaggingLeft = TaggingEta.SecondsLeft,
         worker.LastError,
@@ -161,11 +161,18 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     });
 });
 
-// Free models OpenRouter offers right now, for the model pickers
-admin.MapGet("/ai/free-models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
+// Models OpenRouter offers right now, and how each did since the server started, for the model order
+admin.MapGet("/ai/models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
 {
-    await OpenRouterModels.GetAsync(http.CreateClient(), logs.CreateLogger("OpenRouter"), ct);
-    return Results.Ok(OpenRouterModels.Free);
+    var live = await OpenRouterModels.GetAsync(http.CreateClient(), logs.CreateLogger("OpenRouter"), ct);
+    return Results.Ok(new
+    {
+        Known = live is not null,
+        Free = OpenRouterModels.Free,
+        Offered = live?.Keys.ToList() ?? new List<string>(),
+        Stats = OpenRouterModels.Stats,
+        OpenRouterProvider.TriesPerModel,
+    });
 });
 
 admin.MapPost("/library/sync", (RefreshService worker) =>
@@ -197,8 +204,11 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
         await db.Users.Where(u => u.Enabled).ExecuteUpdateAsync(u => u.SetProperty(x => x.RefreshRequested, true), ct);
     }
     // A new model or key deserves a try right away, not after the pause from the last error
-    if (before.CheckModel != settings.CheckModel || before.ApiKey != settings.ApiKey || before.CheckEnabled != settings.CheckEnabled)
+    if (before.CheckModel != settings.CheckModel || before.ApiKey != settings.ApiKey || before.CheckEnabled != settings.CheckEnabled
+        || !before.CheckModels.SequenceEqual(settings.CheckModels))
         SecondOpinion.ResetPause();
+    if (!before.ClassificationModels.SequenceEqual(settings.ClassificationModels) || before.ApiKey != settings.ApiKey)
+        MovieClassifier.RetryNow();
     // A library switched back on may have movies that were never classified
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
@@ -343,6 +353,8 @@ record SettingsView
     public double MinRating { get; init; }
     public bool CheckEnabled { get; init; }
     public string CheckModel { get; init; } = "";
+    public List<string>? ClassificationModels { get; init; }
+    public List<string>? CheckModels { get; init; }
     public bool HasExaApiKey { get; init; }
     public string? ExaApiKey { get; init; }
     public bool WebLookupAuto { get; init; }
@@ -375,6 +387,8 @@ record SettingsView
         MinRating = s.MinRating,
         CheckEnabled = s.CheckEnabled,
         CheckModel = s.CheckModel,
+        ClassificationModels = ServerSettings.Chain(s.ClassificationModels, s.ClassificationModel),
+        CheckModels = ServerSettings.Chain(s.CheckModels, s.CheckModel),
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
@@ -398,6 +412,10 @@ record SettingsView
         if (!string.IsNullOrWhiteSpace(ExaApiKey)) s.ExaApiKey = ExaApiKey.Trim();
         s.CheckEnabled = CheckEnabled;
         if (!string.IsNullOrWhiteSpace(CheckModel)) s.CheckModel = CheckModel.Trim();
+        static List<string> Clean(List<string> list) => list.Select(m => m.Trim()).Where(m => m.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // The order only applies to OpenRouter; other providers use the single model fields
+        if (s.AIProvider == AIProviderType.OpenRouter && ClassificationModels is { Count: > 0 } describe) { s.ClassificationModels = Clean(describe); s.ClassificationModel = s.ClassificationModels[0]; }
+        if (s.AIProvider == AIProviderType.OpenRouter && CheckModels is { Count: > 0 } check) { s.CheckModels = Clean(check); s.CheckModel = s.CheckModels[0]; }
         s.WebLookupAuto = WebLookupAuto;
         s.WebLookupBudget = Math.Clamp(WebLookupBudget, 0, 1000);
         s.WebLookupsPerDay = Math.Clamp(WebLookupsPerDay, 0, 2000);

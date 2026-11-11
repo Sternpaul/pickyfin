@@ -35,6 +35,27 @@ public sealed class ServerSettings
     /// <summary>A second model reviews every movie's tags and flags what looks wrong.</summary>
     public bool CheckEnabled { get; set; }
     public string CheckModel { get; set; } = "nvidia/nemotron-3.5-super-vl:free";
+
+    /// <summary>
+    /// OpenRouter: the models to try, in order, for describing films and for the second opinion.
+    /// Each gets three tries before the next. Empty = the single model above plus the defaults.
+    /// The first entry is also kept in ClassificationModel / CheckModel.
+    /// </summary>
+    public List<string> ClassificationModels { get; set; } = new();
+    public List<string> CheckModels { get; set; } = new();
+
+    /// <summary>Free models to fall back on until an order is set on the AI page.</summary>
+    public static readonly string[] DefaultFreeModels =
+    {
+        "google/gemma-4-31b-it:free",
+        "nvidia/nemotron-3.5-super-vl:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "google/gemma-4-26b-a4b-it:free",
+    };
+
+    public static List<string> Chain(List<string> order, string single) =>
+        order.Count > 0 ? order.ToList()
+        : new[] { single }.Concat(DefaultFreeModels).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     /// <summary>Exa web search: finds facts about films the AI doesn't know, then they're tagged again.</summary>
     public string ExaApiKey { get; set; } = "";
     public bool WebLookupAuto { get; set; } = true;

@@ -13,6 +13,9 @@ public static class Activity
         return new End(what);
     }
 
+    /// <summary>Which model and which try, while waiting for the AI ("model 2 of 4: gemma…, try 1 of 3").</summary>
+    public static string? Detail { get; set; }
+
     /// <summary>A long run in the background ("Looking up flagged movies: 20 of 85"), shown between its waits.</summary>
     public static string? Background { get; set; }
 

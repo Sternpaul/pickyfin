@@ -60,6 +60,8 @@ namespace Pickyfin.Server.Library
         /// <summary>After a failed tagging run: when to try again (the loop checks every few minutes).</summary>
         public static DateTime? RetryAt { get; private set; }
         private static int _errorsInARow;
+        /// <summary>A new model order deserves a try right away, not after the pause from the last error.</summary>
+        public static void RetryNow() { if (RetryAt is not null) RetryAt = DateTime.UtcNow; _errorsInARow = 0; }
 
         public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default)
         {

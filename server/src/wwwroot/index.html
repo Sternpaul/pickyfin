@@ -90,6 +90,17 @@
   input::placeholder, textarea::placeholder { color: var(--faint); }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   .slider-value { align-self: flex-start; font: 600 13.5px/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--text); background: var(--accent-soft); padding: 5px 10px; border-radius: 999px; margin-top: -4px; }
+  .chain { display: flex; flex-direction: column; gap: 10px; }
+  .chain ol, .chain ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .chain li { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .chain ul li { grid-template-columns: 1fr auto; }
+  .chain ul li .m { color: var(--muted); }
+  .chain .pos { font-weight: 650; font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
+  .chain .m { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+  .chain .stat { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .chain .stat.bad { color: var(--err); }
+  .chain .acts { display: flex; gap: 4px; }
+  .chain .acts .btn, .chain ul .btn { height: 28px; padding: 0 9px; font-size: 13px; }
   .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
   .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .job .dot { align-self: center; }
@@ -423,8 +434,12 @@
           <div><h3>Models</h3><p class="why">Picking reads your descriptions and decides, so it deserves a capable model. Describing movies runs once per movie; a fast, cheap one is fine.</p></div>
           <div class="control two">
             <div><label class="field-label" for="ChatModel">For picking</label><input type="text" id="ChatModel" list="models"></div>
-            <div><label class="field-label" for="ClassificationModel">For describing movies</label><input type="text" id="ClassificationModel" list="models"></div>
+            <div id="describe-single"><label class="field-label" for="ClassificationModel">For describing movies</label><input type="text" id="ClassificationModel" list="models"></div>
           </div>
+        </div>
+        <div class="setting openrouter-only">
+          <div><h3>Order for describing movies</h3><p class="why">Tried from the top. Each model gets 3 tries (waiting a little between them when it's busy or failing), then the next one takes over. Turn off the ones that keep failing. The numbers count calls since the server last started.</p></div>
+          <div class="control"><div class="chain" id="describe-chain"></div></div>
         </div>
         <datalist id="models"></datalist>
         <div class="setting">
@@ -440,10 +455,14 @@
           <div><h3>Second opinion</h3><p class="why">A different model reviews every movie's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged movies show up under Issues.</p></div>
           <div class="control">
             <label class="switch"><input type="checkbox" id="CheckEnabled"><span></span></label>
-            <div><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="check-models"></div>
+            <div id="check-single"><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="models"></div>
           </div>
         </div>
-        <datalist id="check-models"></datalist>
+        <div class="setting openrouter-only">
+          <div><h3>Order for the second opinion</h3><p class="why">Same as for describing: from the top, 3 tries each. Best with different models than describing, so they catch different mistakes.</p></div>
+          <div class="control"><div class="chain" id="check-chain"></div></div>
+        </div>
+        <datalist id="models-all"></datalist>
         <div class="setting">
           <div><h3>Web lookups with Exa <span class="state" id="exa-state"></span></h3><p class="why">For films the AI doesn't know: a web search finds a real description (Wikipedia, Letterboxd, TMDB…), and the film is described again with it. Under one cent per film. Any movie can also be looked up by hand from its page under Movies. A key comes from dashboard.exa.ai.</p></div>
           <div class="control"><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
@@ -635,7 +654,7 @@ function go(page) {
   if (page === 'libraries') loadLibraries();
   if (page === 'movies') loadMovies(true);
   if (page === 'issues') loadIssues();
-  if (page === 'ai') loadExaUsage();
+  if (page === 'ai') { loadExaUsage(); loadModelInfo(); }
   if (page === 'status') loadStatus();
   if (page === 'users') loadUsers();
   history.replaceState(null, '', '#' + page);
@@ -659,11 +678,59 @@ const modelSuggestions = {
   OpenAI: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
   Anthropic: ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'],
 };
-function fillModels(provider) { $('#models').innerHTML = (modelSuggestions[provider] || []).map(m => `<option value="${m}">`).join(''); }
+function fillModels(provider) {
+  $('#models').innerHTML = (modelSuggestions[provider] || []).map(m => `<option value="${m}">`).join('');
+  // OpenRouter gets an order of models; the others a single model per job
+  const or = provider === 'OpenRouter';
+  $$('.openrouter-only').forEach(el => el.classList.toggle('hidden', !or));
+  $('#describe-single').classList.toggle('hidden', or); $('#check-single').classList.toggle('hidden', or);
+}
+
+// ---- model order (OpenRouter) ----
+const chains = { describe: [], check: [] }, openOff = {};
+let modelInfo = null;
+async function loadModelInfo() {
+  try { modelInfo = await call('GET', '/api/ai/models'); } catch { modelInfo = null; }
+  $('#models-all').innerHTML = (modelInfo?.Offered || []).map(m => `<option value="${esc(m)}">`).join('');
+  renderChains();
+}
+function modelStat(id) {
+  const st = modelInfo?.Stats?.[id];
+  if (modelInfo?.Known && !modelInfo.Offered.includes(id)) return { text: 'Not offered by OpenRouter right now; skipped', bad: true };
+  if (!st) return { text: 'Not used since the server started', bad: false };
+  const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const lastFailedLatest = st.LastFailed && (!st.LastOk || new Date(st.LastFailed) > new Date(st.LastOk));
+  const err = lastFailedLatest && st.LastError ? ` · failed last at ${clock(st.LastFailed)}: ${st.LastError.length > 90 ? st.LastError.slice(0, 90) + '…' : st.LastError}` : '';
+  return { text: `${st.Ok} answered · ${st.Failed} failed${err}`, bad: lastFailedLatest };
+}
+function renderChains() { renderChain('describe'); renderChain('check'); }
+function renderChain(key) {
+  const box = $(`#${key}-chain`), on = chains[key];
+  if (!box) return;
+  const off = (modelInfo?.Free || []).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
+  const statHtml = m => { const s = modelStat(m); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
+  box.innerHTML = `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${esc(m)}</b>${statHtml(m)}</div>
+      <div class="acts"><button type="button" class="btn quiet" data-up="${i}" title="Try earlier" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn quiet" data-down="${i}" title="Try later" ${i === on.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="btn quiet" data-off="${i}" ${on.length === 1 ? 'disabled title="At least one model is needed"' : ''}>Turn off</button></div></li>`).join('')}</ol>
+    ${off.length ? `<details${openOff[key] ? ' open' : ''}><summary class="note" style="cursor:pointer">Other free models on OpenRouter (${off.length}), turned off</summary><ul style="margin-top:6px">${off.map(m => `<li><div class="m">${esc(m)}${statHtml(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`
+      : modelInfo ? '' : '<p class="note">Loading the models OpenRouter offers…</p>'}
+    <div class="inline"><input type="text" placeholder="Add another model, e.g. google/gemini-2.5-flash" list="models-all"><button type="button" class="btn" data-add>Add</button></div>`;
+  const move = (i, d) => { const [m] = on.splice(i, 1); on.splice(i + d, 0, m); renderChain(key); };
+  $$('[data-up]', box).forEach(b => b.onclick = () => move(Number(b.dataset.up), -1));
+  $$('[data-down]', box).forEach(b => b.onclick = () => move(Number(b.dataset.down), 1));
+  $$('[data-off]', box).forEach(b => b.onclick = () => { on.splice(Number(b.dataset.off), 1); renderChain(key); });
+  $$('[data-on]', box).forEach(b => b.onclick = () => { on.push(b.dataset.on); renderChain(key); });
+  const details = $('details', box); if (details) details.ontoggle = () => { openOff[key] = details.open; };
+  const input = $('input', box);
+  const add = () => { const v = input.value.trim(); if (v && !on.some(x => x.toLowerCase() === v.toLowerCase())) { on.push(v); renderChain(key); } };
+  $('[data-add]', box).onclick = add;
+  input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+}
 
 async function loadSettings() {
   settings = await call('GET', '/api/settings');
   seg($('#provider-seg'), settings.AIProvider, fillModels); fillModels(settings.AIProvider);
+  chains.describe = [...(settings.ClassificationModels || [])]; chains.check = [...(settings.CheckModels || [])];
+  renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
   $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey);
@@ -676,7 +743,6 @@ async function loadSettings() {
   $('#PicksPerRow').value = settings.PicksPerRow; $('#picks-value').textContent = settings.PicksPerRow;
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
-  call('GET', '/api/ai/free-models').then(list => { $('#check-models').innerHTML = list.map(m => `<option value="${esc(m)}">`).join(''); }).catch(() => {});
   $('#CheckEnabled').checked = settings.CheckEnabled; $('#CheckModel').value = settings.CheckModel || '';
   $('#ExaApiKey').value = ''; $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
   $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
@@ -718,10 +784,12 @@ async function save(changes, note) {
 }
 $('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
   AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
-  ChatModel: $('#ChatModel').value, ClassificationModel: $('#ClassificationModel').value, CustomEndpoint: $('#CustomEndpoint').value }, $('#ai-note')); });
+  ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
+  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '' } : { ClassificationModel: $('#ClassificationModel').value }) }, $('#ai-note')); });
 $('#check-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
-  CheckEnabled: $('#CheckEnabled').checked, CheckModel: $('#CheckModel').value, ExaApiKey: $('#ExaApiKey').value,
-  WebLookupAuto: $('#WebLookupAuto').checked, WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0 }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts with the next library sync, which starts now.'); });
+  CheckEnabled: $('#CheckEnabled').checked, ExaApiKey: $('#ExaApiKey').value,
+  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '' } : { CheckModel: $('#CheckModel').value }),
+  WebLookupAuto: $('#WebLookupAuto').checked, WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0 }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts within a few minutes.'); });
 $('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
 const tuningValues = () => ({
   BecauseRows: Number(segValue($('#because-seg'))),

@@ -14,6 +14,17 @@ public static class OpenRouterModels
     private static DateTime _fetched, _failed;
     private static readonly ConcurrentDictionary<string, DateTime> GoneUntil = new(StringComparer.OrdinalIgnoreCase);
 
+    public sealed record ModelStats(int Ok, int Failed, string? LastError, DateTime? LastOk, DateTime? LastFailed);
+    private static readonly ConcurrentDictionary<string, ModelStats> Results = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How each model did since the server started (a call = up to three tries).</summary>
+    public static IReadOnlyDictionary<string, ModelStats> Stats => Results;
+
+    public static void Record(string model, string? error) =>
+        Results.AddOrUpdate(model,
+            _ => error is null ? new(1, 0, null, DateTime.UtcNow, null) : new(0, 1, error, null, DateTime.UtcNow),
+            (_, s) => error is null ? s with { Ok = s.Ok + 1, LastOk = DateTime.UtcNow } : s with { Failed = s.Failed + 1, LastError = error, LastFailed = DateTime.UtcNow });
+
     public static void MarkGone(string model) => GoneUntil[model] = DateTime.UtcNow.AddHours(6);
     public static bool IsGone(string model) => GoneUntil.TryGetValue(model, out var until) && until > DateTime.UtcNow;
 
