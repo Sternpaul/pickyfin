@@ -264,6 +264,7 @@ public static class BrowserApi
                 Tagged = movies.Count(m => m.IsClassified),
                 Trust = movies.GroupBy(m => m.Trust).ToDictionary(g => g.Key, g => g.Count()),
                 NotLookedUp = movies.Count(WebSweep.Wanted),
+                RescanEligible = movies.Count(Rescan.Eligible),
                 Checked = movies.Count(m => m.IsClassified && m.Checked),
                 s.CheckEnabled,
                 s.CheckModel,

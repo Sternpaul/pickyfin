@@ -69,6 +69,18 @@ public class QualityTests
     }
 
     [Fact]
+    public void AReCheckAsksToChangeOnlyClearMistakes()
+    {
+        var film = M("Heat", new[] { "Crime" }, new[] { "Heist", "Crime Drama" });
+        film.Recheck = true;
+        var prompt = Pickyfin.Server.Ai.ClassificationPrompt.Build(new List<MovieMetadata> { film });
+        Assert.Contains("\"Recheck\":\"yes\"", prompt);
+        Assert.Contains("\"EarlierTags\":", prompt);
+        Assert.Equal(25, Pickyfin.Server.Library.Rescan.PerDay(2221, 3));
+        Assert.Equal(0, Pickyfin.Server.Library.Rescan.PerDay(2221, 0));
+    }
+
+    [Fact]
     public void AnswersAreMatchedByRefNeverByPosition()
     {
         var batch = new List<MovieMetadata> { M("A", new string[0], new string[0]), M("B", new string[0], new string[0]) };

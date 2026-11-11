@@ -28,12 +28,13 @@ public sealed class RefreshService : BackgroundService
     private readonly ILogger<RefreshService> _logger;
     private readonly Library.WebSweep _sweep;
     private readonly SecondOpinion _secondOpinion;
+    private readonly Rescan _rescan;
     private readonly MovieClassifier _classifier;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -45,6 +46,7 @@ public sealed class RefreshService : BackgroundService
         _logger = logger;
         _sweep = sweep;
         _secondOpinion = secondOpinion;
+        _rescan = rescan;
         _classifier = classifier;
     }
 
@@ -67,6 +69,7 @@ public sealed class RefreshService : BackgroundService
         Jobs.Ensure("second", "Second opinion", turn);
         Jobs.Ensure("sweep", "Looking up the whole library", turn);
         Jobs.Ensure("picks", "Rows for each person", turn);
+        Jobs.Ensure("rescan", "Re-checking everything", turn);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -164,6 +167,14 @@ public sealed class RefreshService : BackgroundService
         catch (Exception error) when (error is not OperationCanceledException)
         {
             _logger.LogWarning("Library lookup paused: {Error}", error.Message);
+        }
+
+        // Step 4: a few films re-checked each round, spread over the chosen months
+        State = "Re-checking films";
+        try { await _rescan.RunAsync(cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("Re-check paused: {Error}", error.Message);
         }
     }
 

@@ -34,6 +34,10 @@ namespace Pickyfin.Server.Data.Models
         public string? WebNotes { get; set; }
         /// <summary>Pickyfin: the admin looked at these tags and said they're right.</summary>
         public bool Verified { get; set; }
+        /// <summary>When step 4 last re-checked this film (fresh lookup, described again). Null = not yet.</summary>
+        public DateTime? Rescanned { get; set; }
+        /// <summary>Set while a film is being re-checked: the prompt asks to change only clear mistakes.</summary>
+        [NotMapped] public bool Recheck { get; set; }
 
         /// <summary>How far the tags can be trusted: "you", "web", "second", "ai" or "none".</summary>
         [NotMapped] public string Trust =>

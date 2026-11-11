@@ -49,6 +49,8 @@ public sealed class ServerSettings
     /// <summary>Step 3, describing again after a web lookup. Auto = the same order as describing.</summary>
     public List<string> LookupModels { get; set; } = new();
     public bool LookupModelsAuto { get; set; } = true;
+    /// <summary>Step 4: re-check every film (fresh lookup, described again) every this many months. 0 = off.</summary>
+    public int RescanMonths { get; set; }
 
     /// <summary>Free models to fall back on until an order is set on the AI page.</summary>
     public static readonly string[] DefaultFreeModels =

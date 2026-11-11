@@ -101,8 +101,7 @@
   .chain .stat.bad { color: var(--err); }
   .chain .acts { display: flex; gap: 4px; }
   .chain .acts .btn, .chain ul .btn { height: 28px; padding: 0 9px; font-size: 13px; }
-  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 4px 0 28px; }
-  @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 4px 0 28px; }
   .step { border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .step.off { opacity: .6; }
   .step-head { display: flex; align-items: center; gap: 8px; font-weight: 650; }
@@ -432,7 +431,7 @@
     <section data-page="ai" class="hidden">
       <div class="page-head"><div>
         <h1>AI</h1>
-        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (Exa finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Status shows how far each step is.</p>
+        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (Exa finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Optionally, <b>4 · Re-check</b> runs step 3 again on every film now and then. Status shows how far each step is.</p>
       </div></div>
       <form id="ai-form" class="settings">
         <div class="setting">
@@ -505,6 +504,15 @@
           <div class="control"><div class="chain" id="lookup-chain"></div></div>
         </div>
         <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="lookup-note"></span></div>
+      </form>
+
+      <h2 class="group-title">4 · Re-check everything</h2>
+      <form id="rescan-form" class="settings">
+        <div class="setting">
+          <div><h3>How often</h3><p class="why">Every film goes through step 3 again: a fresh web lookup (new reviews, new consensus on Wikipedia, Letterboxd, IMDb…), then the step-3 model describes it again from everything collected. It keeps tags that still fit and changes only what's clearly wrong. Spread evenly over the time you choose, so each pass ends as the next begins. Films you edited or marked as checked are left alone. <span id="rescan-estimate"></span></p></div>
+          <div class="control"><div><div class="seg" id="RescanMonths"><button type="button" data-v="0">Off</button><button type="button" data-v="1">Every month</button><button type="button" data-v="3">3 months</button><button type="button" data-v="6">6 months</button><button type="button" data-v="12">Year</button></div></div></div>
+        </div>
+        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="rescan-note"></span></div>
       </form>
 
       <h2 class="group-title">TMDB</h2>
@@ -590,7 +598,7 @@
     <!-- STATUS -->
     <section data-page="status" class="hidden">
       <div class="page-head"><div><h1>Status</h1><p>What the server is doing and what it did recently.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
-      <div class="label" style="margin:24px 0 8px">Every film goes through three steps</div>
+      <div class="label" style="margin:24px 0 8px">The steps every film goes through</div>
       <div class="steps" id="steps"></div>
       <div class="label" style="margin:0 0 8px">Also running</div>
       <div class="jobs" id="jobs"></div>
@@ -778,6 +786,7 @@ async function loadSettings() {
   chains.describe = [...(settings.ClassificationModels || [])]; chains.check = [...(settings.CheckModels || [])];
   chainsAuto.describe = settings.ClassificationModelsAuto !== false; chainsAuto.check = settings.CheckModelsAuto !== false;
   chains.lookup = [...(settings.LookupModels || [])]; chainsAuto.lookup = settings.LookupModelsAuto !== false;
+  seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
@@ -837,6 +846,7 @@ $('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
 $('#check-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
   CheckEnabled: $('#CheckEnabled').checked,
   ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts within a few minutes.'); });
+$('#rescan-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }, $('#rescan-note'))) loadExaUsage(); });
 $('#lookup-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
   ExaApiKey: $('#ExaApiKey').value, WebLookupAuto: $('#WebLookupAuto').checked,
   WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
@@ -1084,11 +1094,25 @@ function sweepEstimate() {
     : !perDay ? `${left.toLocaleString()} films not looked up yet.`
     : `${left.toLocaleString()} films to go: about ${Math.ceil(left / perDay)} day(s), roughly $${(perDay * 30 * each).toFixed(2)} a month while it runs.`;
 }
+function rescanEstimate() {
+  const el = $('#rescan-estimate'); if (!el) return;
+  const months = Number(segValue($('#RescanMonths'))) || 0;
+  if (!months || !sweepInfo) { el.textContent = ''; return; }
+  const films = sweepInfo.RescanEligible || 0, perDay = Math.ceil(films / (months * 30.4));
+  const each = sweepInfo.Web.Lookups ? sweepInfo.Web.Dollars / sweepInfo.Web.Lookups : 0.007;
+  const dollars = perDay * 30 * each;
+  const sweep = (Number($('#WebLookupsPerDay').value) || 0) * 30 * each;
+  const budget = sweepInfo.Web.Budget || 0;
+  el.textContent = !sweepInfo.Web.Configured
+    ? `${films.toLocaleString()} films, about ${perDay} a day. Without an Exa key it describes them again from what was collected before.`
+    : `${films.toLocaleString()} films, about ${perDay} a day: roughly $${dollars.toFixed(2)} a month of Exa` +
+      (dollars + sweep > budget ? `. Together with the whole-library lookup that's more than your $${budget} limit, so it pauses when the limit is reached and carries on next month.` : `, within your $${budget} limit.`);
+}
 async function loadExaUsage() {
   try {
     const r = await call('GET', '/api/issues'); sweepInfo = r;
     $('#exa-usage').textContent = r.Web.Configured ? `This month so far: ${r.Web.Lookups} lookups, $${r.Web.Dollars.toFixed(2)} (as reported by Exa).` : '';
-    sweepEstimate();
+    sweepEstimate(); rescanEstimate();
   } catch {}
 }
 $('#WebLookupsPerDay').addEventListener('input', sweepEstimate);

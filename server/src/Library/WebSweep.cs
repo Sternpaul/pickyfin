@@ -40,7 +40,7 @@ public sealed class WebSweep
         var s = ServerSettings.Current;
         if (s.WebLookupsPerDay <= 0 || string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(key, title, "Off (AI page)"); return; }
         if (_web.Blocked() is { } why) { Jobs.Idle(key, title, $"Paused: {why}"); return; }
-        var left = s.WebLookupsPerDay - _web.ThisMonth.Today;
+        var left = s.WebLookupsPerDay - (_web.ThisMonth.Today - Rescan.LookupsToday);
         var midnight = DateTime.Today.AddDays(1).ToUniversalTime();
         if (left <= 0) { Jobs.Idle(key, title, $"Today's {s.WebLookupsPerDay} done", midnight); return; }
 

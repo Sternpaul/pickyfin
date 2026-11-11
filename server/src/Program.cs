@@ -45,6 +45,7 @@ builder.Services.AddSingleton<WebLookup>();
 builder.Services.AddSingleton<MovieClassifier>();
 builder.Services.AddSingleton<SecondOpinion>();
 builder.Services.AddSingleton<WebSweep>();
+builder.Services.AddSingleton<Rescan>();
 builder.Services.AddSingleton(sp => new TmdbKeywordService(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb"),
     sp.GetRequiredService<MovieStore>(),
@@ -139,8 +140,19 @@ api.MapGet("/me", (HttpContext http) =>
 
 // ---------- status ----------
 
-admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, LogBuffer log, CancellationToken ct) =>
+admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, CancellationToken ct) =>
 {
+    int rescanned = 0, rescanOf = 0;
+    if (ServerSettings.Current.RescanMonths > 0)
+    {
+        var cutoff = Rescan.PassCutoff(ServerSettings.Current.RescanMonths);
+        await using var db = database.Open();
+        var rows = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.ManuallyEdited && !m.Verified)
+            .Select(m => new { m.Libraries, m.Rescanned }).ToListAsync(ct);
+        var eligible = rows.Where(r => !ServerSettings.Current.IsLibraryExcluded(r.Libraries)).ToList();
+        rescanOf = eligible.Count;
+        rescanned = eligible.Count(r => r.Rescanned >= cutoff);
+    }
     var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
     var s = ServerSettings.Current;
     var openRouter = s.AIProvider == AIProviderType.OpenRouter;
@@ -184,6 +196,12 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
                 On = WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto),
                 Off = !WebLookup.Configured ? "Off: no Exa key yet (AI page)" : "Off: set films a day, or switch on looking up flagged films (AI page)", Done = lookedUp, Of = classified, Unit = "looked up",
                 Job = lookupAll is { Running: true } ? Job("lookupall") : Job("sweep"), Model = Model("lookup", OpenRouterModels.LookupOrder(s), s.ClassificationModel),
+                SameAsDescribe = !openRouter || s.LookupModelsAuto },
+            new { Key = "rescan", Title = "Re-check", Text = $"Every {(s.RescanMonths == 12 ? "year" : s.RescanMonths == 1 ? "month" : $"{s.RescanMonths} months")}, each film goes through step 3 again: a fresh lookup, then described again",
+                On = s.RescanMonths > 0 && !string.IsNullOrWhiteSpace(s.ApiKey),
+                Off = s.RescanMonths <= 0 ? "Off: choose how often on the AI page" : "Off: no AI key yet (AI page)",
+                Done = rescanned, Of = rescanOf, Unit = "re-checked in this pass",
+                Job = Job("rescan"), Model = Model("lookup", OpenRouterModels.LookupOrder(s), s.ClassificationModel),
                 SameAsDescribe = !openRouter || s.LookupModelsAuto },
         },
         Jobs = Jobs.Snapshot().Where(j => j.Key is "library" or "picks").Select(j => new { j.Key, j.Title, j.Now, j.Running, j.Error, j.Next,
@@ -391,6 +409,7 @@ record SettingsView
     public bool? CheckModelsAuto { get; init; }
     public List<string>? LookupModels { get; init; }
     public bool? LookupModelsAuto { get; init; }
+    public int RescanMonths { get; init; }
     public bool HasExaApiKey { get; init; }
     public string? ExaApiKey { get; init; }
     public bool WebLookupAuto { get; init; }
@@ -429,6 +448,7 @@ record SettingsView
         CheckModelsAuto = s.CheckModelsAuto,
         LookupModels = OpenRouterModels.LookupOrder(s),
         LookupModelsAuto = s.LookupModelsAuto,
+        RescanMonths = s.RescanMonths,
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
@@ -460,6 +480,7 @@ record SettingsView
         if (CheckModelsAuto is { } checkAuto) s.CheckModelsAuto = checkAuto;
         if (s.AIProvider == AIProviderType.OpenRouter && LookupModels is { Count: > 0 } lookup) s.LookupModels = Clean(lookup);
         if (LookupModelsAuto is { } lookupAuto) s.LookupModelsAuto = lookupAuto;
+        s.RescanMonths = RescanMonths is 0 or 1 or 3 or 6 or 12 ? RescanMonths : 0;
         s.WebLookupAuto = WebLookupAuto;
         s.WebLookupBudget = Math.Clamp(WebLookupBudget, 0, 1000);
         s.WebLookupsPerDay = Math.Clamp(WebLookupsPerDay, 0, 2000);

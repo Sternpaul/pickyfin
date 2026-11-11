@@ -156,6 +156,10 @@ namespace Pickyfin.Server.Library
             return looked;
         }
 
+        /// <summary>Describes films again with everything known, with the step-3 model order (used by the re-check).</summary>
+        public Task DescribeAgainAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken) =>
+            TagBatchAsync(provider, batch, cancellationToken, lookedUp: true);
+
         /// <summary>One AI call for a batch: apply the tags, note what looks off, save.</summary>
         private async Task TagBatchAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken, bool lookedUp = false)
         {

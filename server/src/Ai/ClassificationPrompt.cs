@@ -34,10 +34,11 @@ namespace Pickyfin.Server.Ai
             // Described again (flagged, or looked up on the web): the first opinion and what the review said
             EarlierTags = withReview && Reviewed(m) ? new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items } : null,
             Review = withReview && Reviewed(m) ? ReviewLines(m) : null,
+            Recheck = withReview && m.Recheck ? "yes" : null,
         };
 
         private static bool Reviewed(MovieMetadata m) =>
-            m.IsClassified && (m.Issue is not null || !string.IsNullOrWhiteSpace(m.WebNotes));
+            m.IsClassified && (m.Issue is not null || !string.IsNullOrWhiteSpace(m.WebNotes) || m.Recheck);
 
         private static string[] ReviewLines(MovieMetadata m) =>
             m.Issue is not null ? m.Issue.Split('\n')
@@ -52,6 +53,7 @@ namespace Pickyfin.Server.Ai
             return $@"You classify movies for a recommendation engine. Use what you know about each film together with the facts given (genres, keywords, plot, and text from the web when present). The facts are reliable; don't contradict them.
 
 Some movies are being described again. They carry ""EarlierTags"" (what an AI said the first time) and ""Review"" (what a second AI and an automatic genre check said about those tags: objections, or that they found nothing wrong). These are opinions, not facts, and any of them can be wrong. When ""FromTheWeb"" is there, it is the strongest evidence. Weigh everything together, keep earlier tags that fit, replace the ones that don't, and make your own decision.
+Movies with ""Recheck"": ""yes"" are a routine re-check of films described before with all of this. Keep their earlier tags unless something is clearly wrong or the web text now clearly says otherwise; don't swap a fitting tag for another fitting one.
 
 Return a JSON object with a ""movies"" array, one entry per input movie, with these fields:
 - ""Ref"": copy the input Ref exactly (""m1"", ""m2"", …).
