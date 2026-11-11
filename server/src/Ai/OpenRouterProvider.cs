@@ -32,7 +32,7 @@ namespace Pickyfin.Server.Ai
         {
             try
             {
-                var response = await CallApiWithFallbackAsync(DescribeChain(), "Ping. Reply with 'Pong' in JSON.", true, cancellationToken);
+                var response = await CallApiWithFallbackAsync(() => OpenRouterModels.DescribeOrder(Config), "Ping. Reply with 'Pong' in JSON.", true, cancellationToken);
                 return !string.IsNullOrWhiteSpace(response);
             }
             catch
@@ -42,24 +42,22 @@ namespace Pickyfin.Server.Ai
         }
 
         public async Task<string> ClassifyMoviesAsync(List<MovieMetadata> movies, CancellationToken cancellationToken = default) =>
-            await CallApiWithFallbackAsync(DescribeChain(), ClassificationPrompt.Build(movies), true, cancellationToken);
+            await CallApiWithFallbackAsync(() => OpenRouterModels.DescribeOrder(Config), ClassificationPrompt.Build(movies), true, cancellationToken);
 
         /// <summary>Any JSON-answering prompt. The second opinion's model gets the second opinion's order.</summary>
         public async Task<string> CompleteJsonAsync(string prompt, string model, CancellationToken cancellationToken = default) =>
             await CallApiWithFallbackAsync(
-                model.Equals(Config.CheckModel, StringComparison.OrdinalIgnoreCase) ? ServerSettings.Chain(Config.CheckModels, Config.CheckModel) : new List<string> { model },
+                () => model.Equals(Config.CheckModel, StringComparison.OrdinalIgnoreCase) ? OpenRouterModels.CheckOrder(Config) : new List<string> { model },
                 prompt, true, cancellationToken);
 
         public async Task<string> ChatAsync(string userQuery, string systemPrompt, CancellationToken cancellationToken = default)
         {
             var prompt = $"{systemPrompt}\n\nUser: {userQuery}";
             // Picking: the chosen model first, then the describing order as fallbacks
-            var chain = new[] { Config.ChatModel }.Concat(DescribeChain()).Where(m => !string.IsNullOrWhiteSpace(m))
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            return await CallApiWithFallbackAsync(chain, prompt, false, cancellationToken);
+            return await CallApiWithFallbackAsync(() => new[] { Config.ChatModel }.Concat(OpenRouterModels.DescribeOrder(Config))
+                .Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(), prompt, false, cancellationToken);
         }
 
-        private static List<string> DescribeChain() => ServerSettings.Chain(Config.ClassificationModels, Config.ClassificationModel);
 
         public const int TriesPerModel = 3;
 
@@ -69,12 +67,13 @@ namespace Pickyfin.Server.Ai
         // - no answer within the time limit: next model right away (waiting again rarely helps)
         // - 404 (model gone): next model right away, and it's left out for six hours
         // - 401/403: the key is wrong; stop
-        private async Task<string> CallApiWithFallbackAsync(List<string> models, string prompt, bool forceJson, CancellationToken cancellationToken)
+        private async Task<string> CallApiWithFallbackAsync(Func<List<string>> order, string prompt, bool forceJson, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(Config.ApiKey))
                 throw new InvalidOperationException("OpenRouter API Key is missing.");
 
             var live = string.IsNullOrWhiteSpace(Config.CustomEndpoint) ? await OpenRouterModels.GetAsync(_httpClient, _logger, cancellationToken) : null;
+            var models = order(); // after the live list, so an automatic order is current
             var usable = models.Where(m => (live is null || live.ContainsKey(m)) && !OpenRouterModels.IsGone(m)).ToList();
             foreach (var skipped in models.Except(usable))
                 _logger.LogWarning("OpenRouter: '{Model}' isn't offered right now; skipped. Take it out of the model order on the AI page.", skipped);

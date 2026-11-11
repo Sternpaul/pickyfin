@@ -187,7 +187,7 @@ public sealed class RefreshService : BackgroundService
 
         _logger.LogInformation(string.IsNullOrWhiteSpace(s.ApiKey)
             ? "AI: no key set yet (Settings → AI)"
-            : $"AI: {s.AIProvider}, picking with {s.ChatModel}, tagging with {string.Join(" → ", ServerSettings.Chain(s.ClassificationModels, s.ClassificationModel))}");
+            : $"AI: {s.AIProvider}, picking with {s.ChatModel}, tagging with {(s.ClassificationModelsAuto ? "the most used free models this week" : string.Join(" → ", ServerSettings.Chain(s.ClassificationModels, s.ClassificationModel)))}");
         _logger.LogInformation("TMDB keywords: {State}", string.IsNullOrWhiteSpace(s.TmdbApiKey) ? "off (no key)" : "on");
         _logger.LogInformation("Rows: Recommended for you + {Because} Because You Watched, {Picks} movies each, fresh at least every {Hours} h; {Excluded} librar{Plural} switched off",
             s.BecauseRows, s.PicksPerRow, s.RefreshHours, s.ExcludedLibraries.Count, s.ExcludedLibraries.Count == 1 ? "y" : "ies");

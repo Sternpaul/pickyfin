@@ -172,6 +172,7 @@ admin.MapGet("/ai/models", async (IHttpClientFactory http, ILoggerFactory logs, 
         Offered = live?.Keys.ToList() ?? new List<string>(),
         Stats = OpenRouterModels.Stats,
         OpenRouterProvider.TriesPerModel,
+        OpenRouterModels.AutoCount,
     });
 });
 
@@ -205,9 +206,9 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     }
     // A new model or key deserves a try right away, not after the pause from the last error
     if (before.CheckModel != settings.CheckModel || before.ApiKey != settings.ApiKey || before.CheckEnabled != settings.CheckEnabled
-        || !before.CheckModels.SequenceEqual(settings.CheckModels))
+        || !before.CheckModels.SequenceEqual(settings.CheckModels) || before.CheckModelsAuto != settings.CheckModelsAuto)
         SecondOpinion.ResetPause();
-    if (!before.ClassificationModels.SequenceEqual(settings.ClassificationModels) || before.ApiKey != settings.ApiKey)
+    if (!before.ClassificationModels.SequenceEqual(settings.ClassificationModels) || before.ClassificationModelsAuto != settings.ClassificationModelsAuto || before.ApiKey != settings.ApiKey)
         MovieClassifier.RetryNow();
     // A library switched back on may have movies that were never classified
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
@@ -355,6 +356,8 @@ record SettingsView
     public string CheckModel { get; init; } = "";
     public List<string>? ClassificationModels { get; init; }
     public List<string>? CheckModels { get; init; }
+    public bool? ClassificationModelsAuto { get; init; }
+    public bool? CheckModelsAuto { get; init; }
     public bool HasExaApiKey { get; init; }
     public string? ExaApiKey { get; init; }
     public bool WebLookupAuto { get; init; }
@@ -387,8 +390,10 @@ record SettingsView
         MinRating = s.MinRating,
         CheckEnabled = s.CheckEnabled,
         CheckModel = s.CheckModel,
-        ClassificationModels = ServerSettings.Chain(s.ClassificationModels, s.ClassificationModel),
-        CheckModels = ServerSettings.Chain(s.CheckModels, s.CheckModel),
+        ClassificationModels = OpenRouterModels.DescribeOrder(s),
+        CheckModels = OpenRouterModels.CheckOrder(s),
+        ClassificationModelsAuto = s.ClassificationModelsAuto,
+        CheckModelsAuto = s.CheckModelsAuto,
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
@@ -416,6 +421,8 @@ record SettingsView
         // The order only applies to OpenRouter; other providers use the single model fields
         if (s.AIProvider == AIProviderType.OpenRouter && ClassificationModels is { Count: > 0 } describe) { s.ClassificationModels = Clean(describe); s.ClassificationModel = s.ClassificationModels[0]; }
         if (s.AIProvider == AIProviderType.OpenRouter && CheckModels is { Count: > 0 } check) { s.CheckModels = Clean(check); s.CheckModel = s.CheckModels[0]; }
+        if (ClassificationModelsAuto is { } describeAuto) s.ClassificationModelsAuto = describeAuto;
+        if (CheckModelsAuto is { } checkAuto) s.CheckModelsAuto = checkAuto;
         s.WebLookupAuto = WebLookupAuto;
         s.WebLookupBudget = Math.Clamp(WebLookupBudget, 0, 1000);
         s.WebLookupsPerDay = Math.Clamp(WebLookupsPerDay, 0, 2000);

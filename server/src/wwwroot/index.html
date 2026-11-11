@@ -687,7 +687,14 @@ function fillModels(provider) {
 }
 
 // ---- model order (OpenRouter) ----
-const chains = { describe: [], check: [] }, openOff = {};
+const chains = { describe: [], check: [] }, openOff = {}, chainsAuto = { describe: true, check: true };
+// Automatic order: the most used free models on OpenRouter this week (the second opinion moves describing's first to the end)
+function autoChain(key) {
+  const top = (modelInfo?.Free || []).slice(0, modelInfo?.AutoCount || 5);
+  if (key === 'describe' || !top.length) return top;
+  const first = (chainsAuto.describe ? top : chains.describe)[0];
+  return [...top.filter(m => m !== first), ...top.filter(m => m === first)];
+}
 let modelInfo = null;
 async function loadModelInfo() {
   try { modelInfo = await call('GET', '/api/ai/models'); } catch { modelInfo = null; }
@@ -697,31 +704,41 @@ async function loadModelInfo() {
 function modelStat(id) {
   const st = modelInfo?.Stats?.[id];
   if (modelInfo?.Known && !modelInfo.Offered.includes(id)) return { text: 'Not offered by OpenRouter right now; skipped', bad: true };
-  if (!st) return { text: 'Not used since the server started', bad: false };
+  const rank = (modelInfo?.Free || []).indexOf(id);
+  const pop = rank >= 0 ? `#${rank + 1} most used free model this week · ` : '';
+  if (!st) return { text: `${pop}not used since the server started`, bad: false };
   const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const lastFailedLatest = st.LastFailed && (!st.LastOk || new Date(st.LastFailed) > new Date(st.LastOk));
   const err = lastFailedLatest && st.LastError ? ` · failed last at ${clock(st.LastFailed)}: ${st.LastError.length > 90 ? st.LastError.slice(0, 90) + '…' : st.LastError}` : '';
-  return { text: `${st.Ok} answered · ${st.Failed} failed${err}`, bad: lastFailedLatest };
+  return { text: `${pop}${st.Ok} answered · ${st.Failed} failed${err}`, bad: lastFailedLatest };
 }
 function renderChains() { renderChain('describe'); renderChain('check'); }
 function renderChain(key) {
-  const box = $(`#${key}-chain`), on = chains[key];
+  const box = $(`#${key}-chain`);
   if (!box) return;
+  if (chainsAuto[key] && modelInfo?.Free?.length) chains[key] = autoChain(key);
+  const on = chains[key];
+  // Any change by hand makes it the admin's own order
+  const mine = fn => (...args) => { chainsAuto[key] = false; fn(...args); };
   const off = (modelInfo?.Free || []).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
   const statHtml = m => { const s = modelStat(m); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
-  box.innerHTML = `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${esc(m)}</b>${statHtml(m)}</div>
+  const head = chainsAuto[key]
+    ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free models on OpenRouter this week (by tokens), most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. Changing anything makes it your own order.</p>`
+    : `<div class="inline" style="align-items:center"><span class="note">Your own order.</span><button type="button" class="btn quiet" data-auto>Back to most used this week</button></div>`;
+  box.innerHTML = head + `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${esc(m)}</b>${statHtml(m)}</div>
       <div class="acts"><button type="button" class="btn quiet" data-up="${i}" title="Try earlier" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn quiet" data-down="${i}" title="Try later" ${i === on.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="btn quiet" data-off="${i}" ${on.length === 1 ? 'disabled title="At least one model is needed"' : ''}>Turn off</button></div></li>`).join('')}</ol>
     ${off.length ? `<details${openOff[key] ? ' open' : ''}><summary class="note" style="cursor:pointer">Other free models on OpenRouter (${off.length}), turned off</summary><ul style="margin-top:6px">${off.map(m => `<li><div class="m">${esc(m)}${statHtml(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`
       : modelInfo ? '' : '<p class="note">Loading the models OpenRouter offers…</p>'}
     <div class="inline"><input type="text" placeholder="Add another model, e.g. google/gemini-2.5-flash" list="models-all"><button type="button" class="btn" data-add>Add</button></div>`;
-  const move = (i, d) => { const [m] = on.splice(i, 1); on.splice(i + d, 0, m); renderChain(key); };
+  const move = mine((i, d) => { const [m] = on.splice(i, 1); on.splice(i + d, 0, m); renderChains(); });
   $$('[data-up]', box).forEach(b => b.onclick = () => move(Number(b.dataset.up), -1));
   $$('[data-down]', box).forEach(b => b.onclick = () => move(Number(b.dataset.down), 1));
-  $$('[data-off]', box).forEach(b => b.onclick = () => { on.splice(Number(b.dataset.off), 1); renderChain(key); });
-  $$('[data-on]', box).forEach(b => b.onclick = () => { on.push(b.dataset.on); renderChain(key); });
+  $$('[data-off]', box).forEach(b => b.onclick = mine(() => { on.splice(Number(b.dataset.off), 1); renderChains(); }));
+  $$('[data-on]', box).forEach(b => b.onclick = mine(() => { on.push(b.dataset.on); renderChains(); }));
+  const back = $('[data-auto]', box); if (back) back.onclick = () => { chainsAuto[key] = true; renderChains(); };
   const details = $('details', box); if (details) details.ontoggle = () => { openOff[key] = details.open; };
   const input = $('input', box);
-  const add = () => { const v = input.value.trim(); if (v && !on.some(x => x.toLowerCase() === v.toLowerCase())) { on.push(v); renderChain(key); } };
+  const add = () => { const v = input.value.trim(); if (v && !on.some(x => x.toLowerCase() === v.toLowerCase())) { chainsAuto[key] = false; on.push(v); renderChains(); } };
   $('[data-add]', box).onclick = add;
   input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
 }
@@ -730,6 +747,7 @@ async function loadSettings() {
   settings = await call('GET', '/api/settings');
   seg($('#provider-seg'), settings.AIProvider, fillModels); fillModels(settings.AIProvider);
   chains.describe = [...(settings.ClassificationModels || [])]; chains.check = [...(settings.CheckModels || [])];
+  chainsAuto.describe = settings.ClassificationModelsAuto !== false; chainsAuto.check = settings.CheckModelsAuto !== false;
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
@@ -785,10 +803,10 @@ async function save(changes, note) {
 $('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
   AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
   ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
-  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '' } : { ClassificationModel: $('#ClassificationModel').value }) }, $('#ai-note')); });
+  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }) }, $('#ai-note')); });
 $('#check-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
   CheckEnabled: $('#CheckEnabled').checked, ExaApiKey: $('#ExaApiKey').value,
-  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '' } : { CheckModel: $('#CheckModel').value }),
+  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }),
   WebLookupAuto: $('#WebLookupAuto').checked, WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0 }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts within a few minutes.'); });
 $('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
 const tuningValues = () => ({
