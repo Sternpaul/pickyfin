@@ -51,6 +51,16 @@ public sealed class Rescan
     /// <summary>When the current pass started: films re-checked since then are done for this pass.</summary>
     public static DateTime PassCutoff(int months) => DateTime.UtcNow.AddMonths(-Math.Max(1, months));
 
+    /// <summary>Films re-checked after this are done for the current pass (a pass started by hand moves it forward).</summary>
+    public static DateTime Cutoff(ServerSettings s)
+    {
+        var byInterval = s.RescanMonths > 0 ? PassCutoff(s.RescanMonths) : DateTime.MinValue;
+        return s.RescanPassStarted is { } started && started > byInterval ? started : byInterval;
+    }
+
+    /// <summary>A pass started by hand with no interval set goes at the whole-library lookup's pace, or 50 a day.</summary>
+    public static int ManualPace(ServerSettings s) => s.WebLookupsPerDay > 0 ? s.WebLookupsPerDay : 50;
+
     /// <summary>Films a day that finish one pass in the chosen interval.</summary>
     public static int PerDay(int eligible, int months) =>
         months <= 0 || eligible == 0 ? 0 : (int)Math.Ceiling(eligible / (months * 30.4));
@@ -58,18 +68,25 @@ public sealed class Rescan
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         var s = ServerSettings.Current;
-        if (s.RescanMonths <= 0) { Jobs.Idle(Key, Title, "Off (AI page)"); return; }
+        if (s.RescanMonths <= 0 && s.RescanPassStarted is null) { Jobs.Idle(Key, Title, "Off (AI page)"); return; }
         if (string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(Key, Title, "Off: no AI key yet (AI page)"); return; }
 
         var movies = (await _store.GetAllMoviesAsync(cancellationToken)).Where(Eligible).ToList();
-        var cutoff = PassCutoff(s.RescanMonths);
+        var cutoff = Cutoff(s);
         var due = movies.Where(m => m.Rescanned is null || m.Rescanned < cutoff)
             .OrderBy(m => m.Rescanned ?? DateTime.MinValue).ThenBy(m => m.Popularity).ToList();
-        var perDay = PerDay(movies.Count, s.RescanMonths);
+        var perDay = s.RescanMonths > 0 ? PerDay(movies.Count, s.RescanMonths) : ManualPace(s);
         var startOfDay = DateTime.UtcNow.Date;
         var doneToday = movies.Count(m => m.Rescanned >= startOfDay);
         var tomorrow = startOfDay.AddDays(1);
 
+        if (due.Count == 0 && s.RescanPassStarted is not null)
+        {
+            // The pass started by hand is through
+            var done = s.Clone(); done.RescanPassStarted = null; ServerSettings.Save(done);
+            _logger.LogInformation("Re-check: the pass started by hand is done");
+            if (s.RescanMonths <= 0) { Jobs.Idle(Key, Title, "The pass you started is done: every film was re-checked"); return; }
+        }
         if (due.Count == 0)
         {
             var next = movies.Where(m => m.Rescanned is not null).Select(m => m.Rescanned!.Value).DefaultIfEmpty(DateTime.UtcNow).Min().AddMonths(s.RescanMonths);

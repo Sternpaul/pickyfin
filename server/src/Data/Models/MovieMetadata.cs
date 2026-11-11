@@ -36,6 +36,8 @@ namespace Pickyfin.Server.Data.Models
         public bool Verified { get; set; }
         /// <summary>When step 4 last re-checked this film (fresh lookup, described again). Null = not yet.</summary>
         public DateTime? Rescanned { get; set; }
+        /// <summary>Queued to be described again (step 1 run again for the whole library).</summary>
+        public bool RedoDescribe { get; set; }
         /// <summary>Set while a film is being re-checked: the prompt asks to change only clear mistakes.</summary>
         [NotMapped] public bool Recheck { get; set; }
 

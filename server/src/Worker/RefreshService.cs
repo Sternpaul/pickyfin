@@ -29,12 +29,13 @@ public sealed class RefreshService : BackgroundService
     private readonly Library.WebSweep _sweep;
     private readonly SecondOpinion _secondOpinion;
     private readonly Rescan _rescan;
+    private readonly MovieStore _store;
     private readonly MovieClassifier _classifier;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -47,6 +48,7 @@ public sealed class RefreshService : BackgroundService
         _sweep = sweep;
         _secondOpinion = secondOpinion;
         _rescan = rescan;
+        _store = store;
         _classifier = classifier;
     }
 
@@ -146,11 +148,16 @@ public sealed class RefreshService : BackgroundService
 
         Jobs.Idle("picks", "Rows for each person", "Everyone's rows are up to date; checked every 5 minutes for new watches", DateTime.UtcNow + Tick);
 
-        // Tagging that stopped on an error tries again on its own, not only at the next library sync
-        if (MovieClassifier.RetryAt is { } retry && retry <= DateTime.UtcNow && !string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey))
+        // Tagging that stopped on an error tries again on its own, not only at the next library sync;
+        // films queued to be described again go 8 calls per round
+        if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey) && (MovieClassifier.RetryAt ?? DateTime.MinValue) <= DateTime.UtcNow)
         {
-            State = "Describing films";
-            await _classifier.ClassifyPendingMoviesAsync(cancellationToken);
+            var queued = await _store.CountRedoAsync(cancellationToken);
+            if (MovieClassifier.RetryAt is not null || queued > 0)
+            {
+                State = "Describing films";
+                await _classifier.ClassifyPendingMoviesAsync(cancellationToken, maxBatches: queued > 0 ? 8 : null);
+            }
         }
 
         // Second opinion: a round of up to 8 calls per tick, after the picks; pauses itself after errors

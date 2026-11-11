@@ -51,6 +51,8 @@ public sealed class ServerSettings
     public bool LookupModelsAuto { get; set; } = true;
     /// <summary>Step 4: re-check every film (fresh lookup, described again) every this many months. 0 = off.</summary>
     public int RescanMonths { get; set; }
+    /// <summary>A re-check pass started by hand: every film re-checked before this time is due again.</summary>
+    public DateTime? RescanPassStarted { get; set; }
 
     /// <summary>Free models to fall back on until an order is set on the AI page.</summary>
     public static readonly string[] DefaultFreeModels =

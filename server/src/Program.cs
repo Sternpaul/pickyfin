@@ -144,9 +144,10 @@ api.MapGet("/me", (HttpContext http) =>
 admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, CancellationToken ct) =>
 {
     int rescanned = 0, rescanOf = 0;
-    if (ServerSettings.Current.RescanMonths > 0)
+    var queuedAgain = await store.CountRedoAsync(ct);
+    if (ServerSettings.Current.RescanMonths > 0 || ServerSettings.Current.RescanPassStarted is not null)
     {
-        var cutoff = Rescan.PassCutoff(ServerSettings.Current.RescanMonths);
+        var cutoff = Rescan.Cutoff(ServerSettings.Current);
         await using var db = database.Open();
         var rows = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.ManuallyEdited && !m.Verified)
             .Select(m => new { m.Libraries, m.Rescanned }).ToListAsync(ct);
@@ -188,7 +189,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Steps = new object[]
         {
             new { Key = "describe", Title = "Describe", Text = "An AI describes each film from what it knows",
-                On = !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: no AI key yet (AI page)", Done = classified, Of = total, Unit = "described",
+                On = !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: no AI key yet (AI page)", Again = queuedAgain, Done = classified, Of = total, Unit = "described",
                 Job = Job("tagging"), Model = Model("describe", OpenRouterModels.DescribeOrder(s), s.ClassificationModel) },
             new { Key = "check", Title = "Check", Text = "A second AI reviews the tags and flags what looks wrong",
                 On = s.CheckEnabled && !string.IsNullOrWhiteSpace(s.ApiKey), Off = "Off: switch on the second opinion on the AI page", Done = reviewed, Of = classified, Unit = "checked",
@@ -198,8 +199,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
                 Off = !WebLookup.Configured ? "Off: no Exa key yet (AI page)" : "Off: set films a day, or switch on looking up flagged films (AI page)", Done = lookedUp, Of = classified, Unit = "looked up",
                 Job = lookupAll is { Running: true } ? Job("lookupall") : Job("sweep"), Model = Model("lookup", OpenRouterModels.LookupOrder(s), s.ClassificationModel),
                 SameAsDescribe = !openRouter || s.LookupModelsAuto },
-            new { Key = "rescan", Title = "Re-check", Text = $"Every {(s.RescanMonths == 12 ? "year" : s.RescanMonths == 1 ? "month" : $"{s.RescanMonths} months")}, each film goes through step 3 again: a fresh lookup, then described again",
-                On = s.RescanMonths > 0 && !string.IsNullOrWhiteSpace(s.ApiKey),
+            new { Key = "rescan", Title = "Re-check", Text = (s.RescanMonths <= 0 ? "A pass you started: each film" : $"Every {(s.RescanMonths == 12 ? "year" : s.RescanMonths == 1 ? "month" : $"{s.RescanMonths} months")}, each film") + " goes through step 3 again: a fresh lookup, then described again",
+                On = (s.RescanMonths > 0 || s.RescanPassStarted is not null) && !string.IsNullOrWhiteSpace(s.ApiKey),
                 Off = s.RescanMonths <= 0 ? "Off: choose how often on the AI page" : "Off: no AI key yet (AI page)",
                 Done = rescanned, Of = rescanOf, Unit = "re-checked in this pass",
                 Job = Job("rescan"), Model = Model("lookup", OpenRouterModels.LookupOrder(s), s.ClassificationModel),
@@ -224,6 +225,82 @@ admin.MapGet("/ai/models", async (IHttpClientFactory http, ILoggerFactory logs, 
         OpenRouterProvider.TriesPerModel,
         OpenRouterModels.AutoCount,
     });
+});
+
+// ---------- run a step again for the whole library ----------
+// Films a step would touch: described, not edited or checked by you, in a library that's on
+async Task<List<MovieMetadata>> RedoableAsync(Database database, CancellationToken ct)
+{
+    await using var db = database.Open();
+    var rows = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.ManuallyEdited && !m.Verified).ToListAsync(ct);
+    return rows.Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+}
+
+admin.MapGet("/steps/again", async (Database database, MovieStore store, CancellationToken ct) =>
+{
+    var films = await RedoableAsync(database, ct);
+    var s = ServerSettings.Current;
+    return Results.Ok(new
+    {
+        Describe = films.Count, DescribeQueued = await store.CountRedoAsync(ct),
+        Check = films.Count(m => string.IsNullOrEmpty(m.WebNotes)), CheckPending = films.Count(m => string.IsNullOrEmpty(m.WebNotes) && !m.Checked),
+        Lookup = films.Count, LookupPassStarted = s.RescanPassStarted,
+        LookupPerDay = s.RescanMonths > 0 ? Rescan.PerDay(films.Count, s.RescanMonths) : Rescan.ManualPace(s),
+    });
+});
+
+admin.MapPost("/steps/{step}/again", async (string step, Database database, RefreshService worker, ILoggerFactory logs, CancellationToken ct) =>
+{
+    var ids = (await RedoableAsync(database, ct)).Select(m => m.ItemId).ToList();
+    var log = logs.CreateLogger("Pickyfin.Server.Steps");
+    await using var db = database.Open();
+    int count;
+    switch (step)
+    {
+        case "describe":
+            count = await db.Movies.Where(m => ids.Contains(m.ItemId)).ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, true), ct);
+            MovieClassifier.RetryNow();
+            log.LogInformation("Step 1 runs again: {Count} films queued to be described again, 8 calls per round", count);
+            break;
+        case "check":
+            // Looked-up films are past the second opinion; the web text is the stronger evidence
+            count = await db.Movies.Where(m => ids.Contains(m.ItemId) && (m.WebNotes == null || m.WebNotes == "")).ExecuteUpdateAsync(u => u.SetProperty(m => m.Checked, false), ct);
+            SecondOpinion.ResetPause();
+            log.LogInformation("Step 2 runs again: {Count} films to be checked again", count);
+            break;
+        case "lookup":
+            var settings = ServerSettings.Current.Clone();
+            settings.RescanPassStarted = DateTime.UtcNow;
+            ServerSettings.Save(settings);
+            count = ids.Count;
+            log.LogInformation("Steps 3 and 4 run again: a re-check pass over {Count} films starts now", count);
+            break;
+        default:
+            return Results.NotFound();
+    }
+    worker.Wake();
+    return Results.Ok(new { Count = count });
+});
+
+admin.MapPost("/steps/{step}/stop", async (string step, Database database, ILoggerFactory logs, CancellationToken ct) =>
+{
+    var log = logs.CreateLogger("Pickyfin.Server.Steps");
+    if (step == "describe")
+    {
+        await using var db = database.Open();
+        var count = await db.Movies.Where(m => m.RedoDescribe).ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, false), ct);
+        log.LogInformation("Step 1: stopped describing again; {Count} films taken out of the queue", count);
+        return Results.Ok(new { Count = count });
+    }
+    if (step == "lookup")
+    {
+        var settings = ServerSettings.Current.Clone();
+        settings.RescanPassStarted = null;
+        ServerSettings.Save(settings);
+        log.LogInformation("Steps 3 and 4: the pass started by hand is stopped");
+        return Results.Ok(new { Count = 0 });
+    }
+    return Results.NotFound();
 });
 
 admin.MapPost("/library/sync", (RefreshService worker) =>

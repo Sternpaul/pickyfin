@@ -21,10 +21,19 @@ public sealed class MovieStore
     {
         await using var db = _database.Open();
         var pending = await db.Movies.AsNoTracking()
-            .Where(m => !m.ManuallyEdited && (!m.IsClassified || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
+            .Where(m => !m.ManuallyEdited && (!m.IsClassified || m.RedoDescribe || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
             .ToListAsync(cancellationToken);
+        // New films first, then the ones queued to be described again
+        pending = pending.OrderBy(m => m.IsClassified).ThenBy(m => m.Title).ToList();
         // Movies only in switched-off libraries are never recommended, so don't pay to classify them
         return pending.Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+    }
+
+    /// <summary>Films queued to be described again.</summary>
+    public async Task<int> CountRedoAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        return await db.Movies.CountAsync(m => m.RedoDescribe && !m.ManuallyEdited, cancellationToken);
     }
 
     public async Task<(int Total, int Classified, int Issues, int Reviewed, int LookedUp)> GetStatsAsync(CancellationToken cancellationToken = default)

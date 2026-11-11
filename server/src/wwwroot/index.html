@@ -127,6 +127,9 @@
   .history .h-tags .tag.removed { text-decoration: line-through; opacity: .55; }
   .history details { margin-top: 4px; }
   .history details p { white-space: pre-line; font-size: 12.5px; color: var(--muted); }
+  details.again { margin: 14px 0 0; padding: 12px 0; border-top: 1px dashed var(--line); }
+  details.again summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details.again .again-body { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; max-width: 72ch; }
   .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
   .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .job .dot { align-self: center; }
@@ -476,6 +479,7 @@
           <div><h3>Model order</h3><p class="why">Tried from the top. Each model gets 3 tries (waiting a little between them when it's busy or failing), then the next one takes over. Turn off the ones that keep failing. The numbers count calls since the server last started.</p></div>
           <div class="control"><div class="chain" id="describe-chain"></div></div>
         </div>
+        <details class="again" data-step="describe"><summary>Advanced: describe every film again</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
         <div class="setting-foot"><button class="btn" type="button" id="test-ai">Test connection</button><span class="note" id="ai-note"></span></div>
       </form>
 
@@ -492,6 +496,7 @@
           <div><h3>Model order</h3><p class="why">Same as for describing: from the top, 3 tries each. Best with different models than describing, so they catch different mistakes.</p></div>
           <div class="control"><div class="chain" id="check-chain"></div></div>
         </div>
+        <details class="again" data-step="check"><summary>Advanced: check every film again</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
         <div class="setting-foot"><span class="note" id="check-note"></span></div>
       </form>
 
@@ -526,6 +531,7 @@
           <div><h3>How often</h3><p class="why">Every film goes through step 3 again: a fresh web lookup (new reviews, new consensus on Wikipedia, Letterboxd, IMDb…), then the step-3 model describes it again from everything collected. It keeps tags that still fit and changes only what's clearly wrong. Spread evenly over the time you choose, so each pass ends as the next begins. Films you edited or marked as checked are left alone. <span id="rescan-estimate"></span></p></div>
           <div class="control"><div><div class="seg" id="RescanMonths"><button type="button" data-v="0">Off</button><button type="button" data-v="1">Every month</button><button type="button" data-v="3">3 months</button><button type="button" data-v="6">6 months</button><button type="button" data-v="12">Year</button></div></div></div>
         </div>
+        <details class="again" data-step="lookup"><summary>Advanced: look up and describe every film again now</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
         <div class="setting-foot"><span class="note" id="rescan-note"></span></div>
       </form>
 
@@ -704,7 +710,7 @@ function go(page) {
   if (page === 'libraries') loadLibraries();
   if (page === 'movies') loadMovies(true);
   if (page === 'issues') loadIssues();
-  if (page === 'ai') { loadExaUsage(); loadModelInfo(); }
+  if (page === 'ai') { loadExaUsage(); loadModelInfo(); loadAgain(); }
   if (page === 'status') loadStatus();
   if (page === 'users') loadUsers();
   history.replaceState(null, '', '#' + page);
@@ -1201,6 +1207,46 @@ $('#iss-all').addEventListener('click', async e => {
   try { await call('POST', '/api/issues/lookup-all'); toast('Looking up every flagged movie, 20 at a time'); setTimeout(loadIssues, 1000); }
   catch (err) { toast(err.message); e.target.disabled = false; }
 });
+// ---- run a step again for the whole library
+async function loadAgain() {
+  let a;
+  try { a = await call('GET', '/api/steps/again'); } catch { return; }
+  const n = x => x.toLocaleString();
+  const each = sweepInfo?.Web?.Lookups ? sweepInfo.Web.Dollars / sweepInfo.Web.Lookups : 0.007;
+  const info = {
+    describe: {
+      why: `Every described film (${n(a.Describe)}; not the ones you edited or marked as checked) is described again with the step-1 order: 8 calls, 160 films, per round, so picks never wait. The AI sees everything already known, web text included. Afterwards the second opinion checks them again, and flagged films can be looked up. About ${n(Math.ceil(a.Describe / 20))} calls in all; nothing with free models.`,
+      go: `Describe ${n(a.Describe)} films again`, running: a.DescribeQueued > 0, status: a.DescribeQueued ? `${n(a.DescribeQueued)} still queued` : '',
+      confirm: `Describe ${n(a.Describe)} films again? It takes a while; Status shows how far it is.`,
+    },
+    check: {
+      why: `The second opinion reviews every film again (${n(a.Check)}). Films that were looked up on the web are skipped; their web text is stronger evidence than another AI's memory. Needs the second opinion switched on.`,
+      go: `Check ${n(a.Check)} films again`, running: false, status: a.CheckPending ? `${n(a.CheckPending)} not checked yet` : '',
+      confirm: `Have the second opinion check ${n(a.Check)} films again?`,
+    },
+    lookup: {
+      why: `Starts a re-check pass now: every film (${n(a.Lookup)}) gets a fresh Exa lookup and is described again from everything, at about ${n(a.LookupPerDay)} films a day (roughly $${(a.LookupPerDay * each).toFixed(2)} of Exa a day; it pauses at your monthly limit).${settings?.RescanMonths ? ' The regular passes carry on from there.' : ' Runs once; the regular re-check stays off.'}`,
+      go: a.LookupPassStarted ? 'Start over from now' : 'Start a pass now', running: !!a.LookupPassStarted,
+      status: a.LookupPassStarted ? `Pass started ${new Date(a.LookupPassStarted).toLocaleDateString()}` : '',
+      confirm: `Look up and describe ${n(a.Lookup)} films again, about ${n(a.LookupPerDay)} a day?`,
+    },
+  };
+  for (const [step, it] of Object.entries(info)) {
+    const box = $(`details.again[data-step="${step}"]`); if (!box) continue;
+    $('.why', box).textContent = it.why;
+    const go = $('.go', box), stop = $('.stop', box), note = $('.note', box);
+    go.textContent = it.go; note.textContent = it.status;
+    stop.classList.toggle('hidden', !it.running || step === 'check');
+    go.onclick = async () => {
+      if (!confirm(it.confirm)) return;
+      go.disabled = true;
+      try { const r = await call('POST', `/api/steps/${step}/again`); toast(`${r.Count.toLocaleString()} films queued; Status shows the progress`); }
+      catch (err) { note.textContent = err.message; }
+      go.disabled = false; loadAgain();
+    };
+    stop.onclick = async () => { await call('POST', `/api/steps/${step}/stop`); toast('Stopped'); loadAgain(); };
+  }
+}
 let sweepInfo = null;
 function sweepEstimate() {
   if (!sweepInfo) return;
@@ -1565,6 +1611,7 @@ async function loadStatus() {
         <div class="figure"><span class="big">${st.Done.toLocaleString()}</span><span class="of">of ${st.Of.toLocaleString()} ${esc(st.Unit)}</span></div>
         <div class="meter"><div style="width:${pct}%"></div></div>
         <div class="now">${esc(!st.On ? st.Off : j?.Now || 'Waiting for its turn')}</div>
+        ${st.On && st.Again ? `<div class="when">Describing everything again: ${st.Again.toLocaleString()} films still queued</div>` : ''}
         ${st.On && whenText(j) ? `<div class="when">${whenText(j)}</div>` : ''}
         ${model ? `<div class="model">${esc(model + same)}</div>` : ''}
       </div>`;

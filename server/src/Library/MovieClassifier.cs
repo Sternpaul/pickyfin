@@ -72,7 +72,8 @@ namespace Pickyfin.Server.Library
         /// <summary>A new model order deserves a try right away, not after the pause from the last error.</summary>
         public static void RetryNow() { if (RetryAt is not null) RetryAt = DateTime.UtcNow; _errorsInARow = 0; }
 
-        public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default)
+        /// <param name="maxBatches">Calls this round (the "run again" queue goes a few calls per round, so picks don't wait); null = all.</param>
+        public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default, int? maxBatches = null)
         {
             RetryAt = null;
             // Re-tagging movies classified under an older vocabulary costs one AI call
@@ -86,7 +87,10 @@ namespace Pickyfin.Server.Library
                 return;
             }
 
-            _logger.LogInformation("Tagging {Count} movies, {Batch} per AI call", unclassified.Count, BatchSize);
+            var total = unclassified.Count;
+            if (maxBatches is { } max) unclassified = unclassified.Take(max * BatchSize).ToList();
+            _logger.LogInformation("Tagging {Count} movies, {Batch} per AI call{Rest}", unclassified.Count, BatchSize,
+                total > unclassified.Count ? $" ({total - unclassified.Count} more in later rounds)" : "");
             var provider = _aiProviderFactory.GetProvider();
             TaggingEta.Start(unclassified.Count, BatchSize);
             try
@@ -180,6 +184,7 @@ namespace Pickyfin.Server.Library
             var known = ProcessClassificationResult(json, batch);
             foreach (var movie in batch.Where(known.ContainsKey))
             {
+                movie.RedoDescribe = false;
                 movie.Checked = false;
                 movie.Verified = false;
                 movie.Issue = Issues.Describe(movie, known[movie]);
