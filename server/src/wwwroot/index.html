@@ -431,7 +431,7 @@
     <section data-page="ai" class="hidden">
       <div class="page-head"><div>
         <h1>AI</h1>
-        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (Exa finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Optionally, <b>4 · Re-check</b> runs step 3 again on every film now and then. Status shows how far each step is.</p>
+        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (Exa finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Optionally, <b>4 · Re-check</b> runs step 3 again on every film now and then. Status shows how far each step is. Changes on this page save on their own.</p>
       </div></div>
       <form id="ai-form" class="settings">
         <div class="setting">
@@ -462,7 +462,7 @@
           <div><h3>Model order</h3><p class="why">Tried from the top. Each model gets 3 tries (waiting a little between them when it's busy or failing), then the next one takes over. Turn off the ones that keep failing. The numbers count calls since the server last started.</p></div>
           <div class="control"><div class="chain" id="describe-chain"></div></div>
         </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" id="test-ai">Test connection</button><span class="note" id="ai-note"></span></div>
+        <div class="setting-foot"><button class="btn" type="button" id="test-ai">Test connection</button><span class="note" id="ai-note"></span></div>
       </form>
 
       <h2 class="group-title">2 · Check</h2>
@@ -478,7 +478,7 @@
           <div><h3>Model order</h3><p class="why">Same as for describing: from the top, 3 tries each. Best with different models than describing, so they catch different mistakes.</p></div>
           <div class="control"><div class="chain" id="check-chain"></div></div>
         </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="check-note"></span></div>
+        <div class="setting-foot"><span class="note" id="check-note"></span></div>
       </form>
 
       <h2 class="group-title">3 · Look up on the web</h2>
@@ -503,7 +503,7 @@
           <div><h3>Model order for describing again</h3><p class="why">By default the same order as step 1. Set it apart if you want a stronger model only for looked-up films; they're few, so even a paid model costs little here.</p></div>
           <div class="control"><div class="chain" id="lookup-chain"></div></div>
         </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="lookup-note"></span></div>
+        <div class="setting-foot"><span class="note" id="lookup-note"></span></div>
       </form>
 
       <h2 class="group-title">4 · Re-check everything</h2>
@@ -512,7 +512,7 @@
           <div><h3>How often</h3><p class="why">Every film goes through step 3 again: a fresh web lookup (new reviews, new consensus on Wikipedia, Letterboxd, IMDb…), then the step-3 model describes it again from everything collected. It keeps tags that still fit and changes only what's clearly wrong. Spread evenly over the time you choose, so each pass ends as the next begins. Films you edited or marked as checked are left alone. <span id="rescan-estimate"></span></p></div>
           <div class="control"><div><div class="seg" id="RescanMonths"><button type="button" data-v="0">Off</button><button type="button" data-v="1">Every month</button><button type="button" data-v="3">3 months</button><button type="button" data-v="6">6 months</button><button type="button" data-v="12">Year</button></div></div></div>
         </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="rescan-note"></span></div>
+        <div class="setting-foot"><span class="note" id="rescan-note"></span></div>
       </form>
 
       <h2 class="group-title">TMDB</h2>
@@ -521,7 +521,7 @@
           <div><h3>TMDB key <span class="state" id="tmdb-state"></span></h3><p class="why">Optional. Adds precise keywords from The Movie Database ("heist", "time travel"), which sharpens matching. A free key comes from themoviedb.org → Settings → API.</p></div>
           <div class="control"><input type="password" id="TmdbApiKey" placeholder="Paste a key" autocomplete="off"></div>
         </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><span class="note" id="tmdb-note"></span></div>
+        <div class="setting-foot"><span class="note" id="tmdb-note"></span></div>
       </form>
     </section>
 
@@ -529,7 +529,7 @@
     <section data-page="rows" class="hidden">
       <div class="page-head"><div>
         <h1>Tuning</h1>
-        <p>How picks are chosen, for everyone. Changes apply at the next picks; saving asks for fresh picks right away.</p>
+        <p>How picks are chosen, for everyone. Changes save on their own, and everyone gets fresh picks shortly after.</p>
       </div></div>
       <form id="rows-form">
         <h2 class="group-title">What gets picked</h2>
@@ -591,7 +591,7 @@
             <div class="control"><div class="ends"><span>Ignore</span><span>Strong</span></div><input type="range" id="BecauseEra" min="0" max="100" step="10"></div>
           </div>
         </div>
-        <div class="setting-foot"><button class="btn primary" type="submit">Save</button><button class="btn quiet" type="button" id="tuning-defaults">Back to defaults</button><span class="note" id="rows-note"></span></div>
+        <div class="setting-foot"><button class="btn quiet" type="button" id="tuning-defaults">Back to defaults</button><span class="note" id="rows-note"></span></div>
       </form>
     </section>
 
@@ -681,6 +681,10 @@ $('#login-form').addEventListener('submit', async e => {
 $('#logout').addEventListener('click', async () => { await call('POST', '/api/logout'); showLogin(); });
 
 function go(page) {
+  if (!leaveOk()) return;
+  for (const key of [...dirtyChecks.keys()]) dirtyChecks.delete(key);
+  personDrafts.clear();
+  for (const [form, timer] of Object.entries(saveTimers)) if (timer) saveNow(form);
   $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.page === page));
   $$('main section').forEach(s => s.classList.toggle('hidden', s.dataset.page !== page));
   if (page === 'libraries') loadLibraries();
@@ -753,7 +757,7 @@ function renderChain(key) {
   if (chainsAuto[key] && (key === 'lookup' || modelInfo?.Free?.length)) chains[key] = autoChain(key);
   const on = chains[key];
   // Any change by hand makes it the admin's own order
-  const mine = fn => (...args) => { chainsAuto[key] = false; fn(...args); };
+  const mine = fn => (...args) => { chainsAuto[key] = false; fn(...args); autoSave(chainForms[key]); };
   const off = (modelInfo?.Free || []).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
   const statHtml = m => { const s = modelStat(m); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
   const head = key === 'lookup' ? (chainsAuto[key]
@@ -772,10 +776,10 @@ function renderChain(key) {
   $$('[data-down]', box).forEach(b => b.onclick = () => move(Number(b.dataset.down), 1));
   $$('[data-off]', box).forEach(b => b.onclick = mine(() => { on.splice(Number(b.dataset.off), 1); renderChains(); }));
   $$('[data-on]', box).forEach(b => b.onclick = mine(() => { on.push(b.dataset.on); renderChains(); }));
-  const back = $('[data-auto]', box); if (back) back.onclick = () => { chainsAuto[key] = true; renderChains(); };
+  const back = $('[data-auto]', box); if (back) back.onclick = () => { chainsAuto[key] = true; renderChains(); autoSave(chainForms[key]); };
   const details = $('details', box); if (details) details.ontoggle = () => { openOff[key] = details.open; };
   const input = $('input', box);
-  const add = () => { const v = input.value.trim(); if (v && !on.some(x => x.toLowerCase() === v.toLowerCase())) { chainsAuto[key] = false; on.push(v); renderChains(); } };
+  const add = () => { const v = input.value.trim(); if (v && !on.some(x => x.toLowerCase() === v.toLowerCase())) { chainsAuto[key] = false; on.push(v); renderChains(); autoSave(chainForms[key]); } };
   $('[data-add]', box).onclick = add;
   input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
 }
@@ -839,26 +843,63 @@ async function save(changes, note) {
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
-$('#ai-form').addEventListener('submit', e => { e.preventDefault(); save({
-  AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
-  ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
-  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }) }, $('#ai-note')); });
-$('#check-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
-  CheckEnabled: $('#CheckEnabled').checked,
-  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }, $('#check-note')) && $('#CheckEnabled').checked) toast('Saved. The second opinion starts within a few minutes.'); });
-$('#rescan-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }, $('#rescan-note'))) loadExaUsage(); });
-$('#lookup-form').addEventListener('submit', async e => { e.preventDefault(); if (await save({
-  ExaApiKey: $('#ExaApiKey').value, WebLookupAuto: $('#WebLookupAuto').checked,
-  WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
-  ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }, $('#lookup-note'))) loadExaUsage(); });
-$('#tmdb-form').addEventListener('submit', e => { e.preventDefault(); save({ TmdbApiKey: $('#TmdbApiKey').value }, $('#tmdb-note')); });
+// Settings save on their own: a change is sent half a second later (a typed field when you leave it)
+const formValues = {
+  'ai-form': () => ({
+    AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
+    ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
+    ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }) }),
+  'check-form': () => ({
+    CheckEnabled: $('#CheckEnabled').checked,
+    ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }),
+  'lookup-form': () => ({
+    ExaApiKey: $('#ExaApiKey').value, WebLookupAuto: $('#WebLookupAuto').checked,
+    WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
+    ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
+  'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
+  'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value }),
+  'rows-form': () => tuningValues(),
+};
+const formNotes = { 'ai-form': '#ai-note', 'check-form': '#check-note', 'lookup-form': '#lookup-note', 'rescan-form': '#rescan-note', 'tmdb-form': '#tmdb-note', 'rows-form': '#rows-note' };
+const saveTimers = {};
+let savesInFlight = 0;
+const savePending = () => savesInFlight > 0 || Object.values(saveTimers).some(Boolean);
+function autoSave(form) {
+  const note = $(formNotes[form]);
+  note.className = 'note'; note.textContent = 'Saving…';
+  clearTimeout(saveTimers[form]);
+  saveTimers[form] = setTimeout(() => saveNow(form), 500);
+}
+async function saveNow(form) {
+  clearTimeout(saveTimers[form]); saveTimers[form] = null;
+  const note = $(formNotes[form]);
+  savesInFlight++;
+  try {
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ...formValues[form]() });
+    note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    // Keys are stored, not shown: empty the field and show "saved"
+    for (const k of ['ApiKey', 'ExaApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
+    if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
+  } catch (err) { note.className = 'note err'; note.textContent = `Not saved: ${err.message}`; }
+  finally { savesInFlight--; }
+}
+for (const form of Object.keys(formValues)) {
+  const el = $('#' + form);
+  el.addEventListener('submit', e => { e.preventDefault(); saveNow(form); });
+  el.addEventListener('change', e => { if (!e.target.closest('.chain')) autoSave(form); });
+  // The pill buttons (seg) change on click, not on "change"
+  el.addEventListener('click', e => { if (e.target.closest('.seg button')) setTimeout(() => autoSave(form), 0); });
+}
+const chainForms = { describe: 'ai-form', check: 'check-form', lookup: 'lookup-form' };
+// Leaving while a change is still on its way: send it first, or warn when closing the tab
+window.addEventListener('beforeunload', e => { if (savePending()) { e.preventDefault(); e.returnValue = ''; } });
 const tuningValues = () => ({
   BecauseRows: Number(segValue($('#because-seg'))),
   BecausePeople: Number($('#BecausePeople').value), BecauseCountry: Number($('#BecauseCountry').value), BecauseEra: Number($('#BecauseEra').value), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
   BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value),
   Variety: segValue($('#Variety')), NewArrivals: segValue($('#NewArrivals')), Rotation: segValue($('#Rotation')), MinRating: Number($('#MinRating').value),
 });
-$('#rows-form').addEventListener('submit', async e => { e.preventDefault(); if (await save(tuningValues(), $('#rows-note'))) toast('Saved. Everyone gets fresh picks shortly.'); });
 $('#tuning-defaults').addEventListener('click', async () => {
   if (!confirm('Set all tuning back to the defaults?')) return;
   if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, Discovery: 40, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
@@ -869,12 +910,25 @@ $('#test-ai').addEventListener('click', async e => {
   note.textContent = r.Message; note.className = 'note ' + (r.Ok ? 'ok' : 'err'); e.target.disabled = false;
 });
 
+// ---------- unsaved edits ----------
+// Places with a Save button register a check; leaving with changes asks first
+const dirtyChecks = new Map();
+const personDrafts = new Map(); // unsaved person edits survive the People page being redrawn
+let drawerDirty = null;
+const hasUnsaved = () => [...dirtyChecks.values()].some(f => f()) || !!drawerDirty?.();
+const leaveOk = () => !hasUnsaved() || confirm('You have changes that are not saved. Leave without saving?');
+window.addEventListener('beforeunload', e => { if (hasUnsaved()) { e.preventDefault(); e.returnValue = ''; } });
+
 // ---------- drawer ----------
 function openDrawer(title) {
+  drawerDirty = null;
   $('#d-title').textContent = title; $('#d-body').innerHTML = '<p class="note">Loading…</p>'; $('#d-foot').innerHTML = '';
   $('#scrim').classList.remove('hidden'); $('#drawer').classList.remove('hidden'); document.body.style.overflow = 'hidden';
 }
-function closeDrawer() { $('#scrim').classList.add('hidden'); $('#drawer').classList.add('hidden'); document.body.style.overflow = ''; }
+function closeDrawer() {
+  if (drawerDirty?.() && !confirm('Your changes to this movie are not saved. Close without saving?')) return;
+  drawerDirty = null;
+  $('#scrim').classList.add('hidden'); $('#drawer').classList.add('hidden'); document.body.style.overflow = ''; }
 $('#d-close').addEventListener('click', closeDrawer);
 $('#scrim').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
@@ -1003,6 +1057,9 @@ async function openMovie(id) {
     </div>
 `;
   checkPosters($('#d-body'));
+  const editorState = () => JSON.stringify([subs, moods, $('#e-themes').value, $('#e-narr').value, $('#e-acc').value, $('#e-int').value, $('#e-score').value]);
+  const loaded = editorState();
+  drawerDirty = () => !!$('#e-themes') && editorState() !== loaded;
   $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
   $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));
   $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button>${settings?.HasExaApiKey ? '<button class="btn" id="e-look">Look up on the web, then describe</button>' : ''}${m.Tagged && m.Trust !== 'you' ? '<button class="btn quiet" id="e-ok">Mark as checked</button>' : ''}<span class="note" id="e-note"></span>`;
@@ -1020,7 +1077,7 @@ async function openMovie(id) {
         NarrativeStyle: $('#e-narr').value, Accessibility: $('#e-acc').value, Intensity: $('#e-int').value,
         CriticalAcclaimScore: Number($('#e-score').value) || 0,
       });
-      toast('Saved. The AI will leave it alone.'); openMovie(id); afterIssueChange();
+      drawerDirty = null; toast('Saved. The AI will leave it alone.'); openMovie(id); afterIssueChange();
     } catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; }
   };
   if ($('#i-fine')) $('#i-fine').onclick = async () => { await call('POST', `/api/movies/${id}/fine`); toast('Marked as fine'); openMovie(id); afterIssueChange(); };
@@ -1368,13 +1425,30 @@ function personRow(u) {
       </div>
     </div>`;
   seg($('.hist', el), from ? 'from' : 'all', v => $('.from', el).classList.toggle('hidden', v !== 'from'));
+  const cardState = () => JSON.stringify([$('.brief', el).value, segValue($('.hist', el)), segValue($('.hist', el)) === 'from' ? $('.from', el).value : '']);
+  let savedState = cardState();
+  const draft = personDrafts.get(u.UserId);
+  if (draft && draft !== savedState) {
+    const [brief, mode, date] = JSON.parse(draft);
+    $('.brief', el).value = brief; seg($('.hist', el), mode, v => $('.from', el).classList.toggle('hidden', v !== 'from'));
+    $('.from', el).classList.toggle('hidden', mode !== 'from'); if (date) $('.from', el).value = date;
+  }
+  dirtyChecks.set('person:' + u.UserId, () => el.isConnected && cardState() !== savedState);
+  const markSave = () => $('.save', el).classList.toggle('primary', cardState() !== savedState);
   const persist = async () => {
     const mode = segValue($('.hist', el));
     await call('PUT', `/api/users/${u.UserId}`, {
       enabled: $('.enabled', el).checked, brief: $('.brief', el).value,
       countHistoryFrom: mode === 'from' ? $('.from', el).value + 'T00:00:00Z' : null,
     });
+    savedState = cardState(); personDrafts.delete(u.UserId); markSave();
   };
+  for (const ev of ['input', 'change', 'click']) el.addEventListener(ev, () => setTimeout(() => {
+    const now = cardState();
+    if (now !== savedState) personDrafts.set(u.UserId, now); else personDrafts.delete(u.UserId);
+    markSave();
+  }, 0));
+  markSave();
   $('.enabled', el).addEventListener('change', async () => { await persist(); toast($('.enabled', el).checked ? `Recommendations on for ${u.Name}` : `Off for ${u.Name}; their rows are removed`); loadUsers(); });
   $('.save', el).addEventListener('click', async e => { e.target.disabled = true; try { await persist(); toast('Saved. New picks in a moment.'); setTimeout(loadUsers, 600); } catch (err) { toast(err.message); e.target.disabled = false; } });
   $('.refresh', el).addEventListener('click', async e => { e.target.disabled = true; await call('POST', `/api/users/${u.UserId}/refresh`); toast(`Picking again for ${u.Name}`); setTimeout(loadUsers, 600); });
