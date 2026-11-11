@@ -31,7 +31,7 @@ public sealed class LogBuffer : ILoggerProvider
         {
             if (!IsEnabled(logLevel)) return;
             var level = logLevel switch { LogLevel.Warning => "warn", LogLevel.Error or LogLevel.Critical => "error", _ => "info" };
-            buffer.Add($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {level} {formatter(state, exception)}");
+            buffer.Add($"{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ} {level} {formatter(state, exception)}");
         }
     }
 }

@@ -118,7 +118,7 @@ public sealed class RefreshService : BackgroundService
                 throw;
             }
             _logger.LogInformation("Library sync finished in {Duration}", Pretty(DateTime.UtcNow - started));
-            Jobs.Idle("library", "Library sync", $"Done at {DateTime.Now:HH:mm}", DateTime.UtcNow + LibraryInterval);
+            Jobs.Idle("library", "Library sync", "Done", DateTime.UtcNow + LibraryInterval);
 
             // New movies may now match someone's Letterboxd films
             await using var db = _database.Open();

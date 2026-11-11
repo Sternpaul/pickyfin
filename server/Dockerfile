@@ -7,6 +7,8 @@ COPY src/ .
 RUN dotnet publish -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# Time zone data, so TZ (e.g. Europe/Berlin) works for the container's own log
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
 ARG PICKYFIN_VERSION=dev
 WORKDIR /app
 COPY --from=build /app .

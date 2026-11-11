@@ -188,7 +188,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
             Text = !on ? off : j?.Now ?? "",
             Next = on && state != "running" ? j?.Next : null,
             RunningFor = j is { Running: true } ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0,
-            Done = done, Of = of, Queued = queued, Tip = tip,
+            Done = done, Of = of, Queued = queued, Tip = tip, At = j?.Since,
         };
     }
     var lookupKey = lookupAll is { Running: true } ? "lookupall" : "sweep";

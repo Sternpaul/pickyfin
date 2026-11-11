@@ -780,7 +780,7 @@ function modelStat(id) {
   const rank = (modelInfo?.Free || []).indexOf(id);
   const pop = rank >= 0 ? `#${rank + 1} most used free model this week · ` : '';
   if (!st) return { text: `${pop}not used since the server started`, bad: false };
-  const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const lastFailedLatest = st.LastFailed && (!st.LastOk || new Date(st.LastFailed) > new Date(st.LastOk));
   const err = lastFailedLatest && st.LastError ? ` · failed last at ${clock(st.LastFailed)}: ${st.LastError.length > 90 ? st.LastError.slice(0, 90) + '…' : st.LastError}` : '';
   return { text: `${pop}${st.Ok} answered · ${st.Failed} failed${err}`, bad: lastFailedLatest };
@@ -911,7 +911,7 @@ async function saveNow(form) {
   savesInFlight++;
   try {
     settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ...formValues[form]() });
-    note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
     for (const k of ['ApiKey', 'ExaApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
     $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
@@ -975,7 +975,7 @@ async function loadHistory(id) {
   let list = [];
   try { list = await call('GET', `/api/movies/${id}/history`); } catch { box.innerHTML = '<summary>History</summary><p class="note">Couldn\'t load the history.</p>'; return; }
   if (!$('#e-history')) return;
-  const when = t => new Date(t).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const when = t => new Date(t).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const differs = h => (h.Step === 'check' && h.Text !== 'Found nothing wrong') || h.Step === 'genre'
     || (h.Before && h.After && JSON.stringify([h.Before.S, h.Before.M]) !== JSON.stringify([h.After.S, h.After.M]));
   const anyDisagreement = list.some(h => h.Step === 'check' && h.Text !== 'Found nothing wrong' || h.Step === 'genre');
@@ -1602,7 +1602,7 @@ async function loadStatus() {
   try {
     const s = await call('GET', '/api/status');
     const n = x => (x ?? 0).toLocaleString();
-    const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
     const inMin = t => { const m = Math.round((new Date(t) - Date.now()) / 60000); return m < 1 ? 'any moment' : `in ${dur(m * 60)}`; };
     const mmss = x => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
     $('#count-issues').textContent = s.Issues ? n(s.Issues) : ''; $('#count-issues').className = s.Issues ? 'alert' : '';
@@ -1620,7 +1620,8 @@ async function loadStatus() {
     const label = { running: 'Running', waiting: 'Waiting', paused: 'Paused', off: 'Off' };
     $('#queue').innerHTML = (s.Queue || []).map(q => {
       const count = q.Of != null ? `<div class="count">${n(q.Done)} / ${n(q.Of)}<div class="meter"><div style="width:${q.Of ? Math.min(100, 100 * q.Done / q.Of) : 0}%"></div></div></div>` : '<div class="count"></div>';
-      const text = q.Queued ? `${n(q.Queued)} queued to describe again${q.State === 'running' && q.Text ? ' · now ' + q.Text.toLowerCase() : ''}` : q.Text;
+      const text = q.Queued ? `${n(q.Queued)} queued to describe again${q.State === 'running' && q.Text ? ' · now ' + q.Text.toLowerCase() : ''}`
+        : q.Text === 'Done' && q.At ? `Done at ${clock(q.At)}` : q.Text;
       const when = q.State === 'running' ? `for ${dur(Math.max(60, q.RunningFor))}`
         : q.State === 'paused' && q.Next ? `retry ${clock(q.Next)}`
         : q.Next && q.State !== 'off' ? `next ${clock(q.Next)} (${inMin(q.Next)})` : '';
@@ -1628,7 +1629,9 @@ async function loadStatus() {
         <b${q.Tip ? ' style="cursor:help;text-decoration:underline dotted var(--faint);text-underline-offset:3px"' : ''}>${esc(q.Title)}</b>${count}<span class="badge ${q.State}">${label[q.State] || (q.Of != null ? 'Done' : 'Idle')}</span>
         <span class="text">${esc(text)}</span><span class="when">${when}</span></div>`;
     }).join('');
-    $('#log').innerHTML = s.Log.map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
+    // Log times come in UTC; show them in this browser's time zone
+    const logTime = l => l.replace(/^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)/, t => { const d = new Date(t); return `${d.toLocaleDateString('sv')} ${d.toLocaleTimeString([], { hourCycle: 'h23' })}`; });
+    $('#log').innerHTML = s.Log.map(logTime).map(l => `<span class="${l.includes(' error ') ? 'error' : l.includes(' warn ') ? 'warn' : ''}">${esc(l)}</span>`).join('\n') || 'Nothing yet.';
   } catch {}
 }
 $('#sync').addEventListener('click', async e => { e.target.disabled = true; await call('POST', '/api/library/sync'); toast('Library sync started'); setTimeout(() => { e.target.disabled = false; loadStatus(); }, 1500); });
