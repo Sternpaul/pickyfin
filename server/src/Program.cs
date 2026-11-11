@@ -155,6 +155,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Issues = issues,
         CheckEnabled = ServerSettings.Current.CheckEnabled,
         Reviewed = reviewed,
+        Jobs = Jobs.Snapshot().Select(j => new { j.Key, j.Title, j.Now, j.Running, j.Error, j.Next,
+            RunningFor = j.Running ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0 }),
         Log = log.Lines.Reverse().Take(80),
     });
 });
@@ -194,6 +196,9 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
         await using var db = database.Open();
         await db.Users.Where(u => u.Enabled).ExecuteUpdateAsync(u => u.SetProperty(x => x.RefreshRequested, true), ct);
     }
+    // A new model or key deserves a try right away, not after the pause from the last error
+    if (before.CheckModel != settings.CheckModel || before.ApiKey != settings.ApiKey || before.CheckEnabled != settings.CheckEnabled)
+        SecondOpinion.ResetPause();
     // A library switched back on may have movies that were never classified
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey

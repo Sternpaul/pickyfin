@@ -27,11 +27,13 @@ public sealed class RefreshService : BackgroundService
     private readonly Letterboxd.LetterboxdSync _letterboxd;
     private readonly ILogger<RefreshService> _logger;
     private readonly Library.WebSweep _sweep;
+    private readonly SecondOpinion _secondOpinion;
+    private readonly MovieClassifier _classifier;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -42,6 +44,8 @@ public sealed class RefreshService : BackgroundService
         _letterboxd = letterboxd;
         _logger = logger;
         _sweep = sweep;
+        _secondOpinion = secondOpinion;
+        _classifier = classifier;
     }
 
     public string State { get; private set; } = "Starting";
@@ -89,11 +93,19 @@ public sealed class RefreshService : BackgroundService
         if (_librarySyncRequested || _library.LastSync is null || DateTime.UtcNow - _library.LastSync > LibraryInterval)
         {
             State = "Syncing and classifying the library";
+            Jobs.Running("library", "Library sync", "Reading the library from Jellyfin");
             _librarySyncRequested = false;
             var started = DateTime.UtcNow;
             _logger.LogInformation("Library sync started");
-            await _library.SyncAsync(cancellationToken);
+            try { await _library.SyncAsync(cancellationToken); }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                _librarySyncRequested = true; // try again at the next tick
+                Jobs.Idle("library", "Library sync", $"Failed: {error.Message}", DateTime.UtcNow + Tick, error: true);
+                throw;
+            }
             _logger.LogInformation("Library sync finished in {Duration}", Pretty(DateTime.UtcNow - started));
+            Jobs.Idle("library", "Library sync", $"Last sync at {DateTime.Now:HH:mm}, took {Pretty(DateTime.UtcNow - started)}", DateTime.UtcNow + LibraryInterval);
 
             // New movies may now match someone's Letterboxd films
             await using var db = _database.Open();
@@ -121,6 +133,23 @@ public sealed class RefreshService : BackgroundService
                 _logger.LogError("Picks for {User} failed: {Error}", user.Name, error.Message);
                 await UpdateAsync(user.UserId, u => u.LastResult = "Failed: " + error.Message, cancellationToken);
             }
+        }
+
+        Jobs.Idle("picks", "Rows for each person", "Everyone's rows are up to date; checked every 5 minutes for new watches", DateTime.UtcNow + Tick);
+
+        // Tagging that stopped on an error tries again on its own, not only at the next library sync
+        if (MovieClassifier.RetryAt is { } retry && retry <= DateTime.UtcNow && !string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey))
+        {
+            State = "Describing films";
+            await _classifier.ClassifyPendingMoviesAsync(cancellationToken);
+        }
+
+        // Second opinion: a round of up to 8 calls per tick, after the picks; pauses itself after errors
+        State = "Second opinion";
+        try { await _secondOpinion.CheckPendingAsync(cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("Second opinion failed: {Error}", error.Message);
         }
 
         // Last, so picks never wait for it: a few more films looked up on the web
@@ -222,6 +251,7 @@ public sealed class RefreshService : BackgroundService
         if (!user.RefreshRequested && !briefChanged && !newWatch && !stale && !letterboxdNews) return;
 
         State = $"Picking for {user.Name}";
+        Jobs.Running("picks", "Rows for each person", $"Picking for {user.Name}");
         _logger.LogInformation("Refreshing picks for {User} ({Reason})", user.Name,
             user.RefreshRequested ? "asked" : briefChanged ? "brief changed" : newWatch ? "new watch" : letterboxdNews ? "new on Letterboxd" : "scheduled");
 

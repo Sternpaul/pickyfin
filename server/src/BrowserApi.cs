@@ -330,6 +330,7 @@ public static class BrowserApi
                             TaggingEta.BatchStarted(open.Count - i);
                             lock (LookupGate) { _lookupWorking = batch.Select(m => m.ItemId).ToHashSet(); _lookupWaiting.ExceptWith(_lookupWorking); }
                             Activity.Background = $"Look up all: movies {i + 1}–{i + batch.Count} of {open.Count}";
+                            Jobs.Running("lookupall", "Look up all flagged films", $"Films {i + 1}–{i + batch.Count} of {open.Count}");
                             log.LogInformation("Look up all: movies {Start}–{End} of {Total}", i + 1, i + batch.Count, open.Count);
                             var before = done;
                             try { done += await classifier.LookUpAndTagManyAsync(provider, batch, ct); }
@@ -351,6 +352,7 @@ public static class BrowserApi
                     }
                     var left = (await store.GetAllMoviesAsync(ct)).Count(m => m.Issue is not null);
                     log.LogInformation("Look up all finished: {Done} looked up and described again; {Left} issue(s) left", done, left);
+                    Jobs.Idle("lookupall", "Look up all flagged films", $"Finished at {DateTime.Now:HH:mm}: {done} looked up, {left} issue(s) left");
                 }
                 catch (OperationCanceledException) { }
                 finally { Interlocked.Exchange(ref _lookupAllRunning, 0); }

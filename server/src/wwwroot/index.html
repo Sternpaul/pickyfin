@@ -90,6 +90,13 @@
   input::placeholder, textarea::placeholder { color: var(--faint); }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   .slider-value { align-self: flex-start; font: 600 13.5px/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--text); background: var(--accent-soft); padding: 5px 10px; border-radius: 999px; margin-top: -4px; }
+  .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
+  .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .job .dot { align-self: center; }
+  .job .now { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+  .job.error .now { color: var(--text); }
+  .job .when { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  @media (max-width: 640px) { .job { grid-template-columns: 14px 1fr; } .job .now, .job .when { grid-column: 2; } }
   .ends { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: -4px; }
 
   .btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line-strong);
@@ -542,6 +549,8 @@
       <div class="figure"><span class="big" id="lib-count">–</span><span class="of" id="lib-of"></span></div>
       <div class="meter"><div id="lib-bar"></div></div>
       <div id="check-wrap" class="hidden" style="margin-top:14px"><div class="of" id="check-of" style="margin-bottom:6px"></div><div class="meter"><div id="check-bar"></div></div></div>
+      <div class="label" style="margin:28px 0 8px">What each part is doing</div>
+      <div class="jobs" id="jobs"></div>
       <div class="facts-grid">
         <div><div class="label">Library synced</div><div id="lib-synced">–</div></div>
         <div><div class="label">Jellyfin</div><div id="jf-url">–</div></div>
@@ -1266,6 +1275,13 @@ async function loadStatus() {
     $('#lib-of').textContent = `of ${s.Movies.toLocaleString()} movies described${s.Classified < s.Movies ? eta : ''}`;
     $('#lib-bar').style.width = s.Movies ? (100 * s.Classified / s.Movies) + '%' : '0';
     $('#lib-synced').textContent = ago(s.LibrarySynced);
+    $('#jobs').innerHTML = (s.Jobs || []).map(j => {
+      const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const inMin = t => { const m = Math.max(0, Math.round((new Date(t) - Date.now()) / 60000)); return m < 1 ? 'any moment' : `in ${dur(m * 60)}`; };
+      const when = j.Running ? `running for ${dur(Math.max(60, j.RunningFor))}`
+        : j.Next ? `${j.Error ? 'tries again' : 'next'} at ${clock(j.Next)} (${inMin(j.Next)})` : '';
+      return `<div class="job${j.Error ? ' error' : ''}"><span class="dot ${j.Error ? 'err' : j.Running ? 'busy' : 'ok'}"></span><b>${esc(j.Title)}</b><span class="now">${esc(j.Now)}</span><span class="when">${when}</span></div>`;
+    }).join('') || '<div class="job"><span></span><span class="now">Starting up…</span></div>';
     $('#check-wrap').classList.toggle('hidden', !s.CheckEnabled);
     if (s.CheckEnabled) {
       const checking = s.State.startsWith('Second opinion');

@@ -77,3 +77,42 @@ public static class TaggingEta
         }
     }
 }
+
+/// <summary>
+/// What each background job is doing, for the Status page: running now, waiting until a
+/// set time (and why), finished, or switched off. One line per job, always current.
+/// </summary>
+public static class Jobs
+{
+    public sealed record Job(string Key, string Title, string Now, bool Running, bool Error, DateTime? Next, DateTime Since);
+
+    private static readonly string[] Order = { "library", "tagging", "second", "lookupall", "sweep", "picks" };
+    private static readonly object Gate = new();
+    private static readonly Dictionary<string, Job> All = new();
+
+    public static void Running(string key, string title, string now)
+    {
+        lock (Gate)
+        {
+            var since = All.TryGetValue(key, out var was) && was.Running ? was.Since : DateTime.UtcNow;
+            All[key] = new Job(key, title, now, true, false, null, since);
+        }
+    }
+
+    public static void Idle(string key, string title, string now, DateTime? next = null, bool error = false)
+    {
+        lock (Gate) All[key] = new Job(key, title, now, false, error, next, DateTime.UtcNow);
+    }
+
+    public static List<Job> Snapshot()
+    {
+        lock (Gate) return All.Values.OrderBy(j => Array.IndexOf(Order, j.Key) is var i && i < 0 ? 99 : i).ToList();
+    }
+
+    /// <summary>"09:10 (in 23 min)" in the server's local time, for log lines.</summary>
+    public static string When(DateTime utc)
+    {
+        var minutes = Math.Max(0, (int)Math.Round((utc - DateTime.UtcNow).TotalMinutes));
+        return $"{utc.ToLocalTime():HH:mm} (in {minutes} min)";
+    }
+}

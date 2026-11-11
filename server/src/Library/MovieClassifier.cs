@@ -57,8 +57,13 @@ namespace Pickyfin.Server.Library
             return movie;
         }
 
+        /// <summary>After a failed tagging run: when to try again (the loop checks every few minutes).</summary>
+        public static DateTime? RetryAt { get; private set; }
+        private static int _errorsInARow;
+
         public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default)
         {
+            RetryAt = null;
             // Re-tagging movies classified under an older vocabulary costs one AI call
             // per batch, so it only happens when the admin opts in.
             var includeOutdated = ServerSettings.Current.ReclassifyOutdatedMovies;
@@ -66,6 +71,7 @@ namespace Pickyfin.Server.Library
             if (!unclassified.Any())
             {
                 _logger.LogInformation("All movies are tagged");
+                Jobs.Idle("tagging", "Describing films", "Up to date: every film is described");
                 return;
             }
 
@@ -83,21 +89,29 @@ namespace Pickyfin.Server.Library
                     {
                         var started = DateTime.UtcNow;
                         TaggingEta.BatchStarted(unclassified.Count - i);
+                        Jobs.Running("tagging", "Describing films", $"Films {i + 1}–{i + batch.Count} of {unclassified.Count} with {ServerSettings.Current.ClassificationModel}");
                         using (Activity.Begin($"Tagging movies {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
                             await TagBatchAsync(provider, batch, cancellationToken);
                         _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
                         await LookUpFlaggedAsync(provider, batch, cancellationToken);
                         TaggingEta.BatchDone();
+                        _errorsInARow = 0;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        _logger.LogError("Tagging stopped: {Error}. It continues at the next library sync.", ex.Message);
+                        _errorsInARow++;
+                        RetryAt = DateTime.UtcNow.AddMinutes(Math.Min(60, 10 * Math.Pow(2, _errorsInARow - 1)));
+                        _logger.LogError("Tagging paused: {Error}. Trying again at {When}.", ex.Message, Jobs.When(RetryAt.Value));
+                        var shortError = ex.Message.Length <= 160 ? ex.Message : ex.Message[..160] + "…";
+                        Jobs.Idle("tagging", "Describing films", $"Paused after an error: {shortError}", RetryAt, error: true);
                         break;
                     }
                 }
             }
             finally { TaggingEta.Stop(); }
+            if (RetryAt is not null) return;
             _logger.LogInformation("Tagging finished");
+            Jobs.Idle("tagging", "Describing films", "Up to date: every film is described");
         }
 
         /// <summary>

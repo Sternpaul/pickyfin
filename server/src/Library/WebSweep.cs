@@ -32,13 +32,17 @@ public sealed class WebSweep
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        const string key = "sweep", title = "Looking up the whole library";
         var s = ServerSettings.Current;
-        if (s.WebLookupsPerDay <= 0 || string.IsNullOrWhiteSpace(s.ApiKey) || _web.Blocked() is not null) return;
+        if (s.WebLookupsPerDay <= 0 || string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(key, title, "Off (AI page)"); return; }
+        if (_web.Blocked() is { } why) { Jobs.Idle(key, title, $"Paused: {why}"); return; }
         var left = s.WebLookupsPerDay - _web.ThisMonth.Today;
-        if (left <= 0) return;
+        var midnight = DateTime.Today.AddDays(1).ToUniversalTime();
+        if (left <= 0) { Jobs.Idle(key, title, $"Today's {s.WebLookupsPerDay} done", midnight); return; }
 
         var todo = (await _store.GetAllMoviesAsync(cancellationToken)).Where(Wanted).ToList();
-        if (todo.Count == 0) return;
+        if (todo.Count == 0) { Jobs.Idle(key, title, "Done: every film is looked up"); return; }
+        Jobs.Running(key, title, $"Looking up {Math.Min(PerRound, left)} films, then describing them again");
         var batch = todo
             .OrderByDescending(m => m.Issue is not null)
             .ThenBy(m => m.Popularity)
@@ -50,5 +54,7 @@ public sealed class WebSweep
         var days = (int)Math.Ceiling(remaining / (double)Math.Max(1, s.WebLookupsPerDay));
         _logger.LogInformation("Library lookup: {Looked} looked up, {Today} today, {Remaining} to go (about {Days} day(s))",
             looked, _web.ThisMonth.Today, remaining, days);
+        Jobs.Idle(key, title, $"{remaining:N0} to go (about {days} day(s)); today {_web.ThisMonth.Today} of {s.WebLookupsPerDay}",
+            _web.ThisMonth.Today >= s.WebLookupsPerDay ? midnight : DateTime.UtcNow.AddMinutes(5));
     }
 }

@@ -99,7 +99,6 @@ public sealed class LibrarySync
         {
             await _classifier.ClassifyPendingMoviesAsync(cancellationToken);
             await GenreSweepAsync(cancellationToken);
-            await _secondOpinion.CheckPendingAsync(cancellationToken);
         }
         else
             _logger.LogWarning("No AI key set: movies are not classified, recommendations fall back to ratings");
