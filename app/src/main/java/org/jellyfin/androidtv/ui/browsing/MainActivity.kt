@@ -48,9 +48,6 @@ class MainActivity : FragmentActivity() {
 
 		if (!validateAuthentication()) return
 
-		// Pickyfin: offer new versions of this app
-		org.jellyfin.androidtv.pickyfin.Updater.checkInBackground(this, lifecycleScope)
-
 		interactionTrackerViewModel.keepScreenOn.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
 			.onEach { keepScreenOn ->
 				if (keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -89,6 +86,9 @@ class MainActivity : FragmentActivity() {
 		applyTheme()
 
 		interactionTrackerViewModel.activityPaused = false
+
+		// Pickyfin: offer new versions of this app, every time the app is opened
+		org.jellyfin.androidtv.pickyfin.Updater.checkOnOpen(this, lifecycleScope)
 	}
 
 	private fun validateAuthentication(): Boolean {

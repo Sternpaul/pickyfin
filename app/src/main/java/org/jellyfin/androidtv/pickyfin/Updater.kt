@@ -8,7 +8,10 @@ import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleCoroutineScope
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,13 +36,20 @@ import java.util.concurrent.TimeUnit
  * The repository may hold releases of several Pickyfin apps, so only releases
  * tagged tv-v<version> count.
  *
+ * It checks every time the app is opened, including when it comes back from the
+ * background (Fire TV keeps apps in memory, so that's the usual way it opens), but
+ * only once per opening: coming back from the player doesn't ask again.
+ *
+ * "Remind me later" waits 7 days before asking about any update again;
+ * "Skip this version" never asks about that release again.
+ *
  * Builds without a configured repository (local builds) never check.
  */
 object Updater {
-	private const val CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 	private const val PREFERENCES = "pickyfin_updater"
-	private const val KEY_LAST_CHECK = "last_check"
 	private const val KEY_SKIPPED_TAG = "skipped_tag"
+	private const val KEY_REMIND_AFTER = "remind_after"
+	private const val REMIND_LATER_MS = 7L * 24 * 60 * 60 * 1000
 	private const val TAG_PREFIX = "tv-v"
 
 	private val json = Json { ignoreUnknownKeys = true }
@@ -67,17 +77,37 @@ object Updater {
 		@SerialName("browser_download_url") val downloadUrl: String,
 	)
 
-	fun checkInBackground(activity: Activity, scope: LifecycleCoroutineScope) {
+	// Whether this opening of the app was already checked; reset when the whole app
+	// goes to the background
+	private var checkedThisOpening = false
+	private var watchingAppLifecycle = false
+
+	/** Call when the main screen starts; checks once per opening of the app. */
+	fun checkOnOpen(activity: Activity, scope: LifecycleCoroutineScope) {
 		val repository = BuildConfig.PICKYFIN_UPDATE_REPOSITORY
 		if (repository.isBlank()) return
 
+		if (!watchingAppLifecycle) {
+			watchingAppLifecycle = true
+			ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+				override fun onStop(owner: LifecycleOwner) {
+					checkedThisOpening = false
+				}
+			})
+		}
+		if (checkedThisOpening) return
+		checkedThisOpening = true
+
 		val preferences = activity.getSharedPreferences(PREFERENCES, Activity.MODE_PRIVATE)
-		val now = System.currentTimeMillis()
-		if (now - preferences.getLong(KEY_LAST_CHECK, 0) < CHECK_INTERVAL_MS) return
+		if (System.currentTimeMillis() < preferences.getLong(KEY_REMIND_AFTER, 0)) return
 
 		scope.launch {
-			val releases = withContext(Dispatchers.IO) { tvReleases(repository) } ?: return@launch
-			preferences.edit().putLong(KEY_LAST_CHECK, now).apply()
+			val releases = withContext(Dispatchers.IO) { tvReleases(repository) }
+			if (releases == null) {
+				// Not reachable (e.g. network not up yet after waking): try again next time
+				checkedThisOpening = false
+				return@launch
+			}
 
 			val release = newest(releases) ?: return@launch
 			val apk = release.assets.firstOrNull { it.name.endsWith(".apk") } ?: return@launch
@@ -90,7 +120,9 @@ object Updater {
 				.setTitle(R.string.pickyfin_update_title)
 				.setMessage(activity.getString(R.string.pickyfin_update_message, version, BuildConfig.VERSION_NAME))
 				.setPositiveButton(R.string.pickyfin_update_install) { _, _ -> download(activity, scope, apk) }
-				.setNegativeButton(R.string.pickyfin_update_later, null)
+				.setNegativeButton(R.string.pickyfin_update_later) { _, _ ->
+					preferences.edit().putLong(KEY_REMIND_AFTER, System.currentTimeMillis() + REMIND_LATER_MS).apply()
+				}
 				.setNeutralButton(R.string.pickyfin_update_skip) { _, _ ->
 					preferences.edit().putString(KEY_SKIPPED_TAG, release.tagName).apply()
 				}
@@ -154,8 +186,8 @@ object Updater {
 			} catch (error: Exception) {
 				Timber.w(error, "Pickyfin: could not open the install permission screen")
 			}
-			// The next check offers the update again once permission is given
-			activity.getSharedPreferences(PREFERENCES, Activity.MODE_PRIVATE).edit().remove(KEY_LAST_CHECK).apply()
+			// Coming back from the settings screen opens the app again, which checks
+			// again and offers the update once permission is given
 			return
 		}
 

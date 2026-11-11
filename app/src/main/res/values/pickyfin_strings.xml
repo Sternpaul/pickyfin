@@ -8,9 +8,9 @@
     <string name="pickyfin_update_title">Update available</string>
     <string name="pickyfin_update_message">Version %1$s is available (you have %2$s). Install it now?</string>
     <string name="pickyfin_update_install">Install</string>
-    <string name="pickyfin_update_later">Later</string>
+    <string name="pickyfin_update_later">Remind me later</string>
     <string name="pickyfin_update_skip">Skip this version</string>
     <string name="pickyfin_update_downloading">Downloading update…</string>
     <string name="pickyfin_update_failed">The update could not be downloaded or installed. Try again later.</string>
-    <string name="pickyfin_update_allow">Allow this app to install updates, then go back. The update is offered again next time.</string>
+    <string name="pickyfin_update_allow">Allow this app to install updates, then go back. The update is offered again when you come back.</string>
 </resources>
