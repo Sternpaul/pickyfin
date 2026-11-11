@@ -18,8 +18,9 @@ public sealed class LibrarySync
     private readonly TmdbKeywordService _tmdb;
     private readonly ILogger<LibrarySync> _logger;
 
-    public LibrarySync(JellyfinClient jellyfin, MovieStore store, MovieClassifier classifier, SecondOpinion secondOpinion, TmdbKeywordService tmdb, ILogger<LibrarySync> logger)
+    public LibrarySync(JellyfinClient jellyfin, MovieStore store, MovieClassifier classifier, SecondOpinion secondOpinion, TmdbKeywordService tmdb, ILogger<LibrarySync> logger, MovieHistory history)
     {
+        _history = history;
         _jellyfin = jellyfin;
         _store = store;
         _classifier = classifier;
@@ -27,6 +28,8 @@ public sealed class LibrarySync
         _tmdb = tmdb;
         _logger = logger;
     }
+
+    private readonly MovieHistory _history;
 
     public DateTime? LastSync { get; private set; }
 
@@ -139,6 +142,7 @@ public sealed class LibrarySync
         if (flagged.Count == 0) return;
         foreach (var (movie, problems) in flagged) movie.Issue = string.Join("\n", problems);
         await _store.SaveMoviesAsync(flagged.Select(x => x.Movie), cancellationToken);
+        await _history.AddAsync(flagged.Select(x => MovieHistory.Entry(x.Movie, "genre", null, null, string.Join("\n", x.Problems))), cancellationToken);
         _logger.LogInformation("Genre check: {Count} movie(s) look off, see Issues", flagged.Count);
     }
 

@@ -103,6 +103,7 @@ public sealed class Rescan
                     using (Activity.Begin($"Re-check: looking up {movie.Title} on the web"))
                         notes = await _web.FindAsync(movie, cancellationToken);
                     CountLookup();
+                    await _classifier.RecordLookupAsync(movie, notes, cancellationToken);
                     if (!string.IsNullOrEmpty(notes)) movie.WebNotes = notes; // nothing new found: keep what we had
                 }
                 catch (Exception error) when (error is not OperationCanceledException)

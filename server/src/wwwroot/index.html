@@ -113,6 +113,20 @@
   .step .now { font-size: 13.5px; overflow-wrap: anywhere; }
   .step.error .now { color: var(--err); }
   .step .when, .step .model { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+  .history ol { list-style: none; margin: 10px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 14px; }
+  .history li { position: relative; font-size: 13.5px; }
+  .history li::before { content: ""; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .history li.differs::before { background: var(--warn, #d97706); }
+  .history li.you::before { background: var(--accent); }
+  .history .h-head { font-weight: 650; }
+  .history .h-meta { color: var(--muted); font-size: 12.5px; }
+  .history .h-text { margin-top: 4px; white-space: pre-line; overflow-wrap: anywhere; }
+  .history li.differs .h-text { color: var(--text); font-weight: 550; }
+  .history .h-tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .history .h-tags .tag.added { background: var(--accent-soft); font-weight: 600; }
+  .history .h-tags .tag.removed { text-decoration: line-through; opacity: .55; }
+  .history details { margin-top: 4px; }
+  .history details p { white-space: pre-line; font-size: 12.5px; color: var(--muted); }
   .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
   .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .job .dot { align-self: center; }
@@ -919,6 +933,49 @@ const hasUnsaved = () => [...dirtyChecks.values()].some(f => f()) || !!drawerDir
 const leaveOk = () => !hasUnsaved() || confirm('You have changes that are not saved. Leave without saving?');
 window.addEventListener('beforeunload', e => { if (hasUnsaved()) { e.preventDefault(); e.returnValue = ''; } });
 
+// ---------- a film's history ----------
+const historyLabels = {
+  describe: '1 · Described', 'describe-again': '1 · Described again', check: '2 · Second opinion', genre: 'Genre check',
+  web: '3 · Web lookup', redescribe: '3 · Described again from everything', recheck: '4 · Re-check', you: 'You',
+};
+function tagDiff(before, after) {
+  const list = k => [...(after?.[k] || [])], was = k => [...(before?.[k] || [])];
+  const row = k => {
+    const now = list(k), old = was(k);
+    const lower = a => a.map(x => x.toLowerCase());
+    const tags = now.map(t => `<span class="tag${before && !lower(old).includes(t.toLowerCase()) ? ' added' : ''}">${esc(t)}</span>`)
+      .concat(before ? old.filter(t => !lower(now).includes(t.toLowerCase())).map(t => `<span class="tag removed">${esc(t)}</span>`) : []);
+    return tags.join('');
+  };
+  return after ? `<div class="h-tags">${row('S')}${row('M')}</div>` : '';
+}
+async function loadHistory(id) {
+  const box = $('#e-history'); if (!box) return;
+  let list = [];
+  try { list = await call('GET', `/api/movies/${id}/history`); } catch { box.innerHTML = '<summary>History</summary><p class="note">Couldn\'t load the history.</p>'; return; }
+  if (!$('#e-history')) return;
+  const when = t => new Date(t).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const differs = h => (h.Step === 'check' && h.Text !== 'Found nothing wrong') || h.Step === 'genre'
+    || (h.Before && h.After && JSON.stringify([h.Before.S, h.Before.M]) !== JSON.stringify([h.After.S, h.After.M]));
+  const anyDisagreement = list.some(h => h.Step === 'check' && h.Text !== 'Found nothing wrong' || h.Step === 'genre');
+  box.innerHTML = `<summary>History (${list.length} ${list.length === 1 ? 'step' : 'steps'}${anyDisagreement ? ', with disagreements' : ''})</summary>` + (!list.length
+    ? '<p class="note">Nothing recorded yet. History is kept from this version on; earlier steps weren\'t saved.</p>'
+    : `<ol>${list.map(h => {
+        const web = h.Step === 'web' && h.Text && h.Text !== 'Nothing found on the web';
+        const sources = web ? [...h.Text.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]) : [];
+        const text = web ? `Found ${sources.length || 'some'} page${sources.length === 1 ? '' : 's'}: ${sources.join(', ')}` : (h.Text || '').replace(/^Second opinion: /, '');
+        const tags = h.Step === 'web' ? '' : tagDiff(h.Before, h.After);
+        return `<li class="${differs(h) ? 'differs' : ''}${h.Step === 'you' ? ' you' : ''}">
+          <div class="h-head">${esc(historyLabels[h.Step] || h.Step)}</div>
+          <div class="h-meta">${when(h.At)}${h.Model ? ' · ' + esc(h.Model) : ''}</div>
+          ${text ? `<div class="h-text">${esc(text)}</div>` : ''}
+          ${h.Step === 'check' || h.Step === 'genre' ? (tags ? `<div class="h-meta" style="margin-top:4px">About these tags:</div>${tags}` : '') : tags}
+          ${web ? `<details><summary class="note">What Exa found</summary><p>${esc(h.Text)}</p></details>` : ''}
+        </li>`;
+      }).join('')}</ol><p class="note" style="margin-top:10px">Highlighted: new tags; struck through: tags taken out. Orange dots mark where a step disagreed.</p>`);
+  if (anyDisagreement) box.open = true;
+}
+
 // ---------- drawer ----------
 function openDrawer(title) {
   drawerDirty = null;
@@ -1060,6 +1117,8 @@ async function openMovie(id) {
   const editorState = () => JSON.stringify([subs, moods, $('#e-themes').value, $('#e-narr').value, $('#e-acc').value, $('#e-int').value, $('#e-score').value]);
   const loaded = editorState();
   drawerDirty = () => !!$('#e-themes') && editorState() !== loaded;
+  $('#d-body').insertAdjacentHTML('beforeend', '<div class="edit-row"><details class="history" id="e-history"><summary>History</summary><p class="note">Loading…</p></details></div>');
+  loadHistory(id);
   $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
   $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));
   $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button>${settings?.HasExaApiKey ? '<button class="btn" id="e-look">Look up on the web, then describe</button>' : ''}${m.Tagged && m.Trust !== 'you' ? '<button class="btn quiet" id="e-ok">Mark as checked</button>' : ''}<span class="note" id="e-note"></span>`;

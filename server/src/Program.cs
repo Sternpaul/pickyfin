@@ -46,6 +46,7 @@ builder.Services.AddSingleton<MovieClassifier>();
 builder.Services.AddSingleton<SecondOpinion>();
 builder.Services.AddSingleton<WebSweep>();
 builder.Services.AddSingleton<Rescan>();
+builder.Services.AddSingleton<MovieHistory>();
 builder.Services.AddSingleton(sp => new TmdbKeywordService(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb"),
     sp.GetRequiredService<MovieStore>(),

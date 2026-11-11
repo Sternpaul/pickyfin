@@ -189,11 +189,13 @@ public static class BrowserApi
             return movie is null ? Results.NotFound() : Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
         });
 
-        admin.MapPut("/movies/{id:guid}", async (Guid id, MovieEdit edit, Database database, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
+        admin.MapPut("/movies/{id:guid}", async (Guid id, MovieEdit edit, Database database, LibrarySync sync, JellyfinClient jellyfin, MovieHistory history, CancellationToken ct) =>
         {
             await using var db = database.Open();
             var movie = await db.Movies.FirstOrDefaultAsync(m => m.ItemId == id, ct);
             if (movie is null) return Results.NotFound();
+            var tagsBefore = MovieHistory.Tags(movie);
+            var issueBefore = movie.Issue;
 
             static string Json(IEnumerable<string> values) => JsonSerializer.Serialize(values.ToList());
             List<string> Canon(IEnumerable<string>? raw, Func<string?, string?> canonical) =>
@@ -216,6 +218,8 @@ public static class BrowserApi
             movie.Verified = true;
             movie.LastUpdated = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+            await history.AddAsync(MovieHistory.Entry(movie, "you", null, tagsBefore,
+                "Edited by you" + (issueBefore is null ? "" : "; this cleared: " + issueBefore.Replace("\n", "; "))), ct);
             return Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
         });
 
@@ -275,15 +279,27 @@ public static class BrowserApi
             });
         });
 
-        admin.MapPost("/movies/{id:guid}/fine", async (Guid id, Database database, CancellationToken ct) =>
+        admin.MapPost("/movies/{id:guid}/fine", async (Guid id, Database database, MovieHistory history, CancellationToken ct) =>
         {
             await using var db = database.Open();
+            if (await db.Movies.AsNoTracking().FirstOrDefaultAsync(m => m.ItemId == id, ct) is { } movie)
+                await history.AddAsync(MovieHistory.Entry(movie, "you", null, null,
+                    "Marked as checked by you" + (movie.Issue is null ? "" : "; this cleared: " + movie.Issue.Replace("\n", "; "))), ct);
             await db.Movies.Where(m => m.ItemId == id).ExecuteUpdateAsync(u => u
                 .SetProperty(m => m.Issue, (string?)null)
                 .SetProperty(m => m.Checked, true)
                 .SetProperty(m => m.Verified, true), ct);
             return Results.Ok();
         });
+
+        // What happened to a film's tags, oldest first
+        admin.MapGet("/movies/{id:guid}/history", async (Guid id, MovieHistory history, CancellationToken ct) =>
+            Results.Ok((await history.ForAsync(id, ct)).Select(h => new
+            {
+                At = DateTime.SpecifyKind(h.At, DateTimeKind.Utc), h.Step, h.Model, h.Text,
+                Before = h.Before is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(h.Before),
+                After = h.After is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(h.After),
+            })));
 
         admin.MapPost("/movies/{id:guid}/lookup", async (Guid id, Database database, MovieClassifier classifier, WebLookup web, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
         {

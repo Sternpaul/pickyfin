@@ -107,6 +107,7 @@ public sealed class PickyDb : DbContext
     public DbSet<ManagedPlaylist> Playlists => Set<ManagedPlaylist>();
     public DbSet<LetterboxdFilm> Letterboxd => Set<LetterboxdFilm>();
     public DbSet<RowPin> Pins => Set<RowPin>();
+    public DbSet<Library.HistoryEntry> History => Set<Library.HistoryEntry>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder options) => options.UseSqlite($"Data Source={_path}");
 
@@ -117,6 +118,7 @@ public sealed class PickyDb : DbContext
         model.Entity<ManagedPlaylist>().HasIndex(p => new { p.UserId, p.Slot }).IsUnique();
         model.Entity<LetterboxdFilm>().HasIndex(f => new { f.UserId, f.Kind });
         model.Entity<RowPin>().HasIndex(r => new { r.UserId, r.Slot }).IsUnique();
+        model.Entity<Library.HistoryEntry>().ToTable("History").HasIndex(h => h.ItemId);
     }
 }
 
@@ -200,6 +202,16 @@ public sealed class Database
             ""Slot"" TEXT NOT NULL,
             ""Items"" TEXT NOT NULL)");
         Run(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Pins_UserId_Slot"" ON ""Pins"" (""UserId"", ""Slot"")");
+        Run(@"CREATE TABLE IF NOT EXISTS ""History"" (
+            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_History"" PRIMARY KEY AUTOINCREMENT,
+            ""ItemId"" TEXT NOT NULL,
+            ""At"" TEXT NOT NULL,
+            ""Step"" TEXT NOT NULL,
+            ""Model"" TEXT NULL,
+            ""Before"" TEXT NULL,
+            ""After"" TEXT NULL,
+            ""Text"" TEXT NULL)");
+        Run(@"CREATE INDEX IF NOT EXISTS ""IX_History_ItemId"" ON ""History"" (""ItemId"")");
     }
 
     public PickyDb Open() => new(_path);

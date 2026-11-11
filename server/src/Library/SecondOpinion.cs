@@ -36,9 +36,11 @@ public sealed class SecondOpinion
     private readonly AIProviderFactory _ai;
     private readonly MovieClassifier _classifier;
     private readonly ILogger<SecondOpinion> _logger;
+    private readonly MovieHistory _history;
 
-    public SecondOpinion(Database database, MovieStore store, AIProviderFactory ai, MovieClassifier classifier, ILogger<SecondOpinion> logger)
+    public SecondOpinion(Database database, MovieStore store, AIProviderFactory ai, MovieClassifier classifier, ILogger<SecondOpinion> logger, MovieHistory history)
     {
+        _history = history;
         _database = database;
         _store = store;
         _ai = ai;
@@ -130,6 +132,9 @@ public sealed class SecondOpinion
                     if (problems.TryGetValue(movie, out var line)) movie.Issue = Issues.Add(movie.Issue, line);
                 }
                 flaggedTotal += problems.Count;
+                var checkModel = MovieHistory.ModelFor("check");
+                await _history.AddAsync(batch.Select(m => MovieHistory.Entry(m, "check", checkModel, null,
+                    problems.TryGetValue(m, out var said) ? said : "Found nothing wrong")), cancellationToken);
                 await _store.SaveMoviesAsync(batch, cancellationToken);
                 _logger.LogInformation("Second opinion on movies {Start}–{End}: {Count} look wrong", i + 1, i + batch.Count, problems.Count);
 

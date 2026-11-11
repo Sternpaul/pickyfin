@@ -21,13 +21,21 @@ namespace Pickyfin.Server.Library
 
         public const int BatchSize = 20;
 
+        private readonly MovieHistory _history;
+
+        /// <summary>Notes a web lookup in the film's history: what Exa found, or that it found nothing.</summary>
+        public Task RecordLookupAsync(MovieMetadata movie, string? notes, CancellationToken cancellationToken) =>
+            _history.AddAsync(MovieHistory.Entry(movie, "web", "Exa", null, string.IsNullOrEmpty(notes) ? "Nothing found on the web" : notes), cancellationToken);
+
         public MovieClassifier(
             MovieStore movieStore,
             AIProviderFactory aiProviderFactory,
             ILogger<MovieClassifier> logger,
-            WebLookup web)
+            WebLookup web,
+            MovieHistory history)
         {
             _web = web;
+            _history = history;
             _movieStore = movieStore;
             _aiProviderFactory = aiProviderFactory;
             _logger = logger;
@@ -50,6 +58,7 @@ namespace Pickyfin.Server.Library
         {
             using (Activity.Begin($"Looking up {movie.Title} on the web"))
                 movie.WebNotes = await _web.FindAsync(movie, cancellationToken) ?? "";
+            await RecordLookupAsync(movie, movie.WebNotes, cancellationToken);
             movie.ManuallyEdited = false;
             var provider = _aiProviderFactory.GetProvider();
             using (Activity.Begin($"Tagging {movie.Title}: waiting for {provider.Name}"))
@@ -140,6 +149,7 @@ namespace Pickyfin.Server.Library
                     using (Activity.Begin($"Looking up {movie.Title} on the web"))
                         movie.WebNotes = await _web.FindAsync(movie, cancellationToken) ?? "";
                     looked++;
+                    await RecordLookupAsync(movie, movie.WebNotes, cancellationToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -166,6 +176,7 @@ namespace Pickyfin.Server.Library
             var json = lookedUp
                 ? await provider.ClassifyLookedUpAsync(batch, cancellationToken)
                 : await provider.ClassifyMoviesAsync(batch, cancellationToken);
+            var before = batch.ToDictionary(m => m.ItemId, MovieHistory.Tags);
             var known = ProcessClassificationResult(json, batch);
             foreach (var movie in batch.Where(known.ContainsKey))
             {
@@ -173,6 +184,11 @@ namespace Pickyfin.Server.Library
                 movie.Verified = false;
                 movie.Issue = Issues.Describe(movie, known[movie]);
             }
+            var model = MovieHistory.ModelFor(lookedUp ? "lookup" : "describe");
+            await _history.AddAsync(batch.Where(known.ContainsKey).Select(m => MovieHistory.Entry(m,
+                m.Recheck ? "recheck" : lookedUp ? "redescribe" : before[m.ItemId] is null ? "describe" : "describe-again",
+                model, before[m.ItemId],
+                $"Knew the film: {known[m]}" + (m.Issue is null ? "" : "\nStill flagged: " + m.Issue.Replace("\n", "; ")))), cancellationToken);
             var missing = batch.Count(m => !known.ContainsKey(m));
             if (missing > 0) _logger.LogWarning("The AI left out {Count} of {Total} movie(s); they're tried again next time", missing, batch.Count);
             await _movieStore.SaveMoviesAsync(batch.Where(known.ContainsKey), cancellationToken);
