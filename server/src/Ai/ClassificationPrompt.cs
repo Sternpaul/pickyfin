@@ -68,9 +68,16 @@ Return a JSON object with a ""movies"" array, one entry per input movie, with th
 - ""Accessibility"": exactly one of {Quoted(ClassificationVocabulary.Accessibility)}.
 - ""Intensity"": exactly one of {Quoted(ClassificationVocabulary.Intensity)}.
 - ""CriticalAcclaimScore"": integer 1-10 for critical reception (5 = average, 9+ = canonical classic).
+- ""CriticsScore"": integer 0-100, ONLY if ""FromTheWeb"" states one: the Rotten Tomatoes Tomatometer, else the Metacritic score. Otherwise null. Never guess.
+- ""AudienceScore"": integer 0-100, ONLY if ""FromTheWeb"" states one: the Rotten Tomatoes Popcornmeter (audience score), else the IMDb rating × 10. Otherwise null.
+- ""ScoreSource"": where those scores come from, e.g. ""Rotten Tomatoes"", or null.
+- ""ContentNotes"": things some viewers avoid, ONLY when clearly present in the film (may be empty), chosen ONLY from: {Quoted(ClassificationVocabulary.ContentNotes)}
+- ""BasedOn"": exactly one of {Quoted(ClassificationVocabulary.BasedOn)}.
+- ""SettingEra"": when it's set, 1-3 words (e.g. ""1960s"", ""medieval"", ""near future""), or null.
+- ""SettingPlace"": where it's set, 1-3 words (e.g. ""Paris"", ""rural Japan"", ""space""), or null.
 
 Example output:
-{{""movies"": [{{""Ref"": ""m1"", ""Known"": ""yes"", ""Subcategories"": [""Cyberpunk"", ""AI & Robots""], ""Moods"": [""cerebral"", ""thrilling""], ""Themes"": [""simulated reality"", ""rebellion"", ""identity""], ""NarrativeStyle"": ""hero-journey"", ""Accessibility"": ""mainstream"", ""Intensity"": ""high"", ""CriticalAcclaimScore"": 8}}]}}
+{{""movies"": [{{""Ref"": ""m1"", ""Known"": ""yes"", ""Subcategories"": [""Cyberpunk"", ""AI & Robots""], ""Moods"": [""cerebral"", ""thrilling""], ""Themes"": [""simulated reality"", ""rebellion"", ""identity""], ""NarrativeStyle"": ""hero-journey"", ""Accessibility"": ""mainstream"", ""Intensity"": ""high"", ""CriticalAcclaimScore"": 8, ""CriticsScore"": 83, ""AudienceScore"": 85, ""ScoreSource"": ""Rotten Tomatoes"", ""ContentNotes"": [""graphic violence""], ""BasedOn"": ""original"", ""SettingEra"": ""2199"", ""SettingPlace"": ""simulated city""}}]}}
 
 Output ONLY the JSON object, no markdown. Include every input movie.
 Input:

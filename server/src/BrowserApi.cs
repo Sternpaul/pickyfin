@@ -115,6 +115,13 @@ public static class BrowserApi
         m.Checked,
         m.WebNotes,
         m.Verified,
+        m.CriticsScore,
+        m.AudienceScore,
+        m.ScoreSource,
+        ContentNotes = m.ContentNoteList,
+        m.BasedOn,
+        m.SettingEra,
+        m.SettingPlace,
     };
 
     private static int _lookupAllRunning;

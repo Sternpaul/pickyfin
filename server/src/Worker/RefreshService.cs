@@ -73,6 +73,7 @@ public sealed class RefreshService : BackgroundService
         Jobs.Ensure("sweep", "Looking up the whole library", turn);
         Jobs.Ensure("picks", "Rows for each person", turn);
         Jobs.Ensure("rescan", "Re-checking everything", turn);
+        await QueueOutdatedAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -258,6 +259,31 @@ public sealed class RefreshService : BackgroundService
             _logger.LogInformation("Removed user(s) deleted in Jellyfin: {Users}", string.Join(", ", gone.Select(u => u.Name)));
         }
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// After a new tag set (new moods, content notes, scores…), every film described with the old one
+    /// is queued to be described again with everything known, a few calls per round. Films you
+    /// edited or marked as checked are left alone.
+    /// </summary>
+    private async Task QueueOutdatedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var db = _database.Open();
+            var count = await db.Movies
+                .Where(m => m.IsClassified && !m.ManuallyEdited && !m.Verified && !m.RedoDescribe && m.VocabularyVersion > 0 && m.VocabularyVersion < Library.ClassificationVocabulary.Version)
+                .ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, true), cancellationToken);
+            if (count == 0) return;
+            var settings = ServerSettings.Current.Clone();
+            settings.RedoDescribeTotal = await db.Movies.CountAsync(m => m.RedoDescribe && !m.ManuallyEdited, cancellationToken);
+            ServerSettings.Save(settings);
+            _logger.LogInformation("New tag set: {Count} films queued to be described again, 160 per round", count);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("Couldn't queue films for the new tag set: {Error}", error.Message);
+        }
     }
 
     /// <summary>

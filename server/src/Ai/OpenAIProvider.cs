@@ -103,9 +103,17 @@ namespace Pickyfin.Server.Ai
                                             NarrativeStyle = new { type = "string", @enum = ClassificationVocabulary.NarrativeStyles },
                                             Accessibility = new { type = "string", @enum = ClassificationVocabulary.Accessibility },
                                             Intensity = new { type = "string", @enum = ClassificationVocabulary.Intensity },
-                                            CriticalAcclaimScore = new { type = "integer" }
+                                            CriticalAcclaimScore = new { type = "integer" },
+                                            CriticsScore = new { type = new[] { "integer", "null" } },
+                                            AudienceScore = new { type = new[] { "integer", "null" } },
+                                            ScoreSource = new { type = new[] { "string", "null" } },
+                                            ContentNotes = new { type = "array", items = new { type = "string", @enum = ClassificationVocabulary.ContentNotes } },
+                                            BasedOn = new { type = "string", @enum = ClassificationVocabulary.BasedOn },
+                                            SettingEra = new { type = new[] { "string", "null" } },
+                                            SettingPlace = new { type = new[] { "string", "null" } },
                                         },
-                                        required = new[] { "ItemId", "Subcategories", "Moods", "Themes", "NarrativeStyle", "Accessibility", "Intensity", "CriticalAcclaimScore" },
+                                        required = new[] { "ItemId", "Subcategories", "Moods", "Themes", "NarrativeStyle", "Accessibility", "Intensity", "CriticalAcclaimScore",
+                                            "CriticsScore", "AudienceScore", "ScoreSource", "ContentNotes", "BasedOn", "SettingEra", "SettingPlace" },
                                         additionalProperties = false
                                     }
                                 }

@@ -78,7 +78,7 @@ namespace Pickyfin.Server.Library
             RetryAt = null;
             // Re-tagging movies classified under an older vocabulary costs one AI call
             // per batch, so it only happens when the admin opts in.
-            var includeOutdated = ServerSettings.Current.ReclassifyOutdatedMovies;
+            var includeOutdated = ServerSettings.Current.ReclassifyOutdatedMovies && !onlyNew;
             var unclassified = await _movieStore.GetMoviesNeedingClassificationAsync(includeOutdated, cancellationToken, includeQueued: !onlyNew);
             if (!unclassified.Any())
             {
@@ -252,10 +252,31 @@ namespace Pickyfin.Server.Library
                     GetStringProperty(element, "Accessibility"),
                     GetStringProperty(element, "Intensity"),
                     GetIntProperty(element, "CriticalAcclaimScore"));
+                ApplyFacts(movie, element);
                 var knownRaw = (GetStringProperty(element, "Known") ?? "yes").Trim().ToLowerInvariant();
                 answered[movie] = knownRaw is "no" or "partly" ? knownRaw : "yes";
             }
             return answered;
+        }
+
+        /// <summary>Scores, content notes, basis and setting from the AI's answer (only values that make sense).</summary>
+        internal static void ApplyFacts(MovieMetadata movie, JsonElement element)
+        {
+            int? Score(string name) => TryGetPropertyIgnoreCase(element, name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n is >= 1 and <= 100 ? n : null;
+            string? Text(string name, int max) => TryGetPropertyIgnoreCase(element, name, out var v) && v.ValueKind == JsonValueKind.String
+                && v.GetString()?.Trim() is { Length: > 0 } t && !t.Equals("null", StringComparison.OrdinalIgnoreCase) && !t.Equals("unknown", StringComparison.OrdinalIgnoreCase)
+                ? (t.Length > max ? t[..max] : t) : null;
+            movie.CriticsScore = Score("CriticsScore");
+            movie.AudienceScore = Score("AudienceScore");
+            movie.ScoreSource = movie.CriticsScore is null && movie.AudienceScore is null ? null : Text("ScoreSource", 40);
+            var notes = new List<string>();
+            if (TryGetPropertyIgnoreCase(element, "ContentNotes", out var cn) && cn.ValueKind == JsonValueKind.Array)
+                foreach (var n in cn.EnumerateArray())
+                    if (n.ValueKind == JsonValueKind.String && ClassificationVocabulary.CanonicalContentNote(n.GetString()) is { } note && !notes.Contains(note)) notes.Add(note);
+            movie.ContentNotes = JsonSerializer.Serialize(notes);
+            movie.BasedOn = ClassificationVocabulary.CanonicalBasedOn(Text("BasedOn", 20));
+            movie.SettingEra = Text("SettingEra", 30);
+            movie.SettingPlace = Text("SettingPlace", 40);
         }
 
         internal static string ExtractJson(string text)
@@ -287,7 +308,7 @@ namespace Pickyfin.Server.Library
             return null;
         }
 
-        private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+        internal static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
         {
             if (element.ValueKind == JsonValueKind.Object)
             {

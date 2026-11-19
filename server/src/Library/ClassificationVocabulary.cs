@@ -14,7 +14,7 @@ namespace Pickyfin.Server.Library
     public static class ClassificationVocabulary
     {
         /// <summary>Bump when the vocabulary changes enough that old classifications should be redone.</summary>
-        public const int Version = 2;
+        public const int Version = 3;
 
         public static readonly IReadOnlyList<string> Subcategories = new[]
         {
@@ -37,13 +37,14 @@ namespace Pickyfin.Server.Library
             // Drama
             "Coming-of-Age", "Family Drama", "Romantic Drama", "Melodrama", "Period Drama",
             "Historical Epic", "Biopic", "Sports Drama", "Music Drama", "Social Drama",
-            "Character Study", "Medical Drama",
+            "Character Study", "Medical Drama", "Psychological Drama", "Political Drama",
             // Comedy
             "Romantic Comedy", "Dark Comedy", "Satire", "Parody", "Slapstick", "Buddy Comedy",
             "Teen Comedy", "Comedy of Manners", "Mockumentary",
             // Form / other
             "Musical", "Road Movie", "Animated Family", "Adult Animation", "Anime",
             "Documentary", "Arthouse", "Surreal", "Experimental", "Christmas",
+            "Mystery Thriller", "Absurdist", "Slow Cinema",
         };
 
         public static readonly IReadOnlyList<string> Moods = new[]
@@ -52,7 +53,26 @@ namespace Pickyfin.Server.Library
             "suspenseful", "cerebral", "contemplative", "melancholic", "emotional", "romantic",
             "heartwarming", "uplifting", "hopeful", "inspiring", "feel-good", "funny", "quirky",
             "whimsical", "playful", "nostalgic", "epic", "atmospheric", "dreamlike", "cozy",
+            "absurd", "paranoid", "claustrophobic", "bittersweet", "chilling",
         };
+
+        /// <summary>Things some viewers want to avoid; only tagged when clearly present.</summary>
+        public static readonly IReadOnlyList<string> ContentNotes = new[]
+        {
+            "gore", "graphic violence", "sexual violence", "sex and nudity", "animal harm",
+            "self-harm or suicide", "drug use", "child harm", "torture", "strong language",
+        };
+
+        /// <summary>What a film is based on.</summary>
+        public static readonly IReadOnlyList<string> BasedOn = new[]
+        {
+            "original", "novel", "short story", "play", "true story", "comic", "remake", "video game", "tv series", "other",
+        };
+
+        public static string? CanonicalContentNote(string? raw) =>
+            raw is null ? null : ContentNotes.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
+        public static string? CanonicalBasedOn(string? raw) =>
+            raw is null ? null : BasedOn.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
 
         public static readonly IReadOnlyList<string> NarrativeStyles = new[]
         {

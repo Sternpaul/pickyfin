@@ -231,7 +231,8 @@ public sealed class Curator
 
     private static bool IsAvoided(MovieMetadata movie, BriefProfile brief) =>
         movie.SubcategorySet.Items.Any(s => brief.AvoidSubcategories.Contains(s, StringComparer.OrdinalIgnoreCase))
-        || movie.MoodSet.Items.Any(s => brief.AvoidMoods.Contains(s, StringComparer.OrdinalIgnoreCase));
+        || movie.MoodSet.Items.Any(s => brief.AvoidMoods.Contains(s, StringComparer.OrdinalIgnoreCase))
+        || movie.ContentNoteList.Any(c => brief.AvoidContent.Contains(c, StringComparer.OrdinalIgnoreCase));
 
     /// <summary>How well a movie fits the brief, 0..1.</summary>
     internal static double BriefScore(MovieMetadata movie, BriefProfile brief)
@@ -250,7 +251,10 @@ public sealed class Curator
         var themeHits = movie.ThemeSet.Items.Count(t => brief.Themes.Any(b => t.Contains(b, StringComparison.OrdinalIgnoreCase) || b.Contains(t, StringComparison.OrdinalIgnoreCase)));
         var theme = Math.Min(1.0, themeHits / 2.0);
 
-        var keywordHits = movie.KeywordSet.Items.Count(k => brief.Keywords.Contains(k, StringComparer.OrdinalIgnoreCase));
+        // Keywords also match what it's based on and where and when it's set ("japan", "1970s", "true story")
+        var facts = $"{movie.BasedOn} {movie.SettingEra} {movie.SettingPlace} {movie.Countries}".ToLowerInvariant();
+        var keywordHits = movie.KeywordSet.Items.Count(k => brief.Keywords.Contains(k, StringComparer.OrdinalIgnoreCase))
+            + brief.Keywords.Count(k => k.Length > 2 && facts.Contains(k.ToLowerInvariant()));
         var keyword = Math.Min(1.0, keywordHits / 2.0);
 
         return subcategory * 0.5 + mood * 0.25 + theme * 0.15 + keyword * 0.10;

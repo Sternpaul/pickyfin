@@ -92,7 +92,14 @@ namespace Pickyfin.Server.Ai
                                         NarrativeStyle = new { type = "STRING", @enum = ClassificationVocabulary.NarrativeStyles },
                                         Accessibility = new { type = "STRING", @enum = ClassificationVocabulary.Accessibility },
                                         Intensity = new { type = "STRING", @enum = ClassificationVocabulary.Intensity },
-                                        CriticalAcclaimScore = new { type = "INTEGER" }
+                                        CriticalAcclaimScore = new { type = "INTEGER" },
+                                        CriticsScore = new { type = "INTEGER", nullable = true },
+                                        AudienceScore = new { type = "INTEGER", nullable = true },
+                                        ScoreSource = new { type = "STRING", nullable = true },
+                                        ContentNotes = new { type = "ARRAY", items = new { type = "STRING", @enum = ClassificationVocabulary.ContentNotes } },
+                                        BasedOn = new { type = "STRING", @enum = ClassificationVocabulary.BasedOn },
+                                        SettingEra = new { type = "STRING", nullable = true },
+                                        SettingPlace = new { type = "STRING", nullable = true },
                                     },
                                     required = new[] { "Ref", "Known", "Subcategories", "Moods", "Themes", "NarrativeStyle", "Accessibility", "Intensity", "CriticalAcclaimScore" }
                                 }

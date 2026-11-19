@@ -14,6 +14,8 @@ public sealed class BriefProfile
     public List<string> Keywords { get; set; } = new();
     public List<string> AvoidSubcategories { get; set; } = new();
     public List<string> AvoidMoods { get; set; } = new();
+    /// <summary>Content notes to leave out entirely ("nothing too gory" → gore).</summary>
+    public List<string> AvoidContent { get; set; } = new();
 
     public bool IsEmpty => Subcategories.Count == 0 && Moods.Count == 0 && Themes.Count == 0 && Keywords.Count == 0;
 
@@ -56,6 +58,8 @@ Return a JSON object with:
 - ""keywords"": up to 10 lowercase TMDB-style keywords (e.g. ""heist"", ""serial killer"", ""time travel"")
 - ""avoidSubcategories"": values from the same subcategory list they clearly dislike (may be empty)
 - ""avoidMoods"": values from the same mood list they clearly dislike (may be empty)
+- ""avoidContent"": content they don't want to see (may be empty), ONLY from: {Quoted(ClassificationVocabulary.ContentNotes)}
+Places, eras and sources they like (""films set in Japan"", ""1970s"", ""based on true stories"") go into ""keywords"" as short lowercase words (""japan"", ""1970s"", ""true story"").
 
 Output ONLY the JSON object.";
 
@@ -74,6 +78,7 @@ Output ONLY the JSON object.";
             Keywords = Strings(root, "keywords").Select(t => t.ToLowerInvariant()).Distinct().ToList(),
             AvoidSubcategories = Canonical(Strings(root, "avoidSubcategories"), ClassificationVocabulary.CanonicalSubcategory),
             AvoidMoods = Canonical(Strings(root, "avoidMoods"), ClassificationVocabulary.CanonicalMood),
+            AvoidContent = Canonical(Strings(root, "avoidContent"), ClassificationVocabulary.CanonicalContentNote),
         };
         _logger.LogInformation("Brief understood as: {Subcategories} / moods {Moods}", string.Join(", ", profile.Subcategories), string.Join(", ", profile.Moods));
         return profile;

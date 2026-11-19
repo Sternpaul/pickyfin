@@ -1145,7 +1145,9 @@ async function openMovie(id) {
         ${d.Director ? `<div>Directed by <b>${esc(d.Director)}</b></div>` : ''}
         ${d.Cast ? `<div>With <b>${esc(d.Cast)}</b></div>` : ''}
         ${m.Libraries.filter(l => l !== '?').length ? `<div>In <b>${esc(m.Libraries.filter(l => l !== '?').join(', '))}</b>${m.Excluded ? ' (switched off)' : ''}</div>` : ''}
-        <div>Rated <b>${m.Acclaim || '–'}</b> of 10${d.CommunityRating ? ` · audience ${d.CommunityRating.toFixed(1)}` : ''}${d.CriticRating ? ` · critics ${Math.round(d.CriticRating)}%` : ''}</div>
+        <div>Rated <b>${m.Acclaim || '–'}</b> of 10${d.CriticsScore != null ? ` · critics <b>${d.CriticsScore}%</b>` : d.CriticRating ? ` · critics ${Math.round(d.CriticRating)}%` : ''}${d.AudienceScore != null ? ` · audience <b>${d.AudienceScore}%</b>` : d.CommunityRating ? ` · audience ${d.CommunityRating.toFixed(1)}` : ''}${d.ScoreSource ? ` <span class="note">(${esc(d.ScoreSource)})</span>` : ''}</div>
+        ${d.BasedOn || d.SettingEra || d.SettingPlace ? `<div>${d.BasedOn && d.BasedOn !== 'original' ? `Based on a <b>${esc(d.BasedOn)}</b>` : d.BasedOn === 'original' ? '<b>Original</b> story' : ''}${(d.SettingEra || d.SettingPlace) ? `${d.BasedOn ? ' · ' : ''}Set in <b>${esc([d.SettingEra, d.SettingPlace].filter(Boolean).join(', '))}</b>` : ''}</div>` : ''}
+        ${d.ContentNotes?.length ? `<div>Content <b>${esc(d.ContentNotes.join(', '))}</b></div>` : ''}
         ${d.Plot ? `<p class="plot">${esc(d.Plot)}</p>` : ''}
       </div>
     </div>

@@ -69,7 +69,12 @@ public static class BecauseRow
             var gap = Math.Abs(a - b);
             era = gap <= 5 ? 0.05 : gap <= 12 ? 0.03 : gap > 30 ? -0.03 : 0;
         }
-        return people * st.People / 50.0 + sameCountry * st.Country / 50.0 + era * st.Era / 50.0;
+        // Set in the same place or period, or from the same kind of source (a novel, a true story): a small push
+        static bool Same(string? a, string? b) => !string.IsNullOrWhiteSpace(a) && string.Equals(a.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
+        var samePlace = Same(seed.SettingPlace, m.SettingPlace) ? 0.04 : 0;
+        var sameEra = Same(seed.SettingEra, m.SettingEra) ? 0.03 : 0;
+        var basis = seed.BasedOn is { } source && source != "original" && Same(source, m.BasedOn) ? 0.03 : 0;
+        return people * st.People / 50.0 + (sameCountry + samePlace) * st.Country / 50.0 + (era + sameEra) * st.Era / 50.0 + basis;
     }
 
     /// <summary>Why a film is in the row, for the log: "same people: …", "French" or null (tags).</summary>

@@ -38,6 +38,19 @@ namespace Pickyfin.Server.Data.Models
         public DateTime? Rescanned { get; set; }
         /// <summary>Queued to be described again (step 1 run again for the whole library).</summary>
         public bool RedoDescribe { get; set; }
+        /// <summary>Critics' score 0–100 from the web (Rotten Tomatoes Tomatometer, else Metacritic), when the text has one.</summary>
+        public int? CriticsScore { get; set; }
+        /// <summary>Audience score 0–100 from the web (Rotten Tomatoes Popcornmeter, else IMDb × 10).</summary>
+        public int? AudienceScore { get; set; }
+        public string? ScoreSource { get; set; }
+        /// <summary>JSON array of content notes (gore, animal harm, …), only when clearly present.</summary>
+        public string? ContentNotes { get; set; }
+        /// <summary>original, novel, true story, remake, …</summary>
+        public string? BasedOn { get; set; }
+        /// <summary>When and where it's set, a few words each ("1960s", "Paris").</summary>
+        public string? SettingEra { get; set; }
+        public string? SettingPlace { get; set; }
+        [NotMapped] public List<string> ContentNoteList => string.IsNullOrEmpty(ContentNotes) ? new() : JsonSerializer.Deserialize<List<string>>(ContentNotes) ?? new();
         /// <summary>Set while a film is being re-checked: the prompt asks to change only clear mistakes.</summary>
         [NotMapped] public bool Recheck { get; set; }
 
@@ -90,8 +103,8 @@ namespace Pickyfin.Server.Data.Models
         {
             get
             {
-                var community = CommunityRating is > 0 and <= 10 ? CommunityRating : null;
-                var critic = CriticRating is > 0 and <= 100 ? CriticRating / 10.0 : null;
+                var community = AudienceScore is > 0 and <= 100 ? AudienceScore / 10.0 : CommunityRating is > 0 and <= 10 ? CommunityRating : null;
+                var critic = CriticsScore is > 0 and <= 100 ? CriticsScore / 10.0 : CriticRating is > 0 and <= 100 ? CriticRating / 10.0 : null;
                 if (community.HasValue && critic.HasValue) return (community.Value + critic.Value) / 2.0;
                 if (community.HasValue) return community.Value;
                 if (critic.HasValue) return critic.Value;

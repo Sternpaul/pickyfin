@@ -57,6 +57,8 @@ Tags can be wrong, especially for lesser-known films. Every film goes through th
 
 With OpenRouter, each step has a model order: tried from the top, three tries per model, then the next. By default steps 1 and 2 follow the most used free models on OpenRouter this week, and step 3 uses the same order as step 1. Any order can be changed on the AI page.
 
+Besides subcategories, moods and themes, each film gets facts the web text makes reliable: critics' and audience scores (Rotten Tomatoes, Metacritic, IMDb) instead of the AI's guess, content notes (gore, animal harm, …) that a description like "nothing too gory" can rule out, what it's based on (a novel, a true story, …) and when and where it's set. They're used in picks and in "Because You Watched". When the tag set changes, films are described again by themselves, a few at a time.
+
 What looks wrong goes to the **Issues** page.
 
 Every movie shows how far its tags can be trusted: checked by you, looked up on the web, second opinion agrees, or AI only. The Movies page can filter by that, and any movie can be marked as checked.
