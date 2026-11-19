@@ -28,6 +28,8 @@ public sealed class Curator
 {
     public const string RecommendedName = "Recommended for you";
     public const string BecausePrefix = "Because You Watched ";
+    /// <summary>The TV app shows this playlist as its own row after the recommendations.</summary>
+    public const string WatchlistName = "Letterboxd Watchlist";
     public static readonly string[] Slots = { "recommended", "because-1", "because-2" };
 
     private readonly JellyfinClient _jellyfin;

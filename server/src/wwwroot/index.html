@@ -161,6 +161,7 @@
   .engine .e-fields input[type=password] { width: 220px; }
   .engine .e-fields input[type=number] { width: 90px; }
   .engine .e-fields select { width: auto; }
+  .row-edit.readonly .add-btn, .row-edit.readonly .tile-tools, .row-edit.readonly .picker { display: none; }
   .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
   .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .job .dot { align-self: center; }
@@ -1469,8 +1470,9 @@ function rowsEditor(d, userId) {
     box.innerHTML = `<p class="note" style="margin-top:0">These are the rows on the TV. Take out what doesn't fit, add what you want them to see. Movies you add stay at the front until watched; the AI fills the rest. Movies you take out are never recommended to this person again.</p>`
       + rows.map((r, ri) => {
         const mine = r.Movies.filter(m => m.Added).length;
-        return `<div class="row-edit" data-r="${ri}">
-          <div class="head"><div class="row-name">${esc(r.Name)}</div><span class="note">${r.Movies.length} movies${mine ? ` · ${mine} added by you` : ''}</span><button class="btn add-btn">Add a movie</button></div>
+        const readonly = r.Slot === 'watchlist';
+        return `<div class="row-edit${readonly ? ' readonly' : ''}" data-r="${ri}">
+          <div class="head"><div class="row-name">${esc(r.Name)}</div><span class="note">${r.Movies.length} movies${readonly ? ' · follows their Letterboxd watchlist, newest first' : mine ? ` · ${mine} added by you` : ''}</span><button class="btn add-btn">Add a movie</button></div>
           <div class="picker hidden"><input type="search" placeholder="Search by title, year, director or actor" autocomplete="off" spellcheck="false"><div class="results"></div></div>
           <div class="strip">${r.Movies.map((m, mi) => `<div class="tile" data-m="${mi}">
             ${poster(m.Id, m.Title, m.Added ? '<div class="flag">Added by you</div>' : '')}

@@ -260,6 +260,23 @@ public sealed class RefreshService : BackgroundService
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// The person's Letterboxd watchlist as its own row: films in the library, most recently added
+    /// to the watchlist first, without the ones already watched (on Letterboxd; the TV app also
+    /// hides films played in Jellyfin). Null when Letterboxd is off or nothing matches.
+    /// </summary>
+    private async Task<PickRow?> WatchlistRowAsync(UserProfile user, CancellationToken cancellationToken)
+    {
+        if (!user.UseLetterboxd) return null;
+        await using var db = _database.Open();
+        var films = await db.Letterboxd.AsNoTracking().Where(f => f.UserId == user.UserId).ToListAsync(cancellationToken);
+        var watched = films.Where(f => f.Kind == "watched" && f.ItemId is not null).Select(f => f.ItemId!.Value).ToHashSet();
+        var ids = films.Where(f => f.Kind == "watchlist" && f.ItemId is { } id && !watched.Contains(id))
+            .OrderByDescending(f => f.Date ?? DateTime.MinValue)
+            .Select(f => f.ItemId!.Value).Distinct().Take(200).ToList();
+        return ids.Count == 0 ? null : new PickRow("watchlist", Curator.WatchlistName, ids);
+    }
+
     private async Task RefreshIfDueAsync(UserProfile user, CancellationToken cancellationToken)
     {
         // Letterboxd: feed and links twice a day; new films mean fresh picks
@@ -294,7 +311,9 @@ public sealed class RefreshService : BackgroundService
         }
 
         var result = await _curator.CurateAsync(user, profile, cancellationToken);
-        await _writer.WriteAsync(user.UserId, result.Rows, cancellationToken);
+        var rows = result.Rows.ToList();
+        if (await WatchlistRowAsync(user, cancellationToken) is { } watchlist) rows.Add(watchlist);
+        await _writer.WriteAsync(user.UserId, rows, cancellationToken);
 
         await UpdateAsync(user.UserId, u =>
         {

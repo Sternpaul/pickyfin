@@ -33,6 +33,10 @@ object RecommendationRows {
 	private const val MAX_ROWS = 3
 	private const val ITEMS_PER_ROW = 30
 
+	/** The person's Letterboxd watchlist (films in the library, newest first), after the recommendation rows. */
+	private const val WATCHLIST_NAME = "Letterboxd Watchlist"
+	private const val WATCHLIST_ITEMS = 100
+
 	suspend fun load(context: Context, api: ApiClient): List<HomeFragmentRow> = try {
 		val playlists = api.itemsApi.getItems(
 			GetItemsRequest(
@@ -52,7 +56,8 @@ object RecommendationRows {
 	private fun pick(playlists: List<BaseItemDto>): List<BaseItemDto> = rowOrder
 		.flatMap { matches -> playlists.filter { playlist -> playlist.name?.let(matches) == true } }
 		.distinctBy { it.id }
-		.take(MAX_ROWS)
+		.take(MAX_ROWS) +
+		playlists.filter { it.name.equals(WATCHLIST_NAME, ignoreCase = true) }.take(1)
 
 	private fun row(context: Context, playlist: BaseItemDto): HomeFragmentRow {
 		val title = when {
@@ -67,7 +72,7 @@ object RecommendationRows {
 			// Something the user has finished drops out at once, without waiting
 			// for the plugin's next refresh
 			isPlayed = false,
-			limit = ITEMS_PER_ROW,
+			limit = if (playlist.name.equals(WATCHLIST_NAME, ignoreCase = true)) WATCHLIST_ITEMS else ITEMS_PER_ROW,
 			enableTotalRecordCount = false,
 		)
 

@@ -460,7 +460,7 @@ public static class BrowserApi
                         .OrderByDescending(f => f.ItemId is not null).ThenBy(f => f.Title).Select(Film),
                 },
                 BriefTags = BriefProfile.FromJson(user.BriefProfile),
-                Rows = playlists.OrderBy(p => Array.IndexOf(Curator.Slots, p.Slot)).Select(p =>
+                Rows = playlists.OrderBy(p => Array.IndexOf(Curator.Slots, p.Slot) is var i && i < 0 ? 99 : i).Select(p =>
                 {
                     var added = Ids.Parse(pins.FirstOrDefault(x => x.Slot == p.Slot)?.Items).ToHashSet();
                     return new
