@@ -539,6 +539,10 @@
           <div class="control"><ol class="engines" id="engines"></ol></div>
         </div>
         <div class="setting">
+          <div><h3>Wikipedia</h3><p class="why">The film's Wikipedia article (summary, plot, reception) added to every lookup, free and without a key. While it's on, the engines above are told to leave Wikipedia out, so their pages are other sources. <span id="wiki-usage"></span></p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="WikipediaOn"><span></span></label></div>
+        </div>
+        <div class="setting">
           <div><h3>Engines per lookup</h3><p class="why">How many engines answer each lookup. More engines, more pages for the AI to judge by; each one counts against its own allowance.</p></div>
           <div class="control"><div><div class="seg" id="SearchPerLookup"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button></div></div></div>
         </div>
@@ -1258,7 +1262,13 @@ function renderEngines() {
   const box = $('#engines'); if (!box) return;
   const usage = Object.fromEntries((sweepInfo?.Web?.Engines || []).map(u => [u.Id, u]));
   const per = { day: 'a day', month: 'a month' };
-  box.innerHTML = engines.map((e, i) => {
+  const wikiEngine = engines.find(e => e.Id === 'wikipedia');
+  if ($('#WikipediaOn')) {
+    $('#WikipediaOn').checked = !!wikiEngine?.On;
+    $('#WikipediaOn').onchange = ev => { if (wikiEngine) wikiEngine.On = ev.target.checked; wikipediaAlways = true; };
+    const wu = usage.wikipedia; $('#wiki-usage').textContent = wu ? `${wu.Used.toLocaleString()} articles looked up this month.` : '';
+  }
+  box.innerHTML = engines.map((e, i) => e.Id === 'wikipedia' ? '' : (() => {
     const u = usage[e.Id];
     const paid = !e.Free;
     const useText = !u ? '' : `${u.Used.toLocaleString()}${e.Allowance ? ` of ${e.Allowance.toLocaleString()}` : ''} search${u.Used === 1 && !e.Allowance ? '' : 'es'} ${e.Period === 'day' ? 'today' : 'this month'}`
@@ -1270,20 +1280,25 @@ function renderEngines() {
     const budget = paid && e.Id !== 'wikipedia' ? `<div><label class="field-label">Monthly limit (0 = none)</label><div class="prefixed" style="max-width:120px"><span>$</span><input type="number" min="0" step="1" data-f="Budget" value="${e.Budget}"></div></div>` : '';
     const mode = e.Id === 'parallel' && e.HasKey ? `<div><label class="field-label">Search quality</label><div class="seg" id="ParallelMode"><button type="button" data-v="advanced">Advanced · $0.005</button><button type="button" data-v="fast">Fast · $0.001</button></div></div>` : '';
     return `<li class="engine${e.On ? '' : ' off'}" data-i="${i}">
-      <span class="pos">${i + 1}</span>
+      <span class="pos">${engines.slice(0, i + 1).filter(x => x.Id !== 'wikipedia').length}</span>
       <div><div class="e-name">${esc(e.Name)}</div><div class="e-note">${esc(e.Note)}</div>${useText ? `<div class="e-use${u?.Unavailable && u.Unavailable !== 'off' ? ' bad' : ''}">${esc(useText)}</div>` : ''}</div>
       <div class="e-top"><label class="switch" title="On or off"><input type="checkbox" data-on ${e.On ? 'checked' : ''}><span></span></label>
-        <button type="button" class="btn quiet" data-up ${i === 0 ? 'disabled' : ''} title="Try earlier">↑</button><button type="button" class="btn quiet" data-down ${i === engines.length - 1 ? 'disabled' : ''} title="Try later">↓</button></div>
+        <button type="button" class="btn quiet" data-up ${engines.slice(0, i).every(x => x.Id === 'wikipedia') ? 'disabled' : ''} title="Try earlier">↑</button><button type="button" class="btn quiet" data-down ${engines.slice(i + 1).every(x => x.Id === 'wikipedia') ? 'disabled' : ''} title="Try later">↓</button></div>
       <div class="e-fields">${keyField}${allowance}${budget}${mode}</div>
     </li>`;
-  }).join('');
+  })()).join('');
   if ($('#ParallelMode')) seg($('#ParallelMode'), settings?.ParallelMode || 'advanced');
   $$('.engine', box).forEach(li => {
     const e = engines[Number(li.dataset.i)];
     $('[data-on]', li).onchange = ev => { e.On = ev.target.checked; li.classList.toggle('off', !e.On); };
     $$('[data-f]', li).forEach(inp => inp.onchange = () => { e[inp.dataset.f] = inp.dataset.f === 'Period' ? inp.value : Number(inp.value) || 0; });
     const always = $('[data-always]', li); if (always) always.onchange = () => { wikipediaAlways = always.checked; };
-    const move = d => { const i = Number(li.dataset.i); const [m] = engines.splice(i, 1); engines.splice(i + d, 0, m); renderEngines(); autoSave('lookup-form'); };
+    const move = d => {
+      const i = Number(li.dataset.i);
+      let j = i + d; while (engines[j]?.Id === 'wikipedia') j += d;
+      if (j < 0 || j >= engines.length) return;
+      const [m] = engines.splice(i, 1); engines.splice(j, 0, m); renderEngines(); autoSave('lookup-form');
+    };
     $('[data-up]', li).onclick = () => move(-1);
     $('[data-down]', li).onclick = () => move(1);
   });

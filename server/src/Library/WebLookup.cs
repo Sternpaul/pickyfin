@@ -142,7 +142,11 @@ public sealed class WebLookup
 
     /// <summary>The engines in order that can take a search now (Wikipedia aside when it's added to every lookup).</summary>
     private List<SearchEngineSetting> Queue(ServerSettings s) =>
-        SearchEngines.For(s).Where(e => Unavailable(e) is null && !(e.Id == "wikipedia" && s.WikipediaAlways)).ToList();
+        SearchEngines.For(s).Where(e => e.Id != "wikipedia" && Unavailable(e) is null).ToList();
+
+    /// <summary>Wikipedia's article comes with every lookup when it's on, so the other engines leave Wikipedia out.</summary>
+    public bool WikipediaOn => SearchEngines.For(ServerSettings.Current).FirstOrDefault(e => e.Id == "wikipedia") is { } w && Unavailable(w) is null;
+    private static bool IsWikipedia(string url) => url.Contains("wikipedia.org", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Why a lookup can't run now, or null when at least one engine can.</summary>
     public string? Blocked()
@@ -150,7 +154,7 @@ public sealed class WebLookup
         var s = ServerSettings.Current;
         if (!Configured) return "No web search set up (AI page).";
         if (Queue(s).Count > 0) return null;
-        if (s.WikipediaAlways && SearchEngines.For(s).Any(e => e.Id == "wikipedia" && Unavailable(e) is null)) return null;
+        if (WikipediaOn) return null;
         return "Every search engine has used its allowance or monthly limit.";
     }
 
@@ -184,8 +188,8 @@ public sealed class WebLookup
         };
 
         // Wikipedia alongside, when it's added to every lookup
-        var wiki = s.WikipediaAlways && SearchEngines.For(s).FirstOrDefault(e => e.Id == "wikipedia") is { } w && Unavailable(w) is null
-            ? Start("wikipedia") : null;
+        var skipWiki = WikipediaOn;
+        var wiki = skipWiki ? Start("wikipedia") : null;
 
         var want = PerLookup(s);
         var queue = Queue(s);
@@ -207,8 +211,12 @@ public sealed class WebLookup
                     errors.Add($"{Name(id)}: {error}");
                     _logger.LogWarning("Web lookup: {Engine} failed for {Title}: {Error}", Name(id), movie.Title, error);
                 }
-                else if (task.Result.Count == 0) _logger.LogInformation("Web lookup: {Engine} found nothing for {Title}", Name(id), movie.Title);
-                else answers.Add((id, task.Result));
+                else
+                {
+                    var pages = skipWiki ? task.Result.Where(r => !IsWikipedia(r.Url)).ToList() : task.Result;
+                    if (pages.Count == 0) _logger.LogInformation("Web lookup: {Engine} found nothing for {Title}", Name(id), movie.Title);
+                    else answers.Add((id, pages));
+                }
             }
         }
         if (wiki is not null)
@@ -252,6 +260,7 @@ public sealed class WebLookup
         {
             q = $"What is the {movie.ReleaseYear} film {movie.Title}{(string.IsNullOrWhiteSpace(movie.Director) ? "" : $" by {movie.Director}")} about: plot, genre, tone, mood, themes and critical reception?",
             depth = "standard", outputType = "searchResults", maxResults = 5,
+            excludeDomains = WikipediaOn ? new[] { "wikipedia.org" } : Array.Empty<string>(),
         });
         using var response = await client.SendAsync(request, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -275,6 +284,7 @@ public sealed class WebLookup
         {
             query = $"{movie.Title} {movie.ReleaseYear} film{(string.IsNullOrWhiteSpace(movie.Director) ? "" : $" {movie.Director}")} plot genre tone themes review",
             search_depth = "basic", chunks_per_source = 3, max_results = 5, include_answer = false,
+            exclude_domains = WikipediaOn ? new[] { "wikipedia.org" } : Array.Empty<string>(),
         });
         using var response = await client.SendAsync(request, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -368,7 +378,8 @@ public sealed class WebLookup
         var original = string.IsNullOrWhiteSpace(movie.OriginalTitle) ? "" : $" (original title {movie.OriginalTitle})";
         var arguments = new
         {
-            objective = $"What the {movie.ReleaseYear} film {movie.Title}{original}{who} is about: plot, genre, tone, mood, themes, style and critical reception. Prefer Wikipedia, Letterboxd, TMDB, IMDb, Rotten Tomatoes and film reviews.",
+            objective = $"What the {movie.ReleaseYear} film {movie.Title}{original}{who} is about: plot, genre, tone, mood, themes, style and critical reception. "
+                + (WikipediaOn ? "Prefer Letterboxd, TMDB, IMDb, Rotten Tomatoes and film reviews; not Wikipedia." : "Prefer Wikipedia, Letterboxd, TMDB, IMDb, Rotten Tomatoes and film reviews."),
             search_queries = new[] { $"{movie.Title} {movie.ReleaseYear} film", $"{movie.Title} {movie.ReleaseYear} review" }
                 .Concat(string.IsNullOrWhiteSpace(movie.OriginalTitle) ? Array.Empty<string>() : new[] { $"{movie.OriginalTitle} {movie.ReleaseYear}" }).ToArray(),
         };
@@ -455,7 +466,10 @@ public sealed class WebLookup
         {
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ServerSettings.Current.ParallelApiKey);
             // A key allows choosing the search mode (the server's default is fast)
-            request.Headers.Add("x-parallel-mcp-config", JsonSerializer.Serialize(new { web_search = new { @override = new { mode = ParallelModeInUse } } }));
+            object over = WikipediaOn
+                ? new { mode = ParallelModeInUse, advanced_settings = new { source_policy = new { exclude_domains = new[] { "wikipedia.org" } } } }
+                : new { mode = ParallelModeInUse };
+            request.Headers.Add("x-parallel-mcp-config", JsonSerializer.Serialize(new { web_search = new { @override = over } }));
         }
         using var response = await client.SendAsync(request, cancellationToken);
         if (initializing && response.Headers.TryGetValues("Mcp-Session-Id", out var ids)) _mcpSession = ids.FirstOrDefault();
@@ -470,12 +484,14 @@ public sealed class WebLookup
 
     private async Task<List<(string Title, string Url, string Text)>> ExaAsync(string query, CancellationToken cancellationToken)
     {
-        var found = await SearchAsync(query, FilmSites, cancellationToken);
-        if (found.Count == 0) found = await SearchAsync(query, null, cancellationToken);
+        var skipWiki = WikipediaOn;
+        var sites = skipWiki ? FilmSites.Where(f => !IsWikipedia(f)).ToArray() : FilmSites;
+        var found = await SearchAsync(query, sites, cancellationToken);
+        if (found.Count == 0) found = await SearchAsync(query, null, cancellationToken, skipWiki ? new[] { "wikipedia.org" } : null);
         return found;
     }
 
-    private async Task<List<(string Title, string Url, string Text)>> SearchAsync(string query, string[]? sites, CancellationToken cancellationToken)
+    private async Task<List<(string Title, string Url, string Text)>> SearchAsync(string query, string[]? sites, CancellationToken cancellationToken, string[]? exclude = null)
     {
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(60);
@@ -487,6 +503,7 @@ public sealed class WebLookup
             ["type"] = "auto",
             ["numResults"] = 3,
             ["includeDomains"] = sites,
+            ["excludeDomains"] = exclude,
             // Only the passages that say what the film is like, not the whole page
             ["contents"] = new { highlights = new { query = "What is this film about: plot, genre, tone, mood, themes, style and critical reception", maxCharacters = 1200 } },
         }.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value));
