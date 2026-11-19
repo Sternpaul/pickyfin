@@ -39,7 +39,7 @@ public sealed class WebSweep
         const string key = "sweep", title = "Looking up the whole library";
         var s = ServerSettings.Current;
         if (s.WebLookupsPerDay <= 0 || string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(key, title, "Off"); return; }
-        if (_web.Blocked() is { } why) { Jobs.Idle(key, title, WebLookup.Configured ? "Paused: monthly Exa limit reached" : "Off: no Exa key", null, WebLookup.Configured); return; }
+        if (_web.Blocked() is { } why) { Jobs.Idle(key, title, WebLookup.Configured ? "Paused: monthly limit reached" : "Off: no Exa key", null, WebLookup.Configured); return; }
         var left = s.WebLookupsPerDay - (_web.ThisMonth.Today - Rescan.LookupsToday);
         var midnight = DateTime.Today.AddDays(1).ToUniversalTime();
         if (left <= 0) { Jobs.Idle(key, title, $"Today's {s.WebLookupsPerDay} done", midnight); return; }

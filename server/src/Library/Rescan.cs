@@ -102,7 +102,7 @@ public sealed class Rescan
         if (lookUp && _web.Blocked() is { } why)
         {
             var firstOfNextMonth = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
-            Jobs.Idle(Key, Title, "Paused: monthly Exa limit reached", firstOfNextMonth, error: true);
+            Jobs.Idle(Key, Title, "Paused: monthly limit reached", firstOfNextMonth, error: true);
             return;
         }
 

@@ -70,6 +70,10 @@ public sealed class ServerSettings
         : new[] { single }.Concat(DefaultFreeModels).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     /// <summary>Exa web search: finds facts about films the AI doesn't know, then they're tagged again.</summary>
     public string ExaApiKey { get; set; } = "";
+    /// <summary>Which web search step 3 uses: "exa" or "parallel" (Parallel's MCP server, free without a key).</summary>
+    public string WebSearchProvider { get; set; } = "exa";
+    /// <summary>Optional: higher rate limits on Parallel, billed to the Parallel account ($5 free a month with a card on file).</summary>
+    public string ParallelApiKey { get; set; } = "";
     public bool WebLookupAuto { get; set; } = true;
     /// <summary>Exa spending stops for the month at this many dollars.</summary>
     public double WebLookupBudget { get; set; } = 9;

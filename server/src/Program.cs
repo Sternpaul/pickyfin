@@ -201,7 +201,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
             Tip("describe", "Described with")),
         Row("second", "2 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified, tip: Tip("check", "Checked with")),
         Row(lookupKey, "3 · Look up", WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto || lookupAll is { Running: true }),
-            WebLookup.Configured ? "Off" : "Off: no Exa key", lookedUp, classified, tip: Tip("lookup", "Described again from the web with")),
+            WebLookup.Configured ? "Off" : "Off: no web search set up", lookedUp, classified, tip: Tip("lookup", "Described again from the web with")),
         Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
     };
 
@@ -352,7 +352,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A library switched back on may have movies that were never classified
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
-        || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey);
+        || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.WebSearchProvider != settings.WebSearchProvider);
     return Results.Ok(SettingsView.From(settings));
 });
 
@@ -502,6 +502,9 @@ record SettingsView
     public int RescanMonths { get; init; }
     public bool HasExaApiKey { get; init; }
     public string? ExaApiKey { get; init; }
+    public string WebSearchProvider { get; init; } = "exa";
+    public bool HasParallelApiKey { get; init; }
+    public string? ParallelApiKey { get; init; }
     public bool WebLookupAuto { get; init; }
     public double WebLookupBudget { get; init; }
     public int WebLookupsPerDay { get; init; }
@@ -540,6 +543,8 @@ record SettingsView
         LookupModelsAuto = s.LookupModelsAuto,
         RescanMonths = s.RescanMonths,
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
+        WebSearchProvider = s.WebSearchProvider,
+        HasParallelApiKey = !string.IsNullOrWhiteSpace(s.ParallelApiKey),
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
         WebLookupsPerDay = s.WebLookupsPerDay,
@@ -560,6 +565,8 @@ record SettingsView
         s.CustomEndpoint = CustomEndpoint.Trim();
         if (!string.IsNullOrWhiteSpace(TmdbApiKey)) s.TmdbApiKey = TmdbApiKey.Trim();
         if (!string.IsNullOrWhiteSpace(ExaApiKey)) s.ExaApiKey = ExaApiKey.Trim();
+        s.WebSearchProvider = WebSearchProvider == "parallel" ? "parallel" : "exa";
+        if (!string.IsNullOrWhiteSpace(ParallelApiKey)) s.ParallelApiKey = ParallelApiKey.Trim();
         s.CheckEnabled = CheckEnabled;
         if (!string.IsNullOrWhiteSpace(CheckModel)) s.CheckModel = CheckModel.Trim();
         static List<string> Clean(List<string> list) => list.Select(m => m.Trim()).Where(m => m.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();

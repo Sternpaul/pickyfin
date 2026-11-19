@@ -464,7 +464,7 @@
     <section data-page="ai" class="hidden">
       <div class="page-head"><div>
         <h1>AI</h1>
-        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (Exa finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Optionally, <b>4 · Re-check</b> runs step 3 again on every film now and then. Status shows how far each step is. Changes on this page save on their own.</p>
+        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (a web search finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Optionally, <b>4 · Re-check</b> runs step 3 again on every film now and then. Status shows how far each step is. Changes on this page save on their own.</p>
       </div></div>
       <form id="ai-form" class="settings">
         <div class="setting">
@@ -519,8 +519,16 @@
       <h2 class="group-title">3 · Look up on the web</h2>
       <form id="lookup-form" class="settings">
         <div class="setting">
-          <div><h3>Exa key <span class="state" id="exa-state"></span></h3><p class="why">Exa is a search engine. For each film it finds real text (Wikipedia, Letterboxd, TMDB…), and an AI describes the film again from that text together with both earlier opinions. Under one cent per film. A key comes from dashboard.exa.ai.</p></div>
+          <div><h3>Web search</h3><p class="why">Finds real text about each film (Wikipedia, Letterboxd, reviews…); an AI then describes the film again from that text together with both earlier opinions. <b>Parallel</b> is free without a key, at lower rate limits. <b>Exa</b> needs a key and costs under one cent per film.</p></div>
+          <div class="control"><div><div class="seg" id="WebSearchProvider"><button type="button" data-v="parallel">Parallel</button><button type="button" data-v="exa">Exa</button></div></div></div>
+        </div>
+        <div class="setting" id="exa-row">
+          <div><h3>Exa key <span class="state" id="exa-state"></span></h3><p class="why">From dashboard.exa.ai. The free plan includes $10 a month.</p></div>
           <div class="control"><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
+        </div>
+        <div class="setting" id="parallel-row">
+          <div><h3>Parallel key <span class="state" id="parallel-state"></span> <span class="note">optional</span></h3><p class="why">Without a key, lookups are free but rate-limited. A key from platform.parallel.ai raises the limits; then each lookup costs $0.001, and accounts with a card on file get $5 free a month. The monthly limit below then applies.</p></div>
+          <div class="control"><input type="password" id="ParallelApiKey" placeholder="Paste a key (optional)" autocomplete="off"></div>
         </div>
         <div class="setting">
           <div><h3>Look up flagged films right away</h3><p class="why">When the AI doesn't know a film, or something looks off, look it up and describe it again at once. Each film is looked up once.</p></div>
@@ -841,6 +849,8 @@ async function loadSettings() {
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
   $('#CheckEnabled').checked = settings.CheckEnabled; $('#CheckModel').value = settings.CheckModel || '';
   $('#ExaApiKey').value = ''; $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
+  $('#ParallelApiKey').value = ''; $('#parallel-state').innerHTML = settings.HasParallelApiKey ? stateText(true) : '';
+  seg($('#WebSearchProvider'), settings.WebSearchProvider || 'exa', showSearchRows); showSearchRows(settings.WebSearchProvider || 'exa');
   $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
   $('#WebLookupsPerDay').value = settings.WebLookupsPerDay;
 }
@@ -874,7 +884,7 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
@@ -888,7 +898,8 @@ const formValues = {
     CheckEnabled: $('#CheckEnabled').checked,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }),
   'lookup-form': () => ({
-    ExaApiKey: $('#ExaApiKey').value, WebLookupAuto: $('#WebLookupAuto').checked,
+    ExaApiKey: $('#ExaApiKey').value, ParallelApiKey: $('#ParallelApiKey').value, WebSearchProvider: segValue($('#WebSearchProvider')),
+    WebLookupAuto: $('#WebLookupAuto').checked,
     WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
@@ -910,11 +921,12 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'ExaApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    for (const k of ['ApiKey', 'ExaApiKey', 'ParallelApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
     $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
+    $('#parallel-state').innerHTML = settings.HasParallelApiKey ? stateText(true) : '';
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
   } catch (err) { note.className = 'note err'; note.textContent = `Not saved: ${err.message}`; }
   finally { savesInFlight--; }
@@ -991,7 +1003,7 @@ async function loadHistory(id) {
           <div class="h-meta">${when(h.At)}${h.Model ? ' · ' + esc(h.Model) : ''}</div>
           ${text ? `<div class="h-text">${esc(text)}</div>` : ''}
           ${h.Step === 'check' || h.Step === 'genre' ? (tags ? `<div class="h-meta" style="margin-top:4px">About these tags:</div>${tags}` : '') : tags}
-          ${web ? `<details><summary class="note">What Exa found</summary><p>${esc(h.Text)}</p></details>` : ''}
+          ${web ? `<details><summary class="note">What the web search found</summary><p>${esc(h.Text)}</p></details>` : ''}
         </li>`;
       }).join('')}</ol><p class="note" style="margin-top:10px">Highlighted: new tags; struck through: tags taken out. Orange dots mark where a step disagreed.</p>`);
   if (anyDisagreement) box.open = true;
@@ -1142,7 +1154,7 @@ async function openMovie(id) {
   loadHistory(id);
   $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
   $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));
-  $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button>${settings?.HasExaApiKey ? '<button class="btn" id="e-look">Look up on the web, then describe</button>' : ''}${m.Tagged && m.Trust !== 'you' ? '<button class="btn quiet" id="e-ok">Mark as checked</button>' : ''}<span class="note" id="e-note"></span>`;
+  $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button>${webReady() ? '<button class="btn" id="e-look">Look up on the web, then describe</button>' : ''}${m.Tagged && m.Trust !== 'you' ? '<button class="btn quiet" id="e-ok">Mark as checked</button>' : ''}<span class="note" id="e-note"></span>`;
   if ($('#e-ok')) $('#e-ok').onclick = async () => { await call('POST', `/api/movies/${id}/fine`); toast('Marked as checked'); openMovie(id); afterIssueChange(); };
   if ($('#e-look')) $('#e-look').onclick = async e => {
     e.target.disabled = true; $('#e-note').className = 'note'; $('#e-note').textContent = 'Searching the web, then asking the AI… free models can take a few minutes.';
@@ -1177,7 +1189,7 @@ async function loadIssues() {
   $('#iss-sum').innerHTML = [
     `<span><b>${r.Items.length.toLocaleString()}</b> to look at</span>`,
     r.CheckEnabled ? `<span>Second opinion: <b>${r.Checked.toLocaleString()}</b> of ${r.Tagged.toLocaleString()} reviewed</span>` : '<span>Second opinion is off (AI page)</span>',
-    w.Configured ? `<span>Web lookups this month: <b>${w.Lookups}</b> · $${w.Dollars.toFixed(2)} of $${w.Budget}${w.PerDay ? ` · today ${w.Today} of ${w.PerDay}` : ''}</span>` : '<span>No Exa key (AI page)</span>',
+    w.Configured ? `<span>Web lookups this month: <b>${w.Lookups}</b> · $${w.Dollars.toFixed(2)} of $${w.Budget}${w.PerDay ? ` · today ${w.Today} of ${w.PerDay}` : ''}</span>` : '<span>No web search set up (AI page)</span>',
   ].join('') + `<span style="flex-basis:100%"></span>` + [
     ['you', 'checked by you'], ['web', 'looked up on the web'], ['second', 'second opinion agrees'], ['ai', 'AI only'],
   ].map(([k, label]) => `<span><b>${(r.Trust[k] || 0).toLocaleString()}</b> ${label}</span>`).join('');
@@ -1222,6 +1234,14 @@ $('#iss-all').addEventListener('click', async e => {
   try { await call('POST', '/api/issues/lookup-all'); toast('Looking up every flagged movie, 20 at a time'); setTimeout(loadIssues, 1000); }
   catch (err) { toast(err.message); e.target.disabled = false; }
 });
+function showSearchRows(provider) {
+  $('#exa-row').classList.toggle('hidden', provider !== 'exa');
+  $('#parallel-row').classList.toggle('hidden', provider !== 'parallel');
+}
+const webReady = () => settings?.WebSearchProvider === 'parallel' || settings?.HasExaApiKey;
+const webFree = () => settings?.WebSearchProvider === 'parallel' && !settings?.HasParallelApiKey;
+const webName = () => settings?.WebSearchProvider === 'parallel' ? 'Parallel' : 'Exa';
+
 // ---- run a step again for the whole library
 async function loadAgain() {
   let a;
@@ -1240,7 +1260,7 @@ async function loadAgain() {
       confirm: `Have the second opinion check ${n(a.Check)} films again?`,
     },
     lookup: {
-      why: `Starts a re-check pass now: every film (${n(a.Lookup)}) gets a fresh Exa lookup and is described again from everything, at about ${n(a.LookupPerDay)} films a day (roughly $${(a.LookupPerDay * each).toFixed(2)} of Exa a day; it pauses at your monthly limit).${settings?.RescanMonths ? ' The regular passes carry on from there.' : ' Runs once; the regular re-check stays off.'}`,
+      why: `Starts a re-check pass now: every film (${n(a.Lookup)}) gets a fresh web lookup and is described again from everything, at about ${n(a.LookupPerDay)} films a day (${webFree() ? 'free with Parallel' : `roughly $${(a.LookupPerDay * each).toFixed(2)} of ${webName()} a day; it pauses at your monthly limit`}).${settings?.RescanMonths ? ' The regular passes carry on from there.' : ' Runs once; the regular re-check stays off.'}`,
       go: a.LookupPassStarted ? 'Start over from now' : 'Start a pass now', running: !!a.LookupPassStarted,
       status: a.LookupPassStarted ? `Pass started ${new Date(a.LookupPassStarted).toLocaleDateString()}` : '',
       confirm: `Look up and describe ${n(a.Lookup)} films again, about ${n(a.LookupPerDay)} a day?`,
@@ -1281,14 +1301,15 @@ function rescanEstimate() {
   const sweep = (Number($('#WebLookupsPerDay').value) || 0) * 30 * each;
   const budget = sweepInfo.Web.Budget || 0;
   el.textContent = !sweepInfo.Web.Configured
-    ? `${films.toLocaleString()} films, about ${perDay} a day. Without an Exa key it describes them again from what was collected before.`
-    : `${films.toLocaleString()} films, about ${perDay} a day: roughly $${dollars.toFixed(2)} a month of Exa` +
+    ? `${films.toLocaleString()} films, about ${perDay} a day. Without a web search it describes them again from what was collected before.`
+    : webFree() ? `${films.toLocaleString()} films, about ${perDay} a day, free with Parallel.`
+    : `${films.toLocaleString()} films, about ${perDay} a day: roughly $${dollars.toFixed(2)} a month of ${webName()}` +
       (dollars + sweep > budget ? `. Together with the whole-library lookup that's more than your $${budget} limit, so it pauses when the limit is reached and carries on next month.` : `, within your $${budget} limit.`);
 }
 async function loadExaUsage() {
   try {
     const r = await call('GET', '/api/issues'); sweepInfo = r;
-    $('#exa-usage').textContent = r.Web.Configured ? `This month so far: ${r.Web.Lookups} lookups, $${r.Web.Dollars.toFixed(2)} (as reported by Exa).` : '';
+    $('#exa-usage').textContent = r.Web.Configured ? (webFree() ? `This month so far: ${r.Web.Lookups} lookups, free with Parallel (no key).` : `This month so far: ${r.Web.Lookups} lookups, $${r.Web.Dollars.toFixed(2)} (as reported by ${webName()}).`) : '';
     sweepEstimate(); rescanEstimate();
   } catch {}
 }
