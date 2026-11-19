@@ -278,6 +278,12 @@ public static class BrowserApi
                     Free = WebLookup.Free,
                     Exa = new { On = s.ExaOn, web.ExaMonth.Lookups, web.ExaMonth.Dollars, Budget = s.WebLookupBudget },
                     Parallel = new { On = s.ParallelOn, web.ParallelMonth.Lookups, web.ParallelMonth.Dollars, Budget = s.ParallelBudget, Free = WebLookup.ParallelFree, Mode = WebLookup.ParallelModeInUse },
+                    Engines = SearchEngines.For(s).Select(e => new
+                    {
+                        e.Id, Name = SearchEngines.Get(e.Id).Name, e.On, Used = web.Used(e), e.Allowance, e.Period,
+                        web.EngineMonth(e.Id).Dollars, e.Budget, Free = SearchEngines.Free(s, e.Id), Unavailable = web.Unavailable(e),
+                        Mode = e.Id == "parallel" ? WebLookup.ParallelModeInUse : null,
+                    }),
                 },
                 LookingUpAll = _lookupAllRunning == 1,
                 LookupDone = _lookupDone,

@@ -146,6 +146,21 @@
   .q-row .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .q-row .when { color: var(--muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
   @media (max-width: 760px) { .q-row { grid-template-columns: 14px 1fr auto; } .q-row .count, .q-row .text { grid-column: 2 / -1; } .q-row .when { grid-column: 2 / -1; } }
+  .engines { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .engine { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); align-items: start; }
+  .engine.off .e-name, .engine.off .e-note { opacity: .55; }
+  .engine .pos { font-weight: 650; color: var(--muted); text-align: right; padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .engine .e-name { font-weight: 650; }
+  .engine .e-note { font-size: 12.5px; color: var(--muted); }
+  .engine .e-use { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .engine .e-use.bad { color: var(--err); }
+  .engine .e-top { display: flex; gap: 6px; align-items: center; }
+  .engine .e-top .btn { height: 28px; padding: 0 9px; font-size: 13px; }
+  .engine .e-fields { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+  .engine .e-fields label.field-label { font-size: 12px; margin-bottom: 4px; }
+  .engine .e-fields input[type=password] { width: 220px; }
+  .engine .e-fields input[type=number] { width: 90px; }
+  .engine .e-fields select { width: auto; }
   .jobs { margin: 0 0 28px; border-top: 1px solid var(--line); }
   .job { display: grid; grid-template-columns: 14px minmax(140px, 220px) 1fr auto; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .job .dot { align-self: center; }
@@ -518,27 +533,14 @@
 
       <h2 class="group-title">3 · Look up on the web</h2>
       <form id="lookup-form" class="settings">
-        <p class="why" style="margin:0 0 4px;max-width:72ch">A web search finds real text about each film (Wikipedia, Letterboxd, reviews…), and an AI describes the film again from that text together with both earlier opinions. Switch on one search engine or both.</p>
-        <div class="setting" id="parallel-row">
-          <div><h3>Parallel <span class="state" id="parallel-state"></span></h3><p class="why">Free without a key, at lower rate limits and in fast mode. A key from platform.parallel.ai raises the limits and allows the advanced mode; lookups are then billed to your Parallel balance (accounts with a card on file get $5 free a month). <span id="parallel-usage"></span></p></div>
-          <div class="control">
-            <label class="switch"><input type="checkbox" id="UseParallel"><span></span></label>
-            <div><label class="field-label" for="ParallelApiKey">Key (optional)</label><input type="password" id="ParallelApiKey" placeholder="Paste a key" autocomplete="off"></div>
-            <div class="parallel-paid"><label class="field-label">Search quality</label><div class="seg" id="ParallelMode"><button type="button" data-v="advanced">Advanced · $0.005</button><button type="button" data-v="fast">Fast · $0.001</button></div></div>
-            <div class="parallel-paid"><label class="field-label" for="ParallelBudget">Monthly limit</label><div class="prefixed" style="max-width:140px"><span>$</span><input type="number" id="ParallelBudget" min="0" step="1"></div></div>
-          </div>
+        <p class="why" style="margin:0 0 4px;max-width:72ch">A web search finds real text about each film (Wikipedia, Letterboxd, reviews…), and an AI describes the film again from that text together with both earlier opinions.</p>
+        <div class="setting">
+          <div><h3>Search engines</h3><p class="why">Tried from the top. Each lookup goes to the first engine that's on and still has allowance left (per day or per month, and a dollar limit for paid ones); when one fails or finds nothing, the next takes over. So "Exa 40 a day, then Linkup, then Parallel" uses Exa first each day until its 40 are used.</p></div>
+          <div class="control"><ol class="engines" id="engines"></ol></div>
         </div>
-        <div class="setting" id="exa-row">
-          <div><h3>Exa <span class="state" id="exa-state"></span></h3><p class="why">Needs a key from dashboard.exa.ai; under one cent per lookup, and the free plan includes $10 a month. <span id="exa-usage"></span></p></div>
-          <div class="control">
-            <label class="switch"><input type="checkbox" id="UseExa"><span></span></label>
-            <div><label class="field-label" for="ExaApiKey">Key</label><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
-            <div><label class="field-label" for="WebLookupBudget">Monthly limit</label><div class="prefixed" style="max-width:140px"><span>$</span><input type="number" id="WebLookupBudget" min="0" step="1"></div></div>
-          </div>
-        </div>
-        <div class="setting" id="order-row">
-          <div><h3>With both on</h3><p class="why"><b>Ask both</b>: every lookup asks both, and the AI gets the pages of both. <b>One after the other</b>: the second is only asked when the first fails, finds nothing or has reached its monthly limit.</p></div>
-          <div class="control"><div><div class="seg" id="WebSearchOrder"><button type="button" data-v="both">Ask both</button><button type="button" data-v="parallel-first">Parallel, then Exa</button><button type="button" data-v="exa-first">Exa, then Parallel</button></div></div></div>
+        <div class="setting">
+          <div><h3>Engines per lookup</h3><p class="why">How many engines answer each lookup. More engines, more pages for the AI to judge by; each one counts against its own allowance.</p></div>
+          <div class="control"><div><div class="seg" id="SearchPerLookup"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button></div></div></div>
         </div>
         <div class="setting">
           <div><h3>Look up flagged films right away</h3><p class="why">When the AI doesn't know a film, or something looks off, look it up and describe it again at once. Each film is looked up once.</p></div>
@@ -854,14 +856,11 @@ async function loadSettings() {
   const rh = $('#RefreshHours'); rh.value = [...rh.options].some(o => o.value == settings.RefreshHours) ? settings.RefreshHours : 24;
   $('#jf-url').textContent = settings.JellyfinUrl || 'not set';
   $('#CheckEnabled').checked = settings.CheckEnabled; $('#CheckModel').value = settings.CheckModel || '';
-  $('#ExaApiKey').value = ''; $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
-  $('#ParallelApiKey').value = ''; $('#parallel-state').innerHTML = settings.HasParallelApiKey ? stateText(true) : '';
-  $('#UseExa').checked = !!settings.UseExa; $('#UseParallel').checked = !!settings.UseParallel;
-  $('#ParallelBudget').value = settings.ParallelBudget ?? 5;
-  seg($('#ParallelMode'), settings.ParallelMode || 'advanced');
-  seg($('#WebSearchOrder'), settings.WebSearchOrder || 'both');
-  showParallelPaid();
-  $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
+  engines = (settings.SearchEngines || []).map(e => ({ ...e }));
+  wikipediaAlways = settings.WikipediaAlways !== false;
+  renderEngines();
+  seg($('#SearchPerLookup'), String(settings.SearchPerLookup || 1));
+  $('#WebLookupAuto').checked = settings.WebLookupAuto;
   $('#WebLookupsPerDay').value = settings.WebLookupsPerDay;
 }
 // A number under each Tuning slider, so it's clear where it stands
@@ -894,7 +893,7 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
@@ -908,11 +907,12 @@ const formValues = {
     CheckEnabled: $('#CheckEnabled').checked,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }),
   'lookup-form': () => ({
-    UseExa: $('#UseExa').checked, UseParallel: $('#UseParallel').checked,
-    ExaApiKey: $('#ExaApiKey').value, ParallelApiKey: $('#ParallelApiKey').value, ParallelMode: segValue($('#ParallelMode')) || 'advanced',
-    ParallelBudget: Number($('#ParallelBudget').value) || 0, WebSearchOrder: segValue($('#WebSearchOrder')) || 'both',
-    WebLookupAuto: $('#WebLookupAuto').checked,
-    WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
+    SearchEngines: engines.map(({ Id, On, Allowance, Period, Budget }) => ({ Id, On, Allowance, Period, Budget })),
+    SearchPerLookup: Number(segValue($('#SearchPerLookup'))) || 1, WikipediaAlways: wikipediaAlways,
+    ExaApiKey: $('#ExaApiKey')?.value || '', ParallelApiKey: $('#ParallelApiKey')?.value || '',
+    LinkupApiKey: $('#LinkupApiKey')?.value || '', TavilyApiKey: $('#TavilyApiKey')?.value || '',
+    ParallelMode: ($('#ParallelMode') && segValue($('#ParallelMode'))) || settings.ParallelMode || 'advanced',
+    WebLookupAuto: $('#WebLookupAuto').checked, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value }),
@@ -933,13 +933,12 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'ExaApiKey', 'ParallelApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
-    $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
-    $('#parallel-state').innerHTML = settings.HasParallelApiKey ? stateText(true) : '';
-    showParallelPaid();
+    for (const k of ['ApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey);
+    if (form === 'lookup-form') { engines = (settings.SearchEngines || []).map(e => ({ ...e })); renderEngines(); }
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
   } catch (err) { note.className = 'note err'; note.textContent = `Not saved: ${err.message}`; }
   finally { savesInFlight--; }
@@ -1202,7 +1201,7 @@ async function loadIssues() {
   $('#iss-sum').innerHTML = [
     `<span><b>${r.Items.length.toLocaleString()}</b> to look at</span>`,
     r.CheckEnabled ? `<span>Second opinion: <b>${r.Checked.toLocaleString()}</b> of ${r.Tagged.toLocaleString()} reviewed</span>` : '<span>Second opinion is off (AI page)</span>',
-    w.Configured ? `<span>Films looked up this month: <b>${w.Lookups}</b>${w.Exa.On || w.Exa.Lookups ? ` · Exa $${w.Exa.Dollars.toFixed(2)} of $${w.Exa.Budget}` : ''}${w.Parallel.On || w.Parallel.Lookups ? ` · Parallel ${w.Parallel.Free ? 'free' : `$${w.Parallel.Dollars.toFixed(2)} of $${w.Parallel.Budget}`}` : ''}${w.PerDay ? ` · today ${w.Today} of ${w.PerDay}` : ''}</span>` : '<span>No web search set up (AI page)</span>',
+    w.Configured ? `<span>Films looked up this month: <b>${w.Lookups}</b>${(w.Engines || []).filter(e => e.On || e.Used).map(e => ` · ${esc(e.Name)} ${e.Free ? e.Used + ' free' : `$${e.Dollars.toFixed(2)}`}`).join('')}${w.PerDay ? ` · today ${w.Today} of ${w.PerDay}` : ''}</span>` : '<span>No web search set up (AI page)</span>',
   ].join('') + `<span style="flex-basis:100%"></span>` + [
     ['you', 'checked by you'], ['web', 'looked up on the web'], ['second', 'second opinion agrees'], ['ai', 'AI only'],
   ].map(([k, label]) => `<span><b>${(r.Trust[k] || 0).toLocaleString()}</b> ${label}</span>`).join('');
@@ -1248,16 +1247,47 @@ $('#iss-all').addEventListener('click', async e => {
   catch (err) { toast(err.message); e.target.disabled = false; }
 });
 // Parallel's mode and limit only matter with a key (without one it's free and fast)
-function showParallelPaid() {
-  $$('.parallel-paid').forEach(el => el.classList.toggle('hidden', !settings?.HasParallelApiKey));
-  // The order only matters with both on
-  $('#order-row').classList.toggle('hidden', !($('#UseExa').checked && $('#UseParallel').checked));
+// ---- web search engines (AI page, step 3)
+let engines = [], wikipediaAlways = true;
+const keyIds = { exa: 'ExaApiKey', parallel: 'ParallelApiKey', linkup: 'LinkupApiKey', tavily: 'TavilyApiKey' };
+const readyEngines = () => (settings?.SearchEngines || []).filter(e => e.On && (!e.NeedsKey || e.HasKey));
+const webReady = () => readyEngines().length > 0;
+const webFree = () => readyEngines().length > 0 && readyEngines().every(e => e.Free);
+const webName = () => readyEngines().map(e => e.Name).join(', ') || 'the web search';
+function renderEngines() {
+  const box = $('#engines'); if (!box) return;
+  const usage = Object.fromEntries((sweepInfo?.Web?.Engines || []).map(u => [u.Id, u]));
+  const per = { day: 'a day', month: 'a month' };
+  box.innerHTML = engines.map((e, i) => {
+    const u = usage[e.Id];
+    const paid = !e.Free;
+    const useText = !u ? '' : `${u.Used.toLocaleString()}${e.Allowance ? ` of ${e.Allowance.toLocaleString()}` : ''} search${u.Used === 1 && !e.Allowance ? '' : 'es'} ${e.Period === 'day' ? 'today' : 'this month'}`
+      + (paid ? ` · $${u.Dollars.toFixed(2)}${e.Budget ? ` of $${e.Budget}` : ''} this month` : ' · free')
+      + (u.Unavailable && u.Unavailable !== 'off' ? ` · skipped: ${u.Unavailable}` : '');
+    const keyField = keyIds[e.Id] ? `<div><label class="field-label" for="${keyIds[e.Id]}">Key${e.NeedsKey ? '' : ' (optional)'} ${stateText(e.HasKey)}</label><input type="password" id="${keyIds[e.Id]}" placeholder="Paste a key" autocomplete="off"></div>` : '';
+    const allowance = e.Id === 'wikipedia' ? `<div><label class="field-label"><input type="checkbox" data-always ${wikipediaAlways ? 'checked' : ''}> Add to every lookup</label><div class="sub">On top of the engines' turn, free.</div></div>`
+      : `<div><label class="field-label">Allowance (0 = no limit)</label><div class="inline"><input type="number" min="0" step="10" data-f="Allowance" value="${e.Allowance}"><select data-f="Period"><option value="day"${e.Period === 'day' ? ' selected' : ''}>a day</option><option value="month"${e.Period !== 'day' ? ' selected' : ''}>a month</option></select></div></div>`;
+    const budget = paid && e.Id !== 'wikipedia' ? `<div><label class="field-label">Monthly limit (0 = none)</label><div class="prefixed" style="max-width:120px"><span>$</span><input type="number" min="0" step="1" data-f="Budget" value="${e.Budget}"></div></div>` : '';
+    const mode = e.Id === 'parallel' && e.HasKey ? `<div><label class="field-label">Search quality</label><div class="seg" id="ParallelMode"><button type="button" data-v="advanced">Advanced · $0.005</button><button type="button" data-v="fast">Fast · $0.001</button></div></div>` : '';
+    return `<li class="engine${e.On ? '' : ' off'}" data-i="${i}">
+      <span class="pos">${i + 1}</span>
+      <div><div class="e-name">${esc(e.Name)}</div><div class="e-note">${esc(e.Note)}</div>${useText ? `<div class="e-use${u?.Unavailable && u.Unavailable !== 'off' ? ' bad' : ''}">${esc(useText)}</div>` : ''}</div>
+      <div class="e-top"><label class="switch" title="On or off"><input type="checkbox" data-on ${e.On ? 'checked' : ''}><span></span></label>
+        <button type="button" class="btn quiet" data-up ${i === 0 ? 'disabled' : ''} title="Try earlier">↑</button><button type="button" class="btn quiet" data-down ${i === engines.length - 1 ? 'disabled' : ''} title="Try later">↓</button></div>
+      <div class="e-fields">${keyField}${allowance}${budget}${mode}</div>
+    </li>`;
+  }).join('');
+  if ($('#ParallelMode')) seg($('#ParallelMode'), settings?.ParallelMode || 'advanced');
+  $$('.engine', box).forEach(li => {
+    const e = engines[Number(li.dataset.i)];
+    $('[data-on]', li).onchange = ev => { e.On = ev.target.checked; li.classList.toggle('off', !e.On); };
+    $$('[data-f]', li).forEach(inp => inp.onchange = () => { e[inp.dataset.f] = inp.dataset.f === 'Period' ? inp.value : Number(inp.value) || 0; });
+    const always = $('[data-always]', li); if (always) always.onchange = () => { wikipediaAlways = always.checked; };
+    const move = d => { const i = Number(li.dataset.i); const [m] = engines.splice(i, 1); engines.splice(i + d, 0, m); renderEngines(); autoSave('lookup-form'); };
+    $('[data-up]', li).onclick = () => move(-1);
+    $('[data-down]', li).onclick = () => move(1);
+  });
 }
-for (const id of ['#UseExa', '#UseParallel']) $(id).addEventListener('change', showParallelPaid);
-const exaOn = () => settings?.UseExa && settings?.HasExaApiKey;
-const webReady = () => exaOn() || settings?.UseParallel;
-const webFree = () => !exaOn() && settings?.UseParallel && !settings?.HasParallelApiKey;
-const webName = () => [exaOn() ? 'Exa' : '', settings?.UseParallel ? 'Parallel' : ''].filter(Boolean).join(' + ') || 'the web search';
 
 // ---- run a step again for the whole library
 async function loadAgain() {
@@ -1316,19 +1346,17 @@ function rescanEstimate() {
   const each = sweepInfo.Web.Lookups ? sweepInfo.Web.Dollars / sweepInfo.Web.Lookups : 0.007;
   const dollars = perDay * 30 * each;
   const sweep = (Number($('#WebLookupsPerDay').value) || 0) * 30 * each;
-  const budget = (sweepInfo.Web.Exa.On ? sweepInfo.Web.Exa.Budget : 0) + (sweepInfo.Web.Parallel.On && !sweepInfo.Web.Parallel.Free ? sweepInfo.Web.Parallel.Budget : 0);
+  const budget = (sweepInfo.Web.Engines || []).filter(e => e.On && !e.Free).reduce((t, e) => t + (e.Budget || 0), 0);
   el.textContent = !sweepInfo.Web.Configured
     ? `${films.toLocaleString()} films, about ${perDay} a day. Without a web search it describes them again from what was collected before.`
-    : webFree() ? `${films.toLocaleString()} films, about ${perDay} a day, free with Parallel.`
+    : webFree() ? `${films.toLocaleString()} films, about ${perDay} a day, free with ${webName()}.`
     : `${films.toLocaleString()} films, about ${perDay} a day: roughly $${dollars.toFixed(2)} a month of ${webName()}` +
       (dollars + sweep > budget ? `. Together with the whole-library lookup that's more than your $${budget} limit, so it pauses when the limit is reached and carries on next month.` : `, within your $${budget} limit.`);
 }
 async function loadExaUsage() {
   try {
     const r = await call('GET', '/api/issues'); sweepInfo = r;
-    const ex = r.Web.Exa, pa = r.Web.Parallel;
-    $('#exa-usage').textContent = ex.Lookups || ex.On ? `This month: ${ex.Lookups} searches, $${ex.Dollars.toFixed(2)} of $${ex.Budget} (as reported by Exa).` : '';
-    $('#parallel-usage').textContent = pa.Lookups || pa.On ? `This month: ${pa.Lookups} searches, ${pa.Free ? 'free (no key)' : `$${pa.Dollars.toFixed(2)} of $${pa.Budget} (${pa.Mode} mode)`}.` : '';
+    renderEngines();
     sweepEstimate(); rescanEstimate();
   } catch {}
 }

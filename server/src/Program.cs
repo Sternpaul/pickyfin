@@ -352,7 +352,8 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A library switched back on may have movies that were never classified
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
-        || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.UseExa != settings.UseExa || before.UseParallel != settings.UseParallel);
+        || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.UseExa != settings.UseExa || before.UseParallel != settings.UseParallel
+        || System.Text.Json.JsonSerializer.Serialize(before.SearchEngines) != System.Text.Json.JsonSerializer.Serialize(settings.SearchEngines));
     return Results.Ok(SettingsView.From(settings));
 });
 
@@ -510,6 +511,16 @@ record SettingsView
     public bool UseParallel { get; init; }
     public double ParallelBudget { get; init; }
     public string WebSearchOrder { get; init; } = "both";
+    public List<EngineView>? SearchEngines { get; init; }
+    public int SearchPerLookup { get; init; } = 1;
+    public bool WikipediaAlways { get; init; } = true;
+    public bool HasLinkupApiKey { get; init; }
+    public string? LinkupApiKey { get; init; }
+    public bool HasTavilyApiKey { get; init; }
+    public string? TavilyApiKey { get; init; }
+
+    public sealed record EngineView(string Id, bool On, int Allowance, string Period, double Budget,
+        string Name = "", string Note = "", bool NeedsKey = false, bool HasKey = false, bool Free = false);
     public bool WebLookupAuto { get; init; }
     public double WebLookupBudget { get; init; }
     public int WebLookupsPerDay { get; init; }
@@ -555,6 +566,16 @@ record SettingsView
         UseParallel = s.ParallelOn,
         ParallelBudget = s.ParallelBudget,
         WebSearchOrder = s.WebSearchOrder,
+        SearchEngines = Pickyfin.Server.Library.SearchEngines.For(s).Select(e =>
+        {
+            var info = Pickyfin.Server.Library.SearchEngines.Get(e.Id);
+            return new EngineView(e.Id, e.On, e.Allowance, e.Period, e.Budget, info.Name, info.Note, info.NeedsKey,
+                Pickyfin.Server.Library.SearchEngines.HasKey(s, e.Id), Pickyfin.Server.Library.SearchEngines.Free(s, e.Id));
+        }).ToList(),
+        SearchPerLookup = WebLookup.PerLookup(s),
+        WikipediaAlways = s.WikipediaAlways,
+        HasLinkupApiKey = !string.IsNullOrWhiteSpace(s.LinkupApiKey),
+        HasTavilyApiKey = !string.IsNullOrWhiteSpace(s.TavilyApiKey),
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
         WebLookupsPerDay = s.WebLookupsPerDay,
@@ -582,6 +603,17 @@ record SettingsView
         s.UseParallel = UseParallel;
         s.ParallelBudget = Math.Clamp(ParallelBudget, 0, 1000);
         s.WebSearchOrder = WebSearchOrder is "exa-first" or "parallel-first" ? WebSearchOrder : "both";
+        if (SearchEngines is { Count: > 0 } engines)
+            s.SearchEngines = engines.Where(e => Pickyfin.Server.Library.SearchEngines.All.Any(a => a.Id == e.Id)).DistinctBy(e => e.Id)
+                .Select(e => new Pickyfin.Server.Library.SearchEngineSetting
+                {
+                    Id = e.Id, On = e.On, Allowance = Math.Clamp(e.Allowance, 0, 1_000_000),
+                    Period = e.Period == "day" ? "day" : "month", Budget = Math.Clamp(e.Budget, 0, 1000),
+                }).ToList();
+        s.SearchPerLookup = Math.Clamp(SearchPerLookup, 1, 3);
+        s.WikipediaAlways = WikipediaAlways;
+        if (!string.IsNullOrWhiteSpace(LinkupApiKey)) s.LinkupApiKey = LinkupApiKey.Trim();
+        if (!string.IsNullOrWhiteSpace(TavilyApiKey)) s.TavilyApiKey = TavilyApiKey.Trim();
         s.CheckEnabled = CheckEnabled;
         if (!string.IsNullOrWhiteSpace(CheckModel)) s.CheckModel = CheckModel.Trim();
         static List<string> Clean(List<string> list) => list.Select(m => m.Trim()).Where(m => m.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();

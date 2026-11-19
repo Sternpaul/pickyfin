@@ -25,7 +25,7 @@ namespace Pickyfin.Server.Library
 
         /// <summary>Notes a web lookup in the film's history: what Exa found, or that it found nothing.</summary>
         public Task RecordLookupAsync(MovieMetadata movie, string? notes, CancellationToken cancellationToken) =>
-            _history.AddAsync(MovieHistory.Entry(movie, "web", _web.ProviderName, null, string.IsNullOrEmpty(notes) ? "Nothing found on the web" : notes), cancellationToken);
+            _history.AddAsync(MovieHistory.Entry(movie, "web", _web.EnginesFor(movie.ItemId), null, string.IsNullOrEmpty(notes) ? "Nothing found on the web" : notes), cancellationToken);
 
         public MovieClassifier(
             MovieStore movieStore,

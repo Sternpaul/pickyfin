@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -6,14 +7,16 @@ using Pickyfin.Server.Data.Models;
 namespace Pickyfin.Server.Library;
 
 /// <summary>
-/// Looks a film up on the web, so the AI can tag films from real descriptions instead of
-/// guessing. Two search engines: Exa (under one cent per film, needs a key) or Parallel
-/// (its MCP server: free without a key at lower rate limits; with a key, billed to the
-/// Parallel account). Spending is counted per month and stops at the budget on the AI page.
+/// Looks a film up on the web, so the AI can tag films from real descriptions instead of guessing.
+/// Several search engines in an order set on the AI page (Parallel, Exa, Linkup, Tavily, Wikipedia):
+/// each lookup goes to the first ones that are on and still have allowance left this day or month;
+/// when one fails or finds nothing, the next takes over. Wikipedia can be added to every lookup.
+/// Searches and spending are counted per engine.
 /// </summary>
 public sealed class WebLookup
 {
     private static readonly string[] FilmSites = { "en.wikipedia.org", "letterboxd.com", "themoviedb.org", "rottentomatoes.com", "mubi.com", "imdb.com" };
+    private const string UserAgent = "Pickyfin/1.0 (https://github.com/Sternpaul/pickyfin)";
 
     private readonly IHttpClientFactory _http;
     private readonly ILogger<WebLookup> _logger;
@@ -32,8 +35,9 @@ public sealed class WebLookup
         public int Today => Day == DateTime.UtcNow.ToString("yyyy-MM-dd") ? DayLookups : 0;
     }
 
-    /// <summary>This month's films looked up (all engines together), and each engine's own searches and spend.</summary>
-    public sealed record Ledger(Usage Films, Usage Exa, Usage Parallel);
+    /// <summary>Films looked up this month (all engines together), and each engine's own searches and spend.</summary>
+    public sealed record Ledger(Usage Films, Dictionary<string, Usage> Engines);
+    private sealed record OldLedger(Usage? Films, Usage? Exa, Usage? Parallel);
 
     private Ledger Read()
     {
@@ -44,23 +48,32 @@ public sealed class WebLookup
         {
             try
             {
-                if (!File.Exists(_usagePath)) return new Ledger(Fresh(), Fresh(), Fresh());
+                if (!File.Exists(_usagePath)) return new Ledger(Fresh(), new());
                 var text = File.ReadAllText(_usagePath);
-                var ledger = JsonSerializer.Deserialize<Ledger>(text);
-                if (ledger?.Films is not null)
-                    return new Ledger(ThisMonthOnly(ledger.Films), ThisMonthOnly(ledger.Exa), ThisMonthOnly(ledger.Parallel));
-                // Older file: one total, which was Exa's
-                var old = ThisMonthOnly(JsonSerializer.Deserialize<Usage>(text));
-                return new Ledger(old, old, Fresh());
+                using var doc = JsonDocument.Parse(text);
+                if (doc.RootElement.TryGetProperty("Engines", out _))
+                {
+                    var ledger = JsonSerializer.Deserialize<Ledger>(text)!;
+                    return new Ledger(ThisMonthOnly(ledger.Films), ledger.Engines.ToDictionary(e => e.Key, e => ThisMonthOnly(e.Value)));
+                }
+                if (doc.RootElement.TryGetProperty("Films", out _))
+                {
+                    var old = JsonSerializer.Deserialize<OldLedger>(text)!;
+                    return new Ledger(ThisMonthOnly(old.Films), new() { ["exa"] = ThisMonthOnly(old.Exa), ["parallel"] = ThisMonthOnly(old.Parallel) });
+                }
+                // Oldest file: one total, which was Exa's
+                var single = ThisMonthOnly(JsonSerializer.Deserialize<Usage>(text));
+                return new Ledger(single, new() { ["exa"] = single });
             }
-            catch { return new Ledger(Fresh(), Fresh(), Fresh()); }
+            catch { return new Ledger(Fresh(), new()); }
         }
     }
 
     /// <summary>Films looked up this month (Dollars: all engines together).</summary>
     public Usage ThisMonth => Read().Films;
-    public Usage ExaMonth => Read().Exa;
-    public Usage ParallelMonth => Read().Parallel;
+    public Usage EngineMonth(string id) => Read().Engines.GetValueOrDefault(id) ?? new Usage(DateTime.UtcNow.ToString("yyyy-MM"), 0, 0);
+    public Usage ExaMonth => EngineMonth("exa");
+    public Usage ParallelMonth => EngineMonth("parallel");
 
     private void Write(Func<Ledger, Ledger> change)
     {
@@ -75,87 +88,272 @@ public sealed class WebLookup
     }
 
     /// <summary>One search by one engine, with what it cost.</summary>
-    private void Count(string engine, double dollars) => Write(l => engine == "Exa"
-        ? l with { Exa = Add(l.Exa, dollars), Films = l.Films with { Dollars = l.Films.Dollars + dollars } }
-        : l with { Parallel = Add(l.Parallel, dollars), Films = l.Films with { Dollars = l.Films.Dollars + dollars } });
+    private void Count(string engine, double dollars) => Write(l =>
+    {
+        var engines = new Dictionary<string, Usage>(l.Engines) { [engine] = Add(EngineOf(l, engine), dollars) };
+        return new Ledger(l.Films with { Dollars = l.Films.Dollars + dollars }, engines);
+    });
+
+    private static Usage EngineOf(Ledger l, string id) => l.Engines.GetValueOrDefault(id) ?? new Usage(l.Films.Month, 0, 0);
 
     /// <summary>One film looked up (however many engines answered).</summary>
     private void CountFilm() => Write(l => l with { Films = Add(l.Films, 0) });
 
+    // ---- which engines can answer now
+
     /// <summary>The Parallel search mode for this lookup: advanced only with a key.</summary>
     public static string ParallelModeInUse => !string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey) && ServerSettings.Current.ParallelMode == "advanced" ? "advanced" : "fast";
-    public static bool Configured => ServerSettings.Current.ExaOn || ServerSettings.Current.ParallelOn;
-    /// <summary>Parallel without a key costs nothing, so its monthly limit doesn't apply.</summary>
     public static bool ParallelFree => string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey);
-    /// <summary>Only engines that cost nothing are on.</summary>
-    public static bool Free => !ServerSettings.Current.ExaOn && ServerSettings.Current.ParallelOn && ParallelFree;
 
-    public bool ExaAvailable => ServerSettings.Current.ExaOn && ExaMonth.Dollars < ServerSettings.Current.WebLookupBudget;
-    public bool ParallelAvailable => ServerSettings.Current.ParallelOn && (ParallelFree || ParallelMonth.Dollars < ServerSettings.Current.ParallelBudget);
+    /// <summary>At least one engine is switched on and has the key it needs.</summary>
+    public static bool Configured => SearchEngines.For(ServerSettings.Current).Any(e => SearchEngines.Ready(ServerSettings.Current, e));
+    /// <summary>Every engine that's on costs nothing.</summary>
+    public static bool Free
+    {
+        get
+        {
+            var s = ServerSettings.Current;
+            var ready = SearchEngines.For(s).Where(e => SearchEngines.Ready(s, e)).ToList();
+            return ready.Count > 0 && ready.All(e => SearchEngines.Free(s, e.Id));
+        }
+    }
 
-    /// <summary>The engines a lookup uses right now, for the history ("Exa + Parallel (advanced)").</summary>
-    public string ProviderName => string.Join(" + ", new[] { ExaAvailable ? "Exa" : null, ParallelAvailable ? $"Parallel ({ParallelModeInUse})" : null }.Where(n => n is not null));
+    /// <summary>How many engines answer one lookup.</summary>
+    public static int PerLookup(ServerSettings s) =>
+        s.SearchEngines.Count == 0 && s.WebSearchOrder == "both" && s.ExaOn && s.ParallelOn ? 2 : Math.Clamp(s.SearchPerLookup, 1, 3);
+
+    /// <summary>Searches used in the engine's period (today, or this month).</summary>
+    public int Used(SearchEngineSetting e)
+    {
+        var u = EngineMonth(e.Id);
+        return e.Period == "day" ? u.Today : u.Lookups;
+    }
+
+    /// <summary>Why this engine can't take a search now, or null when it can.</summary>
+    public string? Unavailable(SearchEngineSetting e)
+    {
+        var s = ServerSettings.Current;
+        if (!e.On) return "off";
+        if (SearchEngines.Get(e.Id).NeedsKey && !SearchEngines.HasKey(s, e.Id)) return "no key";
+        if (e.Allowance > 0 && Used(e) >= e.Allowance) return e.Period == "day" ? "today's allowance used" : "this month's allowance used";
+        if (e.Budget > 0 && !SearchEngines.Free(s, e.Id) && EngineMonth(e.Id).Dollars >= e.Budget) return "monthly limit reached";
+        return null;
+    }
+
+    /// <summary>The engines in order that can take a search now (Wikipedia aside when it's added to every lookup).</summary>
+    private List<SearchEngineSetting> Queue(ServerSettings s) =>
+        SearchEngines.For(s).Where(e => Unavailable(e) is null && !(e.Id == "wikipedia" && s.WikipediaAlways)).ToList();
 
     /// <summary>Why a lookup can't run now, or null when at least one engine can.</summary>
     public string? Blocked()
     {
         var s = ServerSettings.Current;
         if (!Configured) return "No web search set up (AI page).";
-        if (ExaAvailable || ParallelAvailable) return null;
-        return "This month's web lookup limit is reached" + (s.ExaOn && s.ParallelOn ? " for Exa and Parallel." : ".");
+        if (Queue(s).Count > 0) return null;
+        if (s.WikipediaAlways && SearchEngines.For(s).Any(e => e.Id == "wikipedia" && Unavailable(e) is null)) return null;
+        return "Every search engine has used its allowance or monthly limit.";
     }
 
-    /// <summary>A few paragraphs about the film from film sites (or anywhere, if those have nothing). Null when nothing useful was found.</summary>
+    // Which engines answered the last lookup of each film, for its history
+    private readonly ConcurrentDictionary<Guid, string> _answeredBy = new();
+    /// <summary>Who answered the latest lookup of this film ("Wikipedia + Parallel (advanced)").</summary>
+    public string EnginesFor(Guid itemId) => _answeredBy.TryGetValue(itemId, out var names) ? names : "web search";
+    /// <summary>The engines next in line, for messages.</summary>
+    public string ProviderName => string.Join(" + ", Queue(ServerSettings.Current).Take(PerLookup(ServerSettings.Current)).Select(e => Name(e.Id)));
+    private static string Name(string id) => id == "parallel" ? $"Parallel ({ParallelModeInUse})" : SearchEngines.Get(id).Name;
+
+    /// <summary>
+    /// Passages about the film. Goes down the engine order until the wanted number of engines
+    /// answered (one that fails or finds nothing hands over to the next), plus Wikipedia when it's
+    /// added to every lookup. Null when nothing useful was found.
+    /// </summary>
     public async Task<string?> FindAsync(MovieMetadata movie, CancellationToken cancellationToken)
     {
         if (Blocked() is { } why) throw new InvalidOperationException(why);
+        var s = ServerSettings.Current;
         var query = $"{movie.Title} ({movie.ReleaseYear}) film" + (string.IsNullOrWhiteSpace(movie.Director) ? "" : $" directed by {movie.Director}")
             + (string.IsNullOrWhiteSpace(movie.OriginalTitle) ? "" : $" original title {movie.OriginalTitle}");
 
-        var searches = new List<(string Engine, Task<List<(string Title, string Url, string Text)>> Task)>();
-        Task<List<(string Title, string Url, string Text)>> Start(string engine) =>
-            engine == "Exa" ? ExaAsync(query, cancellationToken) : ParallelAsync(movie, cancellationToken);
-        var engines = new[] { ExaAvailable ? "Exa" : null, ParallelAvailable ? "Parallel" : null }.Where(e => e is not null).Select(e => e!).ToList();
-        var order = ServerSettings.Current.WebSearchOrder;
-        if (engines.Count == 2 && order is "exa-first" or "parallel-first")
+        Task<List<(string Title, string Url, string Text)>> Start(string id) => id switch
         {
-            // One after the other: the second only when the first fails or finds nothing
-            if (order == "parallel-first") engines.Reverse();
-            foreach (var engine in engines)
+            "exa" => ExaAsync(query, cancellationToken),
+            "parallel" => ParallelAsync(movie, cancellationToken),
+            "linkup" => LinkupAsync(movie, cancellationToken),
+            "tavily" => TavilyAsync(movie, cancellationToken),
+            _ => WikipediaAsync(movie, cancellationToken),
+        };
+
+        // Wikipedia alongside, when it's added to every lookup
+        var wiki = s.WikipediaAlways && SearchEngines.For(s).FirstOrDefault(e => e.Id == "wikipedia") is { } w && Unavailable(w) is null
+            ? Start("wikipedia") : null;
+
+        var want = PerLookup(s);
+        var queue = Queue(s);
+        var answers = new List<(string Engine, List<(string Title, string Url, string Text)> Pages)>();
+        var errors = new List<string>();
+        var next = 0;
+        while (answers.Count < want && next < queue.Count)
+        {
+            // Ask as many as are still wanted at once; whoever fails or finds nothing hands over to the next
+            var batch = queue.Skip(next).Take(want - answers.Count).ToList();
+            next += batch.Count;
+            var tasks = batch.Select(e => (e.Id, Task: Start(e.Id))).ToList();
+            try { await Task.WhenAll(tasks.Select(t => t.Task)); } catch { /* looked at one by one */ }
+            foreach (var (id, task) in tasks)
             {
-                var task = Start(engine);
-                searches.Add((engine, task));
-                try { if ((await task).Count > 0) break; } catch { /* the next engine takes over */ }
-                if (engine == engines[0]) _logger.LogInformation("Web lookup: {Engine} had nothing for {Title}; asking {Next}", engine, movie.Title, engines[1]);
+                if (!task.IsCompletedSuccessfully)
+                {
+                    var error = task.Exception?.GetBaseException().Message ?? "failed";
+                    errors.Add($"{Name(id)}: {error}");
+                    _logger.LogWarning("Web lookup: {Engine} failed for {Title}: {Error}", Name(id), movie.Title, error);
+                }
+                else if (task.Result.Count == 0) _logger.LogInformation("Web lookup: {Engine} found nothing for {Title}", Name(id), movie.Title);
+                else answers.Add((id, task.Result));
             }
         }
-        else
+        if (wiki is not null)
         {
-            // Every engine that's on and within its limit, at the same time
-            foreach (var engine in engines) searches.Add((engine, Start(engine)));
-            try { await Task.WhenAll(searches.Select(x => x.Task)); } catch { /* looked at one by one below */ }
+            try { var pages = await wiki; if (pages.Count > 0) answers.Insert(0, ("wikipedia", pages)); }
+            catch (Exception error) when (error is not OperationCanceledException) { _logger.LogWarning("Web lookup: Wikipedia failed for {Title}: {Error}", movie.Title, error.Message); }
         }
-        var answered = searches.Where(x => x.Task.IsCompletedSuccessfully).ToList();
-        foreach (var failed in searches.Where(x => !x.Task.IsCompletedSuccessfully))
-            _logger.LogWarning("Web lookup: {Engine} failed for {Title}: {Error}", failed.Engine, movie.Title, failed.Task.Exception?.GetBaseException().Message);
-        if (answered.Count == 0)
-            throw searches.First().Task.Exception?.GetBaseException() ?? new InvalidOperationException("Web lookup failed");
+        if (answers.Count == 0)
+        {
+            if (errors.Count > 0 && errors.Count == next) throw new InvalidOperationException(string.Join("; ", errors));
+            CountFilm();
+            _answeredBy[movie.ItemId] = "nothing found";
+            return null;
+        }
         CountFilm();
+        _answeredBy[movie.ItemId] = string.Join(" + ", answers.Select(a => Name(a.Engine)));
 
-        // Pages from both, taking turns, without the same page twice: 3 from one engine, up to 5 from two
+        // Pages taking turns between engines, no page twice: 3 per engine (Wikipedia's article counts as one)
         static string Key(string url) { try { var u = new Uri(url); return (u.Host.Replace("www.", "") + u.AbsolutePath).TrimEnd('/').ToLowerInvariant(); } catch { return url; } }
-        var lists = answered.Select(x => x.Task.Result).ToList();
+        var cap = answers.Sum(a => a.Engine == "wikipedia" ? 1 : 3);
         var found = new List<(string Title, string Url, string Text)>();
         var seen = new HashSet<string>();
-        for (var k = 0; found.Count < (lists.Count > 1 ? 5 : 3) && lists.Any(l => k < l.Count); k++)
-            foreach (var list in lists)
-                if (k < list.Count && seen.Add(Key(list[k].Url)) && found.Count < (lists.Count > 1 ? 5 : 3)) found.Add(list[k]);
-        if (found.Count == 0) return null;
+        for (var k = 0; found.Count < cap && answers.Any(a => k < a.Pages.Count); k++)
+            foreach (var (_, pages) in answers)
+                if (k < pages.Count && found.Count < cap && seen.Add(Key(pages[k].Url))) found.Add(pages[k]);
 
         var sb = new StringBuilder();
         foreach (var (title, url, text) in found)
             sb.Append($"[{title} – {new Uri(url).Host}] {text}\n\n");
         return sb.ToString().Trim();
+    }
+
+    // ---- Linkup: passages that fit the question, per page
+    private async Task<List<(string Title, string Url, string Text)>> LinkupAsync(MovieMetadata movie, CancellationToken cancellationToken)
+    {
+        var client = _http.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(60);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.linkup.so/v1/search");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ServerSettings.Current.LinkupApiKey);
+        request.Content = JsonContent.Create(new
+        {
+            q = $"What is the {movie.ReleaseYear} film {movie.Title}{(string.IsNullOrWhiteSpace(movie.Director) ? "" : $" by {movie.Director}")} about: plot, genre, tone, mood, themes and critical reception?",
+            depth = "standard", outputType = "searchResults", maxResults = 5,
+        });
+        using var response = await client.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Linkup: HTTP {(int)response.StatusCode} {(body.Length > 200 ? body[..200] : body)}");
+        Count("linkup", 0.005);
+        using var json = JsonDocument.Parse(body);
+        var found = Pages(json.RootElement, "name", "content");
+        _logger.LogInformation("Web lookup (Linkup): {Title} ({Year}) → {Count} page(s), $0.005", movie.Title, movie.ReleaseYear, found.Count);
+        return found;
+    }
+
+    // ---- Tavily: up to three short passages per page
+    private async Task<List<(string Title, string Url, string Text)>> TavilyAsync(MovieMetadata movie, CancellationToken cancellationToken)
+    {
+        var client = _http.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(60);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.tavily.com/search");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ServerSettings.Current.TavilyApiKey);
+        request.Content = JsonContent.Create(new
+        {
+            query = $"{movie.Title} {movie.ReleaseYear} film{(string.IsNullOrWhiteSpace(movie.Director) ? "" : $" {movie.Director}")} plot genre tone themes review",
+            search_depth = "basic", chunks_per_source = 3, max_results = 5, include_answer = false,
+        });
+        using var response = await client.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Tavily: HTTP {(int)response.StatusCode} {(body.Length > 200 ? body[..200] : body)}");
+        Count("tavily", 0.008);
+        using var json = JsonDocument.Parse(body);
+        var found = Pages(json.RootElement, "title", "content");
+        _logger.LogInformation("Web lookup (Tavily): {Title} ({Year}) → {Count} page(s), $0.008", movie.Title, movie.ReleaseYear, found.Count);
+        return found;
+    }
+
+    /// <summary>Pages from a "results" array: title, url and text fields, at most 3, each cut to 1,200 characters.</summary>
+    private static List<(string Title, string Url, string Text)> Pages(JsonElement root, string titleField, string textField)
+    {
+        var found = new List<(string, string, string)>();
+        if (!root.TryGetProperty("results", out var list) || list.ValueKind != JsonValueKind.Array) return found;
+        foreach (var r in list.EnumerateArray())
+        {
+            if (!r.TryGetProperty("url", out var url) || !r.TryGetProperty(textField, out var t) || t.ValueKind != JsonValueKind.String) continue;
+            var text = (t.GetString() ?? "").Replace('\n', ' ').Trim();
+            if (text.Length < 80) continue;
+            if (text.Length > 1200) text = text[..1200] + "…";
+            found.Add((r.TryGetProperty(titleField, out var ti) ? ti.GetString() ?? "" : "", url.GetString() ?? "", text));
+            if (found.Count == 3) break;
+        }
+        return found;
+    }
+
+    // ---- Wikipedia: the film's English article, its summary, plot and reception
+    private async Task<List<(string Title, string Url, string Text)>> WikipediaAsync(MovieMetadata movie, CancellationToken cancellationToken)
+    {
+        var client = _http.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+        const string api = "https://en.wikipedia.org/w/api.php?format=json&formatversion=2";
+
+        // Find the article: a title match, preferably one saying "film" and the year
+        var search = $"{movie.Title} {movie.ReleaseYear} film";
+        using var found = JsonDocument.Parse(await client.GetStringAsync($"{api}&action=query&list=search&srlimit=5&srsearch={Uri.EscapeDataString(search)}", cancellationToken));
+        static string Fold(string t) => new string(t.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        var wanted = Fold(movie.Title);
+        string? page = null;
+        foreach (var hit in found.RootElement.GetProperty("query").GetProperty("search").EnumerateArray())
+        {
+            var hitTitle = hit.GetProperty("title").GetString() ?? "";
+            var snippet = hit.TryGetProperty("snippet", out var sn) ? sn.GetString() ?? "" : "";
+            if (!Fold(hitTitle).StartsWith(wanted)) continue;
+            if (movie.ReleaseYear is { } year && !hitTitle.Contains(year.ToString()) && !snippet.Contains(year.ToString()) && hitTitle.Contains('(')) continue;
+            page = hitTitle;
+            break;
+        }
+        Count("wikipedia", 0);
+        if (page is null) { _logger.LogInformation("Web lookup (Wikipedia): no article for {Title} ({Year})", movie.Title, movie.ReleaseYear); return new(); }
+
+        using var article = JsonDocument.Parse(await client.GetStringAsync($"{api}&action=query&prop=extracts&explaintext=1&exsectionformat=wiki&redirects=1&titles={Uri.EscapeDataString(page)}", cancellationToken));
+        var p = article.RootElement.GetProperty("query").GetProperty("pages")[0];
+        var text = p.TryGetProperty("extract", out var ex) ? ex.GetString() ?? "" : "";
+        if (!text.Contains("film", StringComparison.OrdinalIgnoreCase)) return new();
+
+        // The summary before the first heading, then the plot and the reception
+        static string Section(string all, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(all, @"\n==\s*" + System.Text.RegularExpressions.Regex.Escape(name) + @"\s*==\s*\n(.*?)(?=\n==[^=]|$)", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success) return System.Text.RegularExpressions.Regex.Replace(m.Groups[1].Value, @"\n=+[^=\n]+=+\n", "\n").Trim();
+            }
+            return "";
+        }
+        static string Cut(string t, int max) => t.Length <= max ? t : t[..max] + "…";
+        var lead = text.Split("\n==")[0].Trim();
+        var plot = Section(text, "Plot", "Synopsis", "Premise");
+        var reception = Section(text, "Reception", "Critical response", "Critical reception");
+        var summary = string.Join(" ", new[] { Cut(lead, 800), plot.Length > 0 ? "Plot: " + Cut(plot, 900) : "", reception.Length > 0 ? "Reception: " + Cut(reception, 700) : "" }
+            .Where(x => x.Length > 0)).Replace('\n', ' ');
+        var title = p.GetProperty("title").GetString() ?? page;
+        _logger.LogInformation("Web lookup (Wikipedia): {Title} ({Year}) → \"{Page}\"", movie.Title, movie.ReleaseYear, title);
+        return new() { (title, "https://en.wikipedia.org/wiki/" + Uri.EscapeDataString(title.Replace(' ', '_')), summary) };
     }
 
     // ---- Parallel, through its MCP server (https://mcp.parallel.ai/mcp): web_search returns pages with passages
@@ -211,7 +409,7 @@ public sealed class WebLookup
         // With a key, the limit counts at least the list price, even when Parallel reports $0 (e.g. covered by free credit)
         var listPrice = ParallelModeInUse == "advanced" ? 0.005 : 0.001;
         var cost = ParallelFree ? 0 : Math.Max(reported ?? 0, listPrice);
-        Count("Parallel", cost);
+        Count("parallel", cost);
 
         var data = result.TryGetProperty("structuredContent", out var sc) ? sc
             : JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString() ?? "{}").RootElement;
@@ -300,7 +498,7 @@ public sealed class WebLookup
 
         using var json = JsonDocument.Parse(body);
         var cost = json.RootElement.TryGetProperty("costDollars", out var c) && c.TryGetProperty("total", out var t) ? t.GetDouble() : 0.007;
-        Count("Exa", cost);
+        Count("exa", cost);
         var results = new List<(string, string, string)>();
         if (json.RootElement.TryGetProperty("results", out var list))
             foreach (var r in list.EnumerateArray())

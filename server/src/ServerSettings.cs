@@ -80,6 +80,14 @@ public sealed class ServerSettings
     /// <summary>With both engines on: "both" (ask both, combine the pages), "exa-first" or "parallel-first"
     /// (the other one only when the first fails, finds nothing or has reached its monthly limit).</summary>
     public string WebSearchOrder { get; set; } = "both";
+    /// <summary>The web search engines in order, each with its switch and allowance (see SearchEngines.For).</summary>
+    public List<Library.SearchEngineSetting> SearchEngines { get; set; } = new();
+    /// <summary>How many engines answer each lookup (1–3): the first ones in the order that still have allowance left.</summary>
+    public int SearchPerLookup { get; set; } = 1;
+    /// <summary>Add the film's Wikipedia article to every lookup, on top of the engines' turn.</summary>
+    public bool WikipediaAlways { get; set; } = true;
+    public string LinkupApiKey { get; set; } = "";
+    public string TavilyApiKey { get; set; } = "";
     [System.Text.Json.Serialization.JsonIgnore] public bool ExaOn => (UseExa ?? WebSearchProvider == "exa") && !string.IsNullOrWhiteSpace(ExaApiKey);
     [System.Text.Json.Serialization.JsonIgnore] public bool ParallelOn => UseParallel ?? WebSearchProvider == "parallel";
     /// <summary>Optional: higher rate limits on Parallel, billed to the Parallel account ($5 free a month with a card on file).</summary>
