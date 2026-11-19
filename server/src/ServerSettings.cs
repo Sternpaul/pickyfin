@@ -72,6 +72,16 @@ public sealed class ServerSettings
     public string ExaApiKey { get; set; } = "";
     /// <summary>Which web search step 3 uses: "exa" or "parallel" (Parallel's MCP server, free without a key).</summary>
     public string WebSearchProvider { get; set; } = "exa";
+    /// <summary>Each search engine on or off; null = from the older single choice above. Both on: each lookup asks both.</summary>
+    public bool? UseExa { get; set; }
+    public bool? UseParallel { get; set; }
+    /// <summary>Parallel spending stops for the month at this many dollars (only with a key; without one it's free).</summary>
+    public double ParallelBudget { get; set; } = 5;
+    /// <summary>With both engines on: "both" (ask both, combine the pages), "exa-first" or "parallel-first"
+    /// (the other one only when the first fails, finds nothing or has reached its monthly limit).</summary>
+    public string WebSearchOrder { get; set; } = "both";
+    [System.Text.Json.Serialization.JsonIgnore] public bool ExaOn => (UseExa ?? WebSearchProvider == "exa") && !string.IsNullOrWhiteSpace(ExaApiKey);
+    [System.Text.Json.Serialization.JsonIgnore] public bool ParallelOn => UseParallel ?? WebSearchProvider == "parallel";
     /// <summary>Optional: higher rate limits on Parallel, billed to the Parallel account ($5 free a month with a card on file).</summary>
     public string ParallelApiKey { get; set; } = "";
     /// <summary>With a Parallel key: "fast" ($0.001 a lookup) or "advanced" ($0.005, more thorough). Without a key it's always fast.</summary>

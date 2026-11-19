@@ -352,7 +352,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A library switched back on may have movies that were never classified
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
-        || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.WebSearchProvider != settings.WebSearchProvider);
+        || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.UseExa != settings.UseExa || before.UseParallel != settings.UseParallel);
     return Results.Ok(SettingsView.From(settings));
 });
 
@@ -506,6 +506,10 @@ record SettingsView
     public bool HasParallelApiKey { get; init; }
     public string? ParallelApiKey { get; init; }
     public string ParallelMode { get; init; } = "advanced";
+    public bool UseExa { get; init; }
+    public bool UseParallel { get; init; }
+    public double ParallelBudget { get; init; }
+    public string WebSearchOrder { get; init; } = "both";
     public bool WebLookupAuto { get; init; }
     public double WebLookupBudget { get; init; }
     public int WebLookupsPerDay { get; init; }
@@ -547,6 +551,10 @@ record SettingsView
         WebSearchProvider = s.WebSearchProvider,
         HasParallelApiKey = !string.IsNullOrWhiteSpace(s.ParallelApiKey),
         ParallelMode = s.ParallelMode,
+        UseExa = s.UseExa ?? s.WebSearchProvider == "exa",
+        UseParallel = s.ParallelOn,
+        ParallelBudget = s.ParallelBudget,
+        WebSearchOrder = s.WebSearchOrder,
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
         WebLookupsPerDay = s.WebLookupsPerDay,
@@ -570,6 +578,10 @@ record SettingsView
         s.WebSearchProvider = WebSearchProvider == "parallel" ? "parallel" : "exa";
         if (!string.IsNullOrWhiteSpace(ParallelApiKey)) s.ParallelApiKey = ParallelApiKey.Trim();
         s.ParallelMode = ParallelMode == "fast" ? "fast" : "advanced";
+        s.UseExa = UseExa;
+        s.UseParallel = UseParallel;
+        s.ParallelBudget = Math.Clamp(ParallelBudget, 0, 1000);
+        s.WebSearchOrder = WebSearchOrder is "exa-first" or "parallel-first" ? WebSearchOrder : "both";
         s.CheckEnabled = CheckEnabled;
         if (!string.IsNullOrWhiteSpace(CheckModel)) s.CheckModel = CheckModel.Trim();
         static List<string> Clean(List<string> list) => list.Select(m => m.Trim()).Where(m => m.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();

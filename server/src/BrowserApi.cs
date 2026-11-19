@@ -272,7 +272,13 @@ public static class BrowserApi
                 Checked = movies.Count(m => m.IsClassified && m.Checked),
                 s.CheckEnabled,
                 s.CheckModel,
-                Web = new { Configured = WebLookup.Configured, s.WebLookupAuto, Budget = s.WebLookupBudget, usage.Lookups, usage.Dollars, usage.Today, PerDay = s.WebLookupsPerDay, Blocked = web.Blocked() },
+                Web = new
+                {
+                    Configured = WebLookup.Configured, s.WebLookupAuto, Budget = s.WebLookupBudget, usage.Lookups, usage.Dollars, usage.Today, PerDay = s.WebLookupsPerDay, Blocked = web.Blocked(),
+                    Free = WebLookup.Free,
+                    Exa = new { On = s.ExaOn, web.ExaMonth.Lookups, web.ExaMonth.Dollars, Budget = s.WebLookupBudget },
+                    Parallel = new { On = s.ParallelOn, web.ParallelMonth.Lookups, web.ParallelMonth.Dollars, Budget = s.ParallelBudget, Free = WebLookup.ParallelFree, Mode = WebLookup.ParallelModeInUse },
+                },
                 LookingUpAll = _lookupAllRunning == 1,
                 LookupDone = _lookupDone,
                 LookupTotal = _lookupTotal,

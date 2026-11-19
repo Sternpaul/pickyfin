@@ -32,49 +32,77 @@ public sealed class WebLookup
         public int Today => Day == DateTime.UtcNow.ToString("yyyy-MM-dd") ? DayLookups : 0;
     }
 
-    public Usage ThisMonth
+    /// <summary>This month's films looked up (all engines together), and each engine's own searches and spend.</summary>
+    public sealed record Ledger(Usage Films, Usage Exa, Usage Parallel);
+
+    private Ledger Read()
     {
-        get
+        var month = DateTime.UtcNow.ToString("yyyy-MM");
+        Usage Fresh() => new(month, 0, 0);
+        Usage ThisMonthOnly(Usage? u) => u is not null && u.Month == month ? u : Fresh();
+        lock (Gate)
         {
-            var month = DateTime.UtcNow.ToString("yyyy-MM");
-            lock (Gate)
+            try
             {
-                try
-                {
-                    var saved = File.Exists(_usagePath) ? JsonSerializer.Deserialize<Usage>(File.ReadAllText(_usagePath)) : null;
-                    return saved is not null && saved.Month == month ? saved : new Usage(month, 0, 0);
-                }
-                catch { return new Usage(month, 0, 0); }
+                if (!File.Exists(_usagePath)) return new Ledger(Fresh(), Fresh(), Fresh());
+                var text = File.ReadAllText(_usagePath);
+                var ledger = JsonSerializer.Deserialize<Ledger>(text);
+                if (ledger?.Films is not null)
+                    return new Ledger(ThisMonthOnly(ledger.Films), ThisMonthOnly(ledger.Exa), ThisMonthOnly(ledger.Parallel));
+                // Older file: one total, which was Exa's
+                var old = ThisMonthOnly(JsonSerializer.Deserialize<Usage>(text));
+                return new Ledger(old, old, Fresh());
             }
+            catch { return new Ledger(Fresh(), Fresh(), Fresh()); }
         }
     }
 
-    private void Count(double dollars)
+    /// <summary>Films looked up this month (Dollars: all engines together).</summary>
+    public Usage ThisMonth => Read().Films;
+    public Usage ExaMonth => Read().Exa;
+    public Usage ParallelMonth => Read().Parallel;
+
+    private void Write(Func<Ledger, Ledger> change)
     {
-        var now = ThisMonth;
-        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        lock (Gate) File.WriteAllText(_usagePath, JsonSerializer.Serialize(now with
-        {
-            Lookups = now.Lookups + 1, Dollars = now.Dollars + dollars,
-            Day = today, DayLookups = now.Today + 1,
-        }));
+        var next = change(Read());
+        lock (Gate) File.WriteAllText(_usagePath, JsonSerializer.Serialize(next));
     }
 
-    public static bool UsesParallel => ServerSettings.Current.WebSearchProvider == "parallel";
+    private static Usage Add(Usage u, double dollars)
+    {
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        return u with { Lookups = u.Lookups + 1, Dollars = u.Dollars + dollars, Day = today, DayLookups = u.Today + 1 };
+    }
+
+    /// <summary>One search by one engine, with what it cost.</summary>
+    private void Count(string engine, double dollars) => Write(l => engine == "Exa"
+        ? l with { Exa = Add(l.Exa, dollars), Films = l.Films with { Dollars = l.Films.Dollars + dollars } }
+        : l with { Parallel = Add(l.Parallel, dollars), Films = l.Films with { Dollars = l.Films.Dollars + dollars } });
+
+    /// <summary>One film looked up (however many engines answered).</summary>
+    private void CountFilm() => Write(l => l with { Films = Add(l.Films, 0) });
+
     /// <summary>The Parallel search mode for this lookup: advanced only with a key.</summary>
     public static string ParallelModeInUse => !string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey) && ServerSettings.Current.ParallelMode == "advanced" ? "advanced" : "fast";
-    public static string ProviderName => UsesParallel ? $"Parallel ({ParallelModeInUse})" : "Exa";
-    public static bool Configured => UsesParallel || !string.IsNullOrWhiteSpace(ServerSettings.Current.ExaApiKey);
-    /// <summary>Parallel without a key costs nothing, so the monthly limit doesn't apply.</summary>
-    public static bool Free => UsesParallel && string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey);
+    public static bool Configured => ServerSettings.Current.ExaOn || ServerSettings.Current.ParallelOn;
+    /// <summary>Parallel without a key costs nothing, so its monthly limit doesn't apply.</summary>
+    public static bool ParallelFree => string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey);
+    /// <summary>Only engines that cost nothing are on.</summary>
+    public static bool Free => !ServerSettings.Current.ExaOn && ServerSettings.Current.ParallelOn && ParallelFree;
 
-    /// <summary>Why a lookup can't run now, or null when it can.</summary>
+    public bool ExaAvailable => ServerSettings.Current.ExaOn && ExaMonth.Dollars < ServerSettings.Current.WebLookupBudget;
+    public bool ParallelAvailable => ServerSettings.Current.ParallelOn && (ParallelFree || ParallelMonth.Dollars < ServerSettings.Current.ParallelBudget);
+
+    /// <summary>The engines a lookup uses right now, for the history ("Exa + Parallel (advanced)").</summary>
+    public string ProviderName => string.Join(" + ", new[] { ExaAvailable ? "Exa" : null, ParallelAvailable ? $"Parallel ({ParallelModeInUse})" : null }.Where(n => n is not null));
+
+    /// <summary>Why a lookup can't run now, or null when at least one engine can.</summary>
     public string? Blocked()
     {
-        if (!Configured) return "No Exa key set (AI page).";
-        if (Free) return null;
-        if (ThisMonth.Dollars >= ServerSettings.Current.WebLookupBudget) return $"This month's web lookup budget (${ServerSettings.Current.WebLookupBudget:0.##}) is used up.";
-        return null;
+        var s = ServerSettings.Current;
+        if (!Configured) return "No web search set up (AI page).";
+        if (ExaAvailable || ParallelAvailable) return null;
+        return "This month's web lookup limit is reached" + (s.ExaOn && s.ParallelOn ? " for Exa and Parallel." : ".");
     }
 
     /// <summary>A few paragraphs about the film from film sites (or anywhere, if those have nothing). Null when nothing useful was found.</summary>
@@ -84,14 +112,44 @@ public sealed class WebLookup
         var query = $"{movie.Title} ({movie.ReleaseYear}) film" + (string.IsNullOrWhiteSpace(movie.Director) ? "" : $" directed by {movie.Director}")
             + (string.IsNullOrWhiteSpace(movie.OriginalTitle) ? "" : $" original title {movie.OriginalTitle}");
 
-        List<(string Title, string Url, string Text)> found;
-        if (UsesParallel)
-            found = await ParallelAsync(movie, cancellationToken);
+        var searches = new List<(string Engine, Task<List<(string Title, string Url, string Text)>> Task)>();
+        Task<List<(string Title, string Url, string Text)>> Start(string engine) =>
+            engine == "Exa" ? ExaAsync(query, cancellationToken) : ParallelAsync(movie, cancellationToken);
+        var engines = new[] { ExaAvailable ? "Exa" : null, ParallelAvailable ? "Parallel" : null }.Where(e => e is not null).Select(e => e!).ToList();
+        var order = ServerSettings.Current.WebSearchOrder;
+        if (engines.Count == 2 && order is "exa-first" or "parallel-first")
+        {
+            // One after the other: the second only when the first fails or finds nothing
+            if (order == "parallel-first") engines.Reverse();
+            foreach (var engine in engines)
+            {
+                var task = Start(engine);
+                searches.Add((engine, task));
+                try { if ((await task).Count > 0) break; } catch { /* the next engine takes over */ }
+                if (engine == engines[0]) _logger.LogInformation("Web lookup: {Engine} had nothing for {Title}; asking {Next}", engine, movie.Title, engines[1]);
+            }
+        }
         else
         {
-            found = await SearchAsync(query, FilmSites, cancellationToken);
-            if (found.Count == 0) found = await SearchAsync(query, null, cancellationToken);
+            // Every engine that's on and within its limit, at the same time
+            foreach (var engine in engines) searches.Add((engine, Start(engine)));
+            try { await Task.WhenAll(searches.Select(x => x.Task)); } catch { /* looked at one by one below */ }
         }
+        var answered = searches.Where(x => x.Task.IsCompletedSuccessfully).ToList();
+        foreach (var failed in searches.Where(x => !x.Task.IsCompletedSuccessfully))
+            _logger.LogWarning("Web lookup: {Engine} failed for {Title}: {Error}", failed.Engine, movie.Title, failed.Task.Exception?.GetBaseException().Message);
+        if (answered.Count == 0)
+            throw searches.First().Task.Exception?.GetBaseException() ?? new InvalidOperationException("Web lookup failed");
+        CountFilm();
+
+        // Pages from both, taking turns, without the same page twice: 3 from one engine, up to 5 from two
+        static string Key(string url) { try { var u = new Uri(url); return (u.Host.Replace("www.", "") + u.AbsolutePath).TrimEnd('/').ToLowerInvariant(); } catch { return url; } }
+        var lists = answered.Select(x => x.Task.Result).ToList();
+        var found = new List<(string Title, string Url, string Text)>();
+        var seen = new HashSet<string>();
+        for (var k = 0; found.Count < (lists.Count > 1 ? 5 : 3) && lists.Any(l => k < l.Count); k++)
+            foreach (var list in lists)
+                if (k < list.Count && seen.Add(Key(list[k].Url)) && found.Count < (lists.Count > 1 ? 5 : 3)) found.Add(list[k]);
         if (found.Count == 0) return null;
 
         var sb = new StringBuilder();
@@ -141,12 +199,19 @@ public sealed class WebLookup
         if (result.TryGetProperty("isError", out var isError) && isError.ValueKind == JsonValueKind.True)
             throw new InvalidOperationException("Parallel: " + string.Join(" ", result.GetProperty("content").EnumerateArray().Select(c => c.TryGetProperty("text", out var t) ? t.GetString() : "")).Trim());
 
-        // Cost, when billed to a key; free use reports none
-        var cost = 0.0;
+        // What Parallel reports for the call (with a key), e.g. "web_search ×1 $0.005"; free use reports nothing
+        double? reported = null;
+        var billed = "";
         if (result.TryGetProperty("_meta", out var meta) && meta.TryGetProperty("parallel/usage", out var usage) && usage.ValueKind == JsonValueKind.Array)
-            cost = usage.EnumerateArray().Sum(u => u.TryGetProperty("cost_usd", out var c) && c.TryGetDouble(out var d) ? d : 0);
-        else if (!Free) cost = ParallelModeInUse == "advanced" ? 0.005 : 0.001;
-        Count(cost);
+        {
+            reported = usage.EnumerateArray().Sum(u => u.TryGetProperty("cost_usd", out var c) && c.TryGetDouble(out var d) ? d : 0);
+            billed = string.Join(", ", usage.EnumerateArray().Select(u =>
+                $"{(u.TryGetProperty("name", out var n) ? n.GetString() : "?")} ×{(u.TryGetProperty("count", out var k) ? k.ToString() : "?")} ${(u.TryGetProperty("cost_usd", out var c) ? c.ToString() : "?")}"));
+        }
+        // With a key, the limit counts at least the list price, even when Parallel reports $0 (e.g. covered by free credit)
+        var listPrice = ParallelModeInUse == "advanced" ? 0.005 : 0.001;
+        var cost = ParallelFree ? 0 : Math.Max(reported ?? 0, listPrice);
+        Count("Parallel", cost);
 
         var data = result.TryGetProperty("structuredContent", out var sc) ? sc
             : JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString() ?? "{}").RootElement;
@@ -163,7 +228,8 @@ public sealed class WebLookup
                 found.Add((r.TryGetProperty("title", out var ti) ? ti.GetString() ?? "" : "", url.GetString() ?? "", text));
                 if (found.Count == 3) break;
             }
-        _logger.LogInformation("Web lookup (Parallel, {Mode}): {Title} ({Year}) → {Count} page(s){Cost}", ParallelModeInUse, movie.Title, movie.ReleaseYear, found.Count, cost > 0 ? $", ${cost:0.###}" : ", free");
+        _logger.LogInformation("Web lookup (Parallel, {Mode}): {Title} ({Year}) → {Count} page(s), {Cost}", ParallelModeInUse, movie.Title, movie.ReleaseYear, found.Count,
+            ParallelFree ? "free (no key)" : $"counted ${cost:0.###}; Parallel reports {(reported is null ? "no cost" : billed)}");
         return found;
     }
 
@@ -204,6 +270,13 @@ public sealed class WebLookup
         catch (JsonException) { return ((int)response.StatusCode, null); }
     }
 
+    private async Task<List<(string Title, string Url, string Text)>> ExaAsync(string query, CancellationToken cancellationToken)
+    {
+        var found = await SearchAsync(query, FilmSites, cancellationToken);
+        if (found.Count == 0) found = await SearchAsync(query, null, cancellationToken);
+        return found;
+    }
+
     private async Task<List<(string Title, string Url, string Text)>> SearchAsync(string query, string[]? sites, CancellationToken cancellationToken)
     {
         var client = _http.CreateClient();
@@ -227,7 +300,7 @@ public sealed class WebLookup
 
         using var json = JsonDocument.Parse(body);
         var cost = json.RootElement.TryGetProperty("costDollars", out var c) && c.TryGetProperty("total", out var t) ? t.GetDouble() : 0.007;
-        Count(cost);
+        Count("Exa", cost);
         var results = new List<(string, string, string)>();
         if (json.RootElement.TryGetProperty("results", out var list))
             foreach (var r in list.EnumerateArray())
