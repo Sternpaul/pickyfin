@@ -359,7 +359,7 @@ public sealed class WebLookup
         var lead = text.Split("\n==")[0].Trim();
         var plot = Section(text, "Plot", "Synopsis", "Premise");
         var reception = Section(text, "Reception", "Critical response", "Critical reception");
-        var summary = string.Join(" ", new[] { Cut(lead, 800), plot.Length > 0 ? "Plot: " + Cut(plot, 900) : "", reception.Length > 0 ? "Reception: " + Cut(reception, 700) : "" }
+        var summary = string.Join(" ", new[] { Cut(lead, 1200), plot.Length > 0 ? "Plot: " + Cut(plot, 1500) : "", reception.Length > 0 ? "Reception: " + Cut(reception, 1000) : "" }
             .Where(x => x.Length > 0)).Replace('\n', ' ');
         var title = p.GetProperty("title").GetString() ?? page;
         _logger.LogInformation("Web lookup (Wikipedia): {Title} ({Year}) → \"{Page}\"", movie.Title, movie.ReleaseYear, title);

@@ -1012,7 +1012,7 @@ async function loadHistory(id) {
     ? '<p class="note">Nothing recorded yet. History is kept from this version on; earlier steps weren\'t saved.</p>'
     : `<ol>${list.map(h => {
         const web = h.Step === 'web' && h.Text && h.Text !== 'Nothing found on the web';
-        const sources = web ? [...h.Text.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]) : [];
+        const sources = web ? [...h.Text.matchAll(/(?:^|\n\n)\[([^\]\n]+? – [^\]\s]+)\]/g)].map(m => m[1]) : [];
         const text = web ? `Found ${sources.length || 'some'} page${sources.length === 1 ? '' : 's'}: ${sources.join(', ')}` : (h.Text || '').replace(/^Second opinion: /, '');
         const tags = h.Step === 'web' ? '' : tagDiff(h.Before, h.After);
         return `<li class="${differs(h) ? 'differs' : ''}${h.Step === 'you' ? ' you' : ''}">

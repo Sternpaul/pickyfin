@@ -30,7 +30,7 @@ namespace Pickyfin.Server.Ai
             Cast = string.IsNullOrWhiteSpace(m.Cast) ? null : m.Cast,
             Keywords = m.KeywordSet.Items.Count > 0 ? m.KeywordSet.Items.Take(15) : null,
             Plot = Cut(m.Plot, plotChars),
-            FromTheWeb = string.IsNullOrWhiteSpace(m.WebNotes) ? null : Cut(m.WebNotes, 4500),
+            FromTheWeb = string.IsNullOrWhiteSpace(m.WebNotes) ? null : Cut(m.WebNotes, 10000),
             // Described again (flagged, or looked up on the web): the first opinion and what the review said
             EarlierTags = withReview && Reviewed(m) ? new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items } : null,
             Review = withReview && Reviewed(m) ? ReviewLines(m) : null,
