@@ -527,8 +527,12 @@
           <div class="control"><input type="password" id="ExaApiKey" placeholder="Paste a key" autocomplete="off"></div>
         </div>
         <div class="setting" id="parallel-row">
-          <div><h3>Parallel key <span class="state" id="parallel-state"></span> <span class="note">optional</span></h3><p class="why">Without a key, lookups are free but rate-limited. A key from platform.parallel.ai raises the limits; then each lookup costs $0.001, and accounts with a card on file get $5 free a month. The monthly limit below then applies.</p></div>
+          <div><h3>Parallel key <span class="state" id="parallel-state"></span> <span class="note">optional</span></h3><p class="why">Without a key, lookups are free but rate-limited, in fast mode. A key from platform.parallel.ai raises the limits and allows the advanced mode; lookups are then billed to your Parallel balance (accounts with a card on file get $5 free a month), and the monthly limit below applies.</p></div>
           <div class="control"><input type="password" id="ParallelApiKey" placeholder="Paste a key (optional)" autocomplete="off"></div>
+        </div>
+        <div class="setting" id="parallel-mode-row">
+          <div><h3>Search quality</h3><p class="why"><b>Advanced</b> searches more thoroughly and picks better passages: $0.005 a lookup, so about $11 for 2,000 films. <b>Fast</b>: $0.001 a lookup, the same mode as without a key.</p></div>
+          <div class="control"><div><div class="seg" id="ParallelMode"><button type="button" data-v="advanced">Advanced</button><button type="button" data-v="fast">Fast</button></div></div></div>
         </div>
         <div class="setting">
           <div><h3>Look up flagged films right away</h3><p class="why">When the AI doesn't know a film, or something looks off, look it up and describe it again at once. Each film is looked up once.</p></div>
@@ -851,6 +855,7 @@ async function loadSettings() {
   $('#ExaApiKey').value = ''; $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
   $('#ParallelApiKey').value = ''; $('#parallel-state').innerHTML = settings.HasParallelApiKey ? stateText(true) : '';
   seg($('#WebSearchProvider'), settings.WebSearchProvider || 'exa', showSearchRows); showSearchRows(settings.WebSearchProvider || 'exa');
+  seg($('#ParallelMode'), settings.ParallelMode || 'advanced');
   $('#WebLookupAuto').checked = settings.WebLookupAuto; $('#WebLookupBudget').value = settings.WebLookupBudget;
   $('#WebLookupsPerDay').value = settings.WebLookupsPerDay;
 }
@@ -898,7 +903,7 @@ const formValues = {
     CheckEnabled: $('#CheckEnabled').checked,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }),
   'lookup-form': () => ({
-    ExaApiKey: $('#ExaApiKey').value, ParallelApiKey: $('#ParallelApiKey').value, WebSearchProvider: segValue($('#WebSearchProvider')),
+    ExaApiKey: $('#ExaApiKey').value, ParallelApiKey: $('#ParallelApiKey').value, WebSearchProvider: segValue($('#WebSearchProvider')), ParallelMode: segValue($('#ParallelMode')) || 'advanced',
     WebLookupAuto: $('#WebLookupAuto').checked,
     WebLookupBudget: Number($('#WebLookupBudget').value) || 0, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
@@ -927,6 +932,7 @@ async function saveNow(form) {
     for (const k of ['ApiKey', 'ExaApiKey', 'ParallelApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
     $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#exa-state').innerHTML = stateText(settings.HasExaApiKey);
     $('#parallel-state').innerHTML = settings.HasParallelApiKey ? stateText(true) : '';
+    showSearchRows(segValue($('#WebSearchProvider')));
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
   } catch (err) { note.className = 'note err'; note.textContent = `Not saved: ${err.message}`; }
   finally { savesInFlight--; }
@@ -1237,6 +1243,8 @@ $('#iss-all').addEventListener('click', async e => {
 function showSearchRows(provider) {
   $('#exa-row').classList.toggle('hidden', provider !== 'exa');
   $('#parallel-row').classList.toggle('hidden', provider !== 'parallel');
+  // The mode can only be chosen with a key
+  $('#parallel-mode-row').classList.toggle('hidden', provider !== 'parallel' || !settings?.HasParallelApiKey);
 }
 const webReady = () => settings?.WebSearchProvider === 'parallel' || settings?.HasExaApiKey;
 const webFree = () => settings?.WebSearchProvider === 'parallel' && !settings?.HasParallelApiKey;

@@ -61,7 +61,9 @@ public sealed class WebLookup
     }
 
     public static bool UsesParallel => ServerSettings.Current.WebSearchProvider == "parallel";
-    public static string ProviderName => UsesParallel ? "Parallel" : "Exa";
+    /// <summary>The Parallel search mode for this lookup: advanced only with a key.</summary>
+    public static string ParallelModeInUse => !string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey) && ServerSettings.Current.ParallelMode == "advanced" ? "advanced" : "fast";
+    public static string ProviderName => UsesParallel ? $"Parallel ({ParallelModeInUse})" : "Exa";
     public static bool Configured => UsesParallel || !string.IsNullOrWhiteSpace(ServerSettings.Current.ExaApiKey);
     /// <summary>Parallel without a key costs nothing, so the monthly limit doesn't apply.</summary>
     public static bool Free => UsesParallel && string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey);
@@ -143,7 +145,7 @@ public sealed class WebLookup
         var cost = 0.0;
         if (result.TryGetProperty("_meta", out var meta) && meta.TryGetProperty("parallel/usage", out var usage) && usage.ValueKind == JsonValueKind.Array)
             cost = usage.EnumerateArray().Sum(u => u.TryGetProperty("cost_usd", out var c) && c.TryGetDouble(out var d) ? d : 0);
-        else if (!Free) cost = 0.001;
+        else if (!Free) cost = ParallelModeInUse == "advanced" ? 0.005 : 0.001;
         Count(cost);
 
         var data = result.TryGetProperty("structuredContent", out var sc) ? sc
@@ -161,7 +163,7 @@ public sealed class WebLookup
                 found.Add((r.TryGetProperty("title", out var ti) ? ti.GetString() ?? "" : "", url.GetString() ?? "", text));
                 if (found.Count == 3) break;
             }
-        _logger.LogInformation("Web lookup (Parallel): {Title} ({Year}) → {Count} page(s){Cost}", movie.Title, movie.ReleaseYear, found.Count, cost > 0 ? $", ${cost:0.###}" : ", free");
+        _logger.LogInformation("Web lookup (Parallel, {Mode}): {Title} ({Year}) → {Count} page(s){Cost}", ParallelModeInUse, movie.Title, movie.ReleaseYear, found.Count, cost > 0 ? $", ${cost:0.###}" : ", free");
         return found;
     }
 
@@ -172,6 +174,7 @@ public sealed class WebLookup
             jsonrpc = "2.0", id = Interlocked.Increment(ref _mcpId), method = "initialize",
             @params = new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "pickyfin", version = "1.0" } },
         }, cancellationToken, initializing: true);
+        if (status is 401 or 403) throw new InvalidOperationException("Parallel refused the key (AI page → Parallel key)");
         if (status is < 200 or >= 300 || _mcpSession is null) throw new InvalidOperationException($"Parallel: couldn't start a session (HTTP {status})");
         await McpPostAsync(client, new { jsonrpc = "2.0", method = "notifications/initialized" }, cancellationToken);
     }
@@ -185,7 +188,11 @@ public sealed class WebLookup
         request.Headers.Add("MCP-Protocol-Version", "2025-06-18");
         if (!initializing && _mcpSession is not null) request.Headers.Add("Mcp-Session-Id", _mcpSession);
         if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ParallelApiKey))
+        {
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ServerSettings.Current.ParallelApiKey);
+            // A key allows choosing the search mode (the server's default is fast)
+            request.Headers.Add("x-parallel-mcp-config", JsonSerializer.Serialize(new { web_search = new { @override = new { mode = ParallelModeInUse } } }));
+        }
         using var response = await client.SendAsync(request, cancellationToken);
         if (initializing && response.Headers.TryGetValues("Mcp-Session-Id", out var ids)) _mcpSession = ids.FirstOrDefault();
         var text = await response.Content.ReadAsStringAsync(cancellationToken);

@@ -74,6 +74,8 @@ public sealed class ServerSettings
     public string WebSearchProvider { get; set; } = "exa";
     /// <summary>Optional: higher rate limits on Parallel, billed to the Parallel account ($5 free a month with a card on file).</summary>
     public string ParallelApiKey { get; set; } = "";
+    /// <summary>With a Parallel key: "fast" ($0.001 a lookup) or "advanced" ($0.005, more thorough). Without a key it's always fast.</summary>
+    public string ParallelMode { get; set; } = "advanced";
     public bool WebLookupAuto { get; set; } = true;
     /// <summary>Exa spending stops for the month at this many dollars.</summary>
     public double WebLookupBudget { get; set; } = 9;

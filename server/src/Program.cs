@@ -505,6 +505,7 @@ record SettingsView
     public string WebSearchProvider { get; init; } = "exa";
     public bool HasParallelApiKey { get; init; }
     public string? ParallelApiKey { get; init; }
+    public string ParallelMode { get; init; } = "advanced";
     public bool WebLookupAuto { get; init; }
     public double WebLookupBudget { get; init; }
     public int WebLookupsPerDay { get; init; }
@@ -545,6 +546,7 @@ record SettingsView
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
         WebSearchProvider = s.WebSearchProvider,
         HasParallelApiKey = !string.IsNullOrWhiteSpace(s.ParallelApiKey),
+        ParallelMode = s.ParallelMode,
         WebLookupAuto = s.WebLookupAuto,
         WebLookupBudget = s.WebLookupBudget,
         WebLookupsPerDay = s.WebLookupsPerDay,
@@ -567,6 +569,7 @@ record SettingsView
         if (!string.IsNullOrWhiteSpace(ExaApiKey)) s.ExaApiKey = ExaApiKey.Trim();
         s.WebSearchProvider = WebSearchProvider == "parallel" ? "parallel" : "exa";
         if (!string.IsNullOrWhiteSpace(ParallelApiKey)) s.ParallelApiKey = ParallelApiKey.Trim();
+        s.ParallelMode = ParallelMode == "fast" ? "fast" : "advanced";
         s.CheckEnabled = CheckEnabled;
         if (!string.IsNullOrWhiteSpace(CheckModel)) s.CheckModel = CheckModel.Trim();
         static List<string> Clean(List<string> list) => list.Select(m => m.Trim()).Where(m => m.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
