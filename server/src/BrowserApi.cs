@@ -205,6 +205,38 @@ public static class BrowserApi
             return movie is null ? Results.NotFound() : Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
         });
 
+        // The films closest to this one, by tags and meaning together: one row of the "matrix"
+        admin.MapGet("/movies/{id:guid}/related", async (Guid id, Database database, Meaning meaning, CancellationToken ct) =>
+        {
+            var s = ServerSettings.Current;
+            List<MovieMetadata> all;
+            await using (var db = database.Open())
+                all = await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(ct);
+            var movie = all.FirstOrDefault(m => m.ItemId == id);
+            if (movie is null) return Results.Ok(new { Meaning = false, Films = new List<object>() });
+            var snapshot = await meaning.SnapshotAsync(ct);
+            var weight = snapshot.Any ? Math.Clamp(s.MeaningWeight, 0, 100) / 100.0 : 0;
+            var engine = new SimilarityEngine { KeywordWeight = 0.10 };
+            var films = all.Where(m => m.ItemId != id && !s.IsLibraryExcluded(m.Libraries))
+                .Select(m =>
+                {
+                    var tags = engine.CalculateSimilarity(movie, m);
+                    var near = weight > 0 ? snapshot.Score(id, m.ItemId) : null;
+                    return (Movie: m, Tags: tags, Near: near, Score: Meaning.Blend(tags, near, weight));
+                })
+                .OrderByDescending(x => x.Score).Take(12)
+                .Select(x => (object)new
+                {
+                    x.Movie.ItemId, x.Movie.Title, x.Movie.ReleaseYear,
+                    Score = (int)Math.Round(x.Score * 100), Tags = (int)Math.Round(x.Tags * 100),
+                    Meaning = x.Near is { } near ? (int?)Math.Round(near / 0.7 * 100) : null,
+                    Crowd = SimilarityEngine.CrowdLinked(movie, x.Movie),
+                    Series = movie.CollectionId is { } c && x.Movie.CollectionId == c,
+                })
+                .ToList();
+            return Results.Ok(new { Meaning = snapshot.Films.ContainsKey(id), Films = films });
+        });
+
         admin.MapPut("/movies/{id:guid}", async (Guid id, MovieEdit edit, Database database, LibrarySync sync, JellyfinClient jellyfin, MovieHistory history, CancellationToken ct) =>
         {
             await using var db = database.Open();

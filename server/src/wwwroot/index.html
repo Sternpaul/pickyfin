@@ -118,6 +118,8 @@
   .history li::before { content: ""; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
   .history li.differs::before { background: var(--warn, #d97706); }
   .history li.you::before { background: var(--accent); }
+  .history ol.related { list-style: decimal; border-left: 0; gap: 6px; padding-left: 22px; }
+  .history ol.related li::before { display: none; }
   .history .h-head { font-weight: 650; }
   .history .h-meta { color: var(--muted); font-size: 12.5px; }
   .history .h-text { margin-top: 4px; white-space: pre-line; overflow-wrap: anywhere; }
@@ -575,7 +577,7 @@
       <h2 class="group-title">Keywords and scores</h2>
       <form id="tmdb-form" class="settings">
         <div class="setting">
-          <div><h3>TMDB key <span class="state" id="tmdb-state"></span></h3><p class="why">Optional. Adds precise keywords from The Movie Database ("heist", "time travel"), which sharpens matching. A free key comes from themoviedb.org → Settings → API.</p></div>
+          <div><h3>TMDB key <span class="state" id="tmdb-state"></span></h3><p class="why">Optional. Adds precise keywords from The Movie Database ("heist", "time travel"), the series a film belongs to (so parts come in order), and the films TMDB's viewers liked alongside it. A free key comes from themoviedb.org → Settings → API.</p></div>
           <div class="control"><input type="password" id="TmdbApiKey" placeholder="Paste a key" autocomplete="off"></div>
         </div>
         <div class="setting">
@@ -587,6 +589,15 @@
           <div class="control"><input type="number" id="OmdbPerDay" min="1" step="100" style="width:7em"></div>
         </div>
         <div class="setting-foot"><span class="note" id="tmdb-note"></span></div>
+      </form>
+
+      <h2 class="group-title">Matching by meaning</h2>
+      <form id="meaning-form" class="settings">
+        <div class="setting">
+          <div><h3>Embedding model</h3><p class="why">Turns each film's whole description (plot, tags, what the web says) and each person's description into a "meaning". Films that mean similar things are related even without shared tags. Runs on your OpenRouter key; free models cost nothing. Changing the model matches every film again. <span id="meaning-models-note"></span></p></div>
+          <div class="control"><select id="EmbeddingModel" style="max-width:22em"></select></div>
+        </div>
+        <div class="setting-foot"><span class="note" id="meaning-note"></span></div>
       </form>
     </section>
 
@@ -602,6 +613,10 @@
           <div class="setting">
             <div><h3>Description or watch history</h3><p class="why">When both exist, which one the picks follow more. On shared TVs, the description is usually the better guide.</p></div>
             <div class="control"><div class="ends"><span>Watch history</span><span>Description</span></div><input type="range" id="BriefWeight" min="0" max="100" step="5"></div>
+          </div>
+          <div class="setting">
+            <div><h3>Tags or meaning</h3><p class="why">How films are compared with each other and with a description: by their tags (subcategories, moods, themes…), or by what their whole description means. Only matters once films are matched by meaning (AI page).</p></div>
+            <div class="control"><div class="ends"><span>Tags</span><span>Meaning</span></div><input type="range" id="MeaningWeight" min="0" max="100" step="10"></div>
           </div>
           <div class="setting">
             <div><h3>Safe picks or discoveries</h3><p class="why">Well-known, highly rated films, or lesser-known ones they probably haven't heard of. Discoveries still need decent ratings.</p></div>
@@ -620,7 +635,7 @@
             <div class="control"><div><div class="seg" id="Rotation"><button type="button" data-v="low">Little</button><button type="button" data-v="medium">Some</button><button type="button" data-v="high">Lots</button></div></div></div>
           </div>
           <div class="setting">
-            <div><h3>Skip weakly rated films</h3><p class="why">Leave out films with a low audience rating in Jellyfin. Films without a rating are kept.</p></div>
+            <div><h3>Skip weakly rated films</h3><p class="why">Leave out films with a low rating from real scores (OMDb, the web, Jellyfin). Films without one are kept.</p></div>
             <div class="control"><select id="MinRating" style="width:auto"><option value="0">Off</option><option value="5">Below 5</option><option value="6">Below 6</option><option value="6.5">Below 6.5</option><option value="7">Below 7</option></select></div>
           </div>
         </div>
@@ -859,6 +874,8 @@ async function loadSettings() {
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
+  fillEmbeddingModels(settings.EmbeddingModel || '');
+  $('#MeaningWeight').value = settings.MeaningWeight ?? 50;
   $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
   $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery;
@@ -881,6 +898,7 @@ async function loadSettings() {
 const sliderText = {
   BriefWeight: v => v == 50 ? 'Half and half' : v > 50 ? `${v}% description · ${100 - v}% history` : `${100 - v}% history · ${v}% description`,
   Discovery: v => `${v} of 100${v == 40 ? ' · default' : ''}`,
+  MeaningWeight: v => v == 50 ? 'Half and half · default' : v > 50 ? `${v}% meaning · ${100 - v}% tags` : `${100 - v}% tags · ${v}% meaning`,
   BecausePeople: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
   BecauseCountry: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
   BecauseEra: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
@@ -929,10 +947,11 @@ const formValues = {
     WebLookupAuto: $('#WebLookupAuto').checked, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
+  'meaning-form': () => ({ EmbeddingModel: $('#EmbeddingModel').value }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
 };
-const formNotes = { 'ai-form': '#ai-note', 'check-form': '#check-note', 'lookup-form': '#lookup-note', 'rescan-form': '#rescan-note', 'tmdb-form': '#tmdb-note', 'rows-form': '#rows-note' };
+const formNotes = { 'meaning-form': '#meaning-note', 'ai-form': '#ai-note', 'check-form': '#check-note', 'lookup-form': '#lookup-note', 'rescan-form': '#rescan-note', 'tmdb-form': '#tmdb-note', 'rows-form': '#rows-note' };
 const saveTimers = {};
 let savesInFlight = 0;
 const savePending = () => savesInFlight > 0 || Object.values(saveTimers).some(Boolean);
@@ -970,12 +989,12 @@ window.addEventListener('beforeunload', e => { if (savePending()) { e.preventDef
 const tuningValues = () => ({
   BecauseRows: Number(segValue($('#because-seg'))),
   BecausePeople: Number($('#BecausePeople').value), BecauseCountry: Number($('#BecauseCountry').value), BecauseEra: Number($('#BecauseEra').value), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
-  BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value),
+  BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value), MeaningWeight: Number($('#MeaningWeight').value),
   Variety: segValue($('#Variety')), NewArrivals: segValue($('#NewArrivals')), Rotation: segValue($('#Rotation')), MinRating: Number($('#MinRating').value),
 });
 $('#tuning-defaults').addEventListener('click', async () => {
   if (!confirm('Set all tuning back to the defaults?')) return;
-  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, Discovery: 40, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
+  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, MeaningWeight: 50, Discovery: 40, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
 });
 $('#test-ai').addEventListener('click', async e => {
   const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';
@@ -1008,6 +1027,37 @@ function tagDiff(before, after) {
   };
   return after ? `<div class="h-tags">${row('S')}${row('M')}</div>` : '';
 }
+// Embedding models from OpenRouter, free ones first; the current one stays even if the list can't load
+let embeddingModels = null;
+async function fillEmbeddingModels(current) {
+  const select = $('#EmbeddingModel'); if (!select) return;
+  const draw = () => {
+    const list = embeddingModels || [];
+    const options = [['', 'Off']].concat(list.map(m => [m.Id, `${m.Name}${m.Free ? ' · free' : ` · $${m.PerMillion} per million tokens`}`]));
+    if (current && !list.some(m => m.Id === current)) options.push([current, current + (embeddingModels ? ' · no longer offered' : '')]);
+    select.innerHTML = options.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+    select.value = current;
+  };
+  draw();
+  if (!embeddingModels) {
+    try { embeddingModels = await call('GET', '/api/ai/embedding-models'); $('#meaning-models-note').textContent = ''; }
+    catch { $('#meaning-models-note').textContent = 'Couldn\'t load the list from OpenRouter.'; return; }
+    draw();
+  }
+}
+
+// The films closest to this one: tags and meaning together, with what links them
+async function loadRelated(id) {
+  const box = $('#e-related'); if (!box) return;
+  let r; try { r = await call('GET', `/api/movies/${id}/related`); } catch { box.innerHTML = '<summary>Closest films</summary><p class="note">Couldn\'t load them.</p>'; return; }
+  if (!r.Films.length) { box.innerHTML = '<summary>Closest films</summary><p class="note">None yet: the film needs its tags first.</p>'; return; }
+  const why = f => [f.Series ? 'same series' : '', f.Crowd ? 'TMDB viewers liked both' : '', f.Meaning != null ? `meaning ${f.Meaning}` : '', `tags ${f.Tags}`].filter(Boolean).join(' · ');
+  box.innerHTML = `<summary>Closest films</summary>
+    ${r.Meaning ? '' : '<p class="note">By tags only for now: this film isn\'t matched by meaning yet.</p>'}
+    <ol class="related">${r.Films.map(f => `<li><a href="#" data-film="${f.ItemId}">${esc(f.Title)}</a> <span class="note">${f.ReleaseYear || ''} · ${why(f)}</span></li>`).join('')}</ol>`;
+  box.querySelectorAll('[data-film]').forEach(a => a.onclick = e => { e.preventDefault(); openMovie(a.dataset.film); });
+}
+
 async function loadHistory(id) {
   const box = $('#e-history'); if (!box) return;
   let list = [];
@@ -1183,7 +1233,9 @@ async function openMovie(id) {
   const editorState = () => JSON.stringify([subs, moods, $('#e-themes').value, $('#e-narr').value, $('#e-acc').value, $('#e-int').value, $('#e-score').value]);
   const loaded = editorState();
   drawerDirty = () => !!$('#e-themes') && editorState() !== loaded;
+  $('#d-body').insertAdjacentHTML('beforeend', '<div class="edit-row"><details class="history" id="e-related"><summary>Closest films</summary><p class="note">Loading…</p></details></div>');
   $('#d-body').insertAdjacentHTML('beforeend', '<div class="edit-row"><details class="history" id="e-history"><summary>History</summary><p class="note">Loading…</p></details></div>');
+  loadRelated(id);
   loadHistory(id);
   $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
   $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));

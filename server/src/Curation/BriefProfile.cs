@@ -99,7 +99,7 @@ Output ONLY the JSON object.";
             Occasions = Canonical(Strings(root, "occasions"), ClassificationVocabulary.CanonicalOccasion),
             AvoidEndings = Canonical(Strings(root, "avoidEndings"), ClassificationVocabulary.CanonicalEnding),
             Awarded = Value(root, "awarded") is { ValueKind: JsonValueKind.True },
-            LookingFor = Value(root, "lookingFor") is { ValueKind: JsonValueKind.String } lf && lf.GetString()?.Trim() is { Length: > 0 } text ? (text.Length > 600 ? text[..600] : text) : null,
+            LookingFor = Value(root, "lookingFor") is { ValueKind: JsonValueKind.String } lf && lf.GetString()?.Trim() is { Length: > 0 } text ? (text.Length > 600 ? text[..600] : text) : "",
         };
         _logger.LogInformation("Brief understood as: {Subcategories} / moods {Moods}", string.Join(", ", profile.Subcategories), string.Join(", ", profile.Moods));
         return profile;

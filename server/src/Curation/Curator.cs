@@ -39,8 +39,11 @@ public sealed class Curator
     private readonly Database _database;
     private readonly SimilarityEngine _similarity = new() { KeywordWeight = 0.10 };
 
-    public Curator(JellyfinClient jellyfin, MovieStore store, AIProviderFactory ai, Database database, ILogger<Curator> logger)
+    private readonly Meaning _meaning;
+
+    public Curator(JellyfinClient jellyfin, MovieStore store, AIProviderFactory ai, Database database, Meaning meaning, ILogger<Curator> logger)
     {
+        _meaning = meaning;
         _database = database;
         _jellyfin = jellyfin;
         _store = store;
@@ -122,12 +125,20 @@ public sealed class Curator
         // What they were shown last time, so rows change between refreshes
         var shownBefore = await LastPicksAsync(user.UserId, cancellationToken);
 
+        // Tags and meaning together: how alike two films are, and how well one fits the description
+        var meaning = await _meaning.SnapshotAsync(cancellationToken);
+        var meaningWeight = meaning.Any ? Math.Clamp(Settings.MeaningWeight, 0, 100) / 100.0 : 0;
+        double Similar(MovieMetadata a, MovieMetadata b) =>
+            Meaning.Blend(_similarity.CalculateSimilarity(a, b), meaningWeight > 0 ? meaning.Score(a.ItemId, b.ItemId) : null, meaningWeight);
+        double BriefFit(MovieMetadata m) =>
+            brief is null ? 0 : Meaning.Blend(BriefScore(m, brief), meaningWeight > 0 ? meaning.BriefScore(user.UserId, m.ItemId) : null, meaningWeight);
+
         // 2. Shortlist
         var recentHistory = history.Take(30).ToList();
         // Taste: recent watches here plus films they rated well on Letterboxd
         var taste = recentHistory.Concat(lb.Liked.Take(20)).DistinctBy(Identity).ToList();
         var scored = candidates
-            .Select(m => (Movie: m, Score: Score(m, brief, taste) + LetterboxdNudge(m, lb) + TuningNudge(m, shownBefore)))
+            .Select(m => (Movie: m, Score: Score(m, brief, taste, Similar, BriefFit) + LetterboxdNudge(m, lb, Similar) + TuningNudge(m, shownBefore)))
             .OrderByDescending(x => x.Score)
             .ToList();
         var shortlist = Diversify(scored.Select(x => x.Movie), Settings.ShortlistSize);
@@ -173,7 +184,7 @@ public sealed class Curator
             var mine = Pins($"because-{slot}");
             var seedScores = candidates
                 .Where(m => !used.Contains(m.ItemId))
-                .Select(m => (Movie: m, Score: _similarity.CalculateSimilarity(seed, m) * 0.75 + (brief is null ? 0 : BriefScore(m, brief) * 0.25)));
+                .Select(m => (Movie: m, Score: Similar(seed, m) * 0.75 + BriefFit(m) * 0.25));
             var picked = BecauseRow.Pick(seed, seedScores, countryShares, Math.Max(0, perRow - mine.Count), BecauseRow.Strengths.FromSettings(Settings));
             var similar = picked.Select(p => p.Movie.ItemId).ToList();
             if (similar.Count + mine.Count < 5) continue;
@@ -226,11 +237,11 @@ public sealed class Curator
     }
 
     /// <summary>Watchlist films move up; films close to ones they disliked move down.</summary>
-    private double LetterboxdNudge(MovieMetadata movie, LetterboxdTaste lb)
+    private static double LetterboxdNudge(MovieMetadata movie, LetterboxdTaste lb, Func<MovieMetadata, MovieMetadata, double> similar)
     {
         var nudge = lb.WatchlistIds.Contains(movie.ItemId) ? 0.25 : 0;
         if (lb.Disliked.Count > 0 && movie.IsClassified)
-            nudge -= 0.25 * lb.Disliked.Max(d => _similarity.CalculateSimilarity(d, movie));
+            nudge -= 0.25 * lb.Disliked.Max(d => similar(d, movie));
         return nudge;
     }
 
@@ -279,15 +290,16 @@ public sealed class Curator
         return Math.Min(1.0, subcategory * 0.5 + mood * 0.25 + theme * 0.15 + keyword * 0.10 + extra);
     }
 
-    private double HistoryScore(MovieMetadata movie, List<MovieMetadata> history)
+    private static double HistoryScore(MovieMetadata movie, List<MovieMetadata> history, Func<MovieMetadata, MovieMetadata, double> similar)
     {
         if (history.Count == 0 || !movie.IsClassified) return 0;
         // Average of the three closest watches: one strong match counts, but not alone
-        var best = history.Select(h => _similarity.CalculateSimilarity(h, movie)).OrderByDescending(s => s).Take(3).ToList();
+        var best = history.Select(h => similar(h, movie)).OrderByDescending(s => s).Take(3).ToList();
         return best.Average();
     }
 
-    private double Score(MovieMetadata movie, BriefProfile? brief, List<MovieMetadata> history)
+    private static double Score(MovieMetadata movie, BriefProfile? brief, List<MovieMetadata> history,
+        Func<MovieMetadata, MovieMetadata, double> similar, Func<MovieMetadata, double> briefFit)
     {
         var hasBrief = brief is { IsEmpty: false };
         var hasHistory = history.Count > 0;
@@ -295,9 +307,9 @@ public sealed class Curator
         var briefShare = Math.Clamp(Settings.BriefWeight, 0, 100) / 100.0;
 
         if (hasBrief && hasHistory)
-            return BriefScore(movie, brief!) * 0.85 * briefShare + HistoryScore(movie, history) * 0.85 * (1 - briefShare) + quality * 0.15;
-        if (hasBrief) return BriefScore(movie, brief!) * 0.80 + quality * 0.20;
-        if (hasHistory) return HistoryScore(movie, history) * 0.80 + quality * 0.20;
+            return briefFit(movie) * 0.85 * briefShare + HistoryScore(movie, history, similar) * 0.85 * (1 - briefShare) + quality * 0.15;
+        if (hasBrief) return briefFit(movie) * 0.80 + quality * 0.20;
+        if (hasHistory) return HistoryScore(movie, history, similar) * 0.80 + quality * 0.20;
         // Nothing known: well-regarded films, a little preference for newer additions
         var freshness = Math.Max(0, 1 - (DateTime.UtcNow - movie.DateAdded).TotalDays / 365.0);
         return quality * 0.85 + freshness * 0.15;

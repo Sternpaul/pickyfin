@@ -33,11 +33,12 @@ public sealed class RefreshService : BackgroundService
     private readonly MovieClassifier _classifier;
     private readonly OmdbScores _omdb;
     private readonly TmdbDetails _tmdb;
+    private readonly Meaning _meaning;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, OmdbScores omdb, TmdbDetails tmdb, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, OmdbScores omdb, TmdbDetails tmdb, Meaning meaning, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -54,6 +55,7 @@ public sealed class RefreshService : BackgroundService
         _classifier = classifier;
         _omdb = omdb;
         _tmdb = tmdb;
+        _meaning = meaning;
     }
 
     public string State { get; private set; } = "Starting";
@@ -79,6 +81,7 @@ public sealed class RefreshService : BackgroundService
         Jobs.Ensure("rescan", "Re-checking everything", turn);
         Jobs.Ensure(OmdbScores.Key, OmdbScores.Title, turn);
         Jobs.Ensure(TmdbDetails.Key, TmdbDetails.Title, turn);
+        Jobs.Ensure(Meaning.Key, Meaning.Title, turn);
         await QueueOutdatedAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -174,6 +177,15 @@ public sealed class RefreshService : BackgroundService
         {
             _logger.LogWarning("TMDB details paused: {Error}", error.Message);
             Jobs.Idle(TmdbDetails.Key, TmdbDetails.Title, $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + Tick, error: true);
+        }
+
+        // Matching by meaning: descriptions and films become vectors, a batch per round
+        State = "Matching films by meaning";
+        try { await _meaning.RunAsync(cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("Matching by meaning paused: {Error}", error.Message);
+            Jobs.Idle(Meaning.Key, Meaning.Title, $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + Tick, error: true);
         }
 
         // Tagging that stopped on an error tries again on its own, not only at the next library sync;
@@ -339,7 +351,9 @@ public sealed class RefreshService : BackgroundService
         }
 
         var lastPlayed = await _jellyfin.GetLastPlayedAsync(user.UserId, cancellationToken);
-        var briefChanged = (user.Brief ?? "") != (user.BriefProfileFor ?? "");
+        var briefChanged = (user.Brief ?? "") != (user.BriefProfileFor ?? "")
+            // Descriptions read before the newer fields (running time, endings, what they want in plain words) are read once more
+            || (!string.IsNullOrWhiteSpace(user.Brief) && Curation.BriefProfile.FromJson(user.BriefProfile) is { LookingFor: null });
         var newWatch = lastPlayed is not null && lastPlayed != user.LastSeenPlay;
         var stale = user.LastRefresh is null || DateTime.UtcNow - user.LastRefresh > TimeSpan.FromHours(Math.Max(1, ServerSettings.Current.RefreshHours));
         if (!user.RefreshRequested && !briefChanged && !newWatch && !stale && !letterboxdNews) return;

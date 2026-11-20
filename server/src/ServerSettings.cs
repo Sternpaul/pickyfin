@@ -123,6 +123,10 @@ public sealed class ServerSettings
     // ---- tuning: what gets picked ----
     /// <summary>0 = follow watch history, 100 = follow the description.</summary>
     public int BriefWeight { get; set; } = 65;
+    /// <summary>Embedding model on OpenRouter for matching by meaning; empty = off.</summary>
+    public string EmbeddingModel { get; set; } = "nvidia/nemotron-3.5-embed-8b:free";
+    /// <summary>0 = tags only, 100 = meaning only, when comparing films and descriptions.</summary>
+    public int MeaningWeight { get; set; } = 50;
     /// <summary>0 = safe, well-known picks, 100 = lesser-known discoveries.</summary>
     public int Discovery { get; set; } = 40;
     /// <summary>"low", "medium" or "high": how mixed the genres are.</summary>

@@ -108,6 +108,7 @@ public sealed class PickyDb : DbContext
     public DbSet<LetterboxdFilm> Letterboxd => Set<LetterboxdFilm>();
     public DbSet<RowPin> Pins => Set<RowPin>();
     public DbSet<Library.HistoryEntry> History => Set<Library.HistoryEntry>();
+    public DbSet<Library.Embedding> Embeddings => Set<Library.Embedding>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder options) => options.UseSqlite($"Data Source={_path}");
 
@@ -119,6 +120,7 @@ public sealed class PickyDb : DbContext
         model.Entity<LetterboxdFilm>().HasIndex(f => new { f.UserId, f.Kind });
         model.Entity<RowPin>().HasIndex(r => new { r.UserId, r.Slot }).IsUnique();
         model.Entity<Library.HistoryEntry>().ToTable("History").HasIndex(h => h.ItemId);
+        model.Entity<Library.Embedding>().ToTable("Embeddings").HasKey(e => e.ItemId);
     }
 }
 
@@ -235,6 +237,13 @@ public sealed class Database
             ""After"" TEXT NULL,
             ""Text"" TEXT NULL)");
         Run(@"CREATE INDEX IF NOT EXISTS ""IX_History_ItemId"" ON ""History"" (""ItemId"")");
+        Run(@"CREATE TABLE IF NOT EXISTS ""Embeddings"" (
+            ""ItemId"" TEXT NOT NULL CONSTRAINT ""PK_Embeddings"" PRIMARY KEY,
+            ""Kind"" TEXT NOT NULL,
+            ""Model"" TEXT NOT NULL,
+            ""Hash"" TEXT NOT NULL,
+            ""Vector"" BLOB NOT NULL,
+            ""At"" TEXT NOT NULL)");
     }
 
     public PickyDb Open() => new(_path);

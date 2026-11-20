@@ -72,3 +72,46 @@ public class MatrixTests
         Assert.Equal(4.5, film.Acclaim, 2);
     }
 }
+
+public class MeaningTests
+{
+    [Fact]
+    public void EmbeddingAnswerIsRead()
+    {
+        var v = Meaning.Parse("""{ "data": [ { "index": 1, "embedding": [0, 1] }, { "index": 0, "embedding": [1, 0] } ] }""", 2);
+        Assert.NotNull(v);
+        Assert.Equal(1f, v![0][0]);
+        Assert.Equal(1f, v[1][1]);
+        Assert.Null(Meaning.Parse("""{ "data": [ { "index": 0, "embedding": [1, 0] } ] }""", 2));
+        Assert.Null(Meaning.Parse("""{ "error": { "message": "nope" } }""", 1));
+    }
+
+    [Fact]
+    public void ClosestByMeaningRanksHighest()
+    {
+        var films = new Dictionary<Guid, float[]>();
+        var seed = Guid.NewGuid(); var twin = Guid.NewGuid(); var far = Guid.NewGuid();
+        films[seed] = Meaning.Normalize(new[] { 1f, 0f });
+        films[twin] = Meaning.Normalize(new[] { 0.95f, 0.05f });
+        films[far] = Meaning.Normalize(new[] { -1f, 0.1f });
+        var rnd = new Random(1);
+        for (var i = 0; i < 30; i++) films[Guid.NewGuid()] = Meaning.Normalize(new[] { (float)rnd.NextDouble() - 0.5f, (float)rnd.NextDouble() });
+        var user = Guid.NewGuid();
+        var snap = new Meaning.Snapshot("m", 1, films, new() { [user] = Meaning.Normalize(new[] { 1f, 0f }) });
+        Assert.Equal(0.7, snap.Score(seed, twin)!.Value, 2);
+        Assert.Equal(0.0, snap.Score(seed, far)!.Value, 2);
+        Assert.True(snap.BriefScore(user, twin) > 0.6);
+        Assert.Equal(0.5 * 0.3 + 0.5 * 0.7, Meaning.Blend(0.3, 0.7, 0.5), 3);
+        Assert.Equal(0.3, Meaning.Blend(0.3, null, 0.5), 3);
+    }
+
+    [Fact]
+    public void DocumentCarriesTheWholeDescription()
+    {
+        var m = new Pickyfin.Server.Data.Models.MovieMetadata { Title = "Heat", ReleaseYear = 1995, Plot = "A heist.", Director = "Michael Mann", WebNotes = "Critics loved it." };
+        var doc = Meaning.Document(m);
+        Assert.Contains("Heat (1995)", doc);
+        Assert.Contains("Michael Mann", doc);
+        Assert.Contains("Critics loved it.", doc);
+    }
+}
