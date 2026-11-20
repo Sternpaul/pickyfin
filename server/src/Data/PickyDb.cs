@@ -183,6 +183,17 @@ public sealed class Database
         AddColumn("Movies", "Metascore", "INTEGER NULL");
         AddColumn("Movies", "ImdbRating", "REAL NULL");
         AddColumn("Movies", "ScoresFetched", "TEXT NULL");
+        AddColumn("Movies", "Minutes", "INTEGER NULL");
+        AddColumn("Movies", "Awards", "TEXT NULL");
+        AddColumn("Movies", "OscarWins", "INTEGER NOT NULL DEFAULT 0");
+        AddColumn("Movies", "OscarNominations", "INTEGER NOT NULL DEFAULT 0");
+        AddColumn("Movies", "CollectionId", "INTEGER NULL");
+        AddColumn("Movies", "CollectionName", "TEXT NULL");
+        AddColumn("Movies", "TmdbRecs", "TEXT NULL");
+        AddColumn("Movies", "DetailsFetched", "TEXT NULL");
+        AddColumn("Movies", "Pacing", "TEXT NULL");
+        AddColumn("Movies", "Ending", "TEXT NULL");
+        AddColumn("Movies", "Occasions", "TEXT NULL");
         AddColumn("Movies", "ContentNotes", "TEXT NULL");
         AddColumn("Movies", "BasedOn", "TEXT NULL");
         AddColumn("Movies", "SettingEra", "TEXT NULL");

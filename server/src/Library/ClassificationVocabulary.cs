@@ -14,7 +14,7 @@ namespace Pickyfin.Server.Library
     public static class ClassificationVocabulary
     {
         /// <summary>Bump when the vocabulary changes enough that old classifications should be redone.</summary>
-        public const int Version = 3;
+        public const int Version = 4;
 
         public static readonly IReadOnlyList<string> Subcategories = new[]
         {
@@ -68,6 +68,19 @@ namespace Pickyfin.Server.Library
         {
             "original", "novel", "short story", "play", "true story", "comic", "remake", "video game", "tv series", "other",
         };
+
+        public static readonly IReadOnlyList<string> Pacing = new[] { "slow", "steady", "fast" };
+        /// <summary>How the ending leaves you.</summary>
+        public static readonly IReadOnlyList<string> Endings = new[] { "happy", "bittersweet", "open", "bleak" };
+        /// <summary>Who it suits watching with.</summary>
+        public static readonly IReadOnlyList<string> Occasions = new[] { "date night", "family", "with friends", "alone" };
+
+        public static string? CanonicalPacing(string? raw) =>
+            raw is null ? null : Pacing.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
+        public static string? CanonicalEnding(string? raw) =>
+            raw is null ? null : Endings.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
+        public static string? CanonicalOccasion(string? raw) =>
+            raw is null ? null : Occasions.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
 
         public static string? CanonicalContentNote(string? raw) =>
             raw is null ? null : ContentNotes.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));

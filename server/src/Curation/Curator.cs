@@ -95,7 +95,18 @@ public sealed class Curator
 
         // Tuning: skip weakly rated films (only where a rating is known)
         if (Settings.MinRating > 0)
-            candidates = candidates.Where(m => m.CommunityRating is not > 0 || m.CommunityRating >= Settings.MinRating).ToList();
+            candidates = candidates.Where(m => m.RealRating is not { } rating || rating >= Settings.MinRating).ToList();
+
+        // Series in order: a later part waits until the earlier parts this person can watch are seen
+        var reachable = visible.Select(i => library.GetValueOrDefault(i.Id)).Where(m => m?.CollectionId is not null).Select(m => m!).ToList();
+        if (reachable.Count > 0)
+        {
+            var earlierUnseen = reachable.Where(m => !seen.Contains(Identity(m)))
+                .GroupBy(m => m.CollectionId!.Value)
+                .ToDictionary(g => g.Key, g => g.Select(m => (Year: m.ReleaseYear ?? 0, Id: Identity(m))).ToList());
+            candidates = candidates.Where(c => c.CollectionId is not { } col || !earlierUnseen.TryGetValue(col, out var parts)
+                || !parts.Any(p => p.Id != Identity(c) && p.Year > 0 && p.Year < (c.ReleaseYear ?? 0))).ToList();
+        }
 
         // Added movies stay until watched, and the AI doesn't pick them a second time
         foreach (var key in pinned.Keys.ToList())
@@ -232,7 +243,9 @@ public sealed class Curator
     private static bool IsAvoided(MovieMetadata movie, BriefProfile brief) =>
         movie.SubcategorySet.Items.Any(s => brief.AvoidSubcategories.Contains(s, StringComparer.OrdinalIgnoreCase))
         || movie.MoodSet.Items.Any(s => brief.AvoidMoods.Contains(s, StringComparer.OrdinalIgnoreCase))
-        || movie.ContentNoteList.Any(c => brief.AvoidContent.Contains(c, StringComparer.OrdinalIgnoreCase));
+        || movie.ContentNoteList.Any(c => brief.AvoidContent.Contains(c, StringComparer.OrdinalIgnoreCase))
+        || (movie.Ending is { } ending && brief.AvoidEndings.Contains(ending, StringComparer.OrdinalIgnoreCase))
+        || (brief.MaxMinutes is { } max && movie.Minutes is { } minutes && minutes > max + 5);
 
     /// <summary>How well a movie fits the brief, 0..1.</summary>
     internal static double BriefScore(MovieMetadata movie, BriefProfile brief)
@@ -257,7 +270,13 @@ public sealed class Curator
             + brief.Keywords.Count(k => k.Length > 2 && facts.Contains(k.ToLowerInvariant()));
         var keyword = Math.Min(1.0, keywordHits / 2.0);
 
-        return subcategory * 0.5 + mood * 0.25 + theme * 0.15 + keyword * 0.10;
+        // Small extras: the pacing and occasion they asked for, and Oscars when they like award winners
+        var extra = 0.0;
+        if (movie.Pacing is { } pace && brief.Pacing.Contains(pace, StringComparer.OrdinalIgnoreCase)) extra += 0.05;
+        if (brief.Occasions.Count > 0 && movie.OccasionList.Any(o => brief.Occasions.Contains(o, StringComparer.OrdinalIgnoreCase))) extra += 0.05;
+        if (brief.Awarded) extra += movie.OscarWins > 0 ? 0.08 : movie.OscarNominations > 0 ? 0.04 : 0;
+
+        return Math.Min(1.0, subcategory * 0.5 + mood * 0.25 + theme * 0.15 + keyword * 0.10 + extra);
     }
 
     private double HistoryScore(MovieMetadata movie, List<MovieMetadata> history)
@@ -294,7 +313,9 @@ public sealed class Curator
         var discovery = Math.Clamp(Settings.Discovery, 0, 100) / 100.0;
         var obscurity = movie.Popularity > 0 ? 1 - Math.Clamp(Math.Log10(movie.Popularity + 1) / 2.0, 0, 1) : 0.5;
         // Discoveries still need to be good: acclaim never drops below half the weight
-        return acclaim * (1 - 0.5 * discovery) + obscurity * 0.5 * discovery;
+        // An Oscar is a mark of quality for anyone
+        var oscar = movie.OscarWins > 0 ? 0.04 : movie.OscarNominations > 0 ? 0.02 : 0;
+        return acclaim * (1 - 0.5 * discovery) + obscurity * 0.5 * discovery + oscar;
     }
 
     /// <summary>New arrivals move up; last time's picks move down.</summary>
@@ -416,6 +437,11 @@ public sealed class Curator
         var tags = string.Join(", ", m.SubcategorySet.Items.Concat(m.MoodSet.Items).Take(5));
         var plot = (m.Plot ?? "").Replace('\n', ' ');
         if (plot.Length > 140) plot = plot[..140] + "…";
-        return $"{m.Title} ({m.ReleaseYear}) [{tags}] {plot}";
+        var facts = new List<string>();
+        if (m.Minutes is { } min) facts.Add($"{min} min");
+        if (m.OscarWins > 0) facts.Add($"won {m.OscarWins} Oscar{(m.OscarWins == 1 ? "" : "s")}");
+        else if (m.OscarNominations > 0) facts.Add("Oscar-nominated");
+        if (m.CollectionName is { } series) facts.Add($"part of {series}");
+        return $"{m.Title} ({m.ReleaseYear}) [{tags}]{(facts.Count > 0 ? " (" + string.Join(", ", facts) + ")" : "")} {plot}";
     }
 }

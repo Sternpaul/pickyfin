@@ -40,12 +40,22 @@ namespace Pickyfin.Server.Library
             if (string.Equals(source.Intensity, target.Intensity, StringComparison.OrdinalIgnoreCase))
                 score += 0.05;
 
-            // 9. v1.5.14: TMDB keyword overlap — objective precision signal.
+            // 9. Pacing and ending: how it feels to watch
+            if (source.Pacing is not null && string.Equals(source.Pacing, target.Pacing, StringComparison.OrdinalIgnoreCase)) score += 0.03;
+            if (source.Ending is not null && string.Equals(source.Ending, target.Ending, StringComparison.OrdinalIgnoreCase)) score += 0.03;
+
+            // 10. Crowd: TMDB's viewers liked these together (either direction)
+            if (CrowdLinked(source, target)) score += 0.12;
+
+            // 11. v1.5.14: TMDB keyword overlap — objective precision signal.
             if (KeywordWeight > 0)
                 score += source.KeywordSet.Jaccard(target.KeywordSet) * KeywordWeight;
 
             return Math.Min(1.0, score); // Range: 0.0 to 1.0
         }
+
+        public static bool CrowdLinked(MovieMetadata a, MovieMetadata b) =>
+            (b.TmdbId is { } bt && a.RecSet.Contains(bt)) || (a.TmdbId is { } at && b.RecSet.Contains(at));
 
         // Keyword weight for similarity (set by PlaylistEngine per config; default 0 = off).
         public double KeywordWeight { get; set; } = 0.0;

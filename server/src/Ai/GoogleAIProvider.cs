@@ -100,6 +100,9 @@ namespace Pickyfin.Server.Ai
                                         BasedOn = new { type = "STRING", @enum = ClassificationVocabulary.BasedOn },
                                         SettingEra = new { type = "STRING", nullable = true },
                                         SettingPlace = new { type = "STRING", nullable = true },
+                                        Pacing = new { type = "STRING", @enum = ClassificationVocabulary.Pacing },
+                                        Ending = new { type = "STRING", @enum = ClassificationVocabulary.Endings },
+                                        Occasions = new { type = "ARRAY", items = new { type = "STRING", @enum = ClassificationVocabulary.Occasions } },
                                     },
                                     required = new[] { "Ref", "Known", "Subcategories", "Moods", "Themes", "NarrativeStyle", "Accessibility", "Intensity", "CriticalAcclaimScore" }
                                 }

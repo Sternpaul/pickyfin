@@ -15,6 +15,7 @@ public sealed class JellyfinItem
     public string? Overview { get; set; }
     public float? CommunityRating { get; set; }
     public float? CriticRating { get; set; }
+    public long? RunTimeTicks { get; set; }
     public DateTime? DateCreated { get; set; }
     public List<string>? Genres { get; set; }
     public string? OriginalTitle { get; set; }

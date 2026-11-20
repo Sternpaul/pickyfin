@@ -16,6 +16,15 @@ public sealed class BriefProfile
     public List<string> AvoidMoods { get; set; } = new();
     /// <summary>Content notes to leave out entirely ("nothing too gory" → gore).</summary>
     public List<string> AvoidContent { get; set; } = new();
+    /// <summary>Longest running time they want, in minutes ("nothing over two hours" → 120). Null = any.</summary>
+    public int? MaxMinutes { get; set; }
+    public List<string> Pacing { get; set; } = new();
+    public List<string> Occasions { get; set; } = new();
+    public List<string> AvoidEndings { get; set; } = new();
+    /// <summary>They like award winners (Oscars).</summary>
+    public bool Awarded { get; set; }
+    /// <summary>What they want to watch, in one or two plain sentences, positives only (for matching by meaning).</summary>
+    public string? LookingFor { get; set; }
 
     public bool IsEmpty => Subcategories.Count == 0 && Moods.Count == 0 && Themes.Count == 0 && Keywords.Count == 0;
 
@@ -59,6 +68,12 @@ Return a JSON object with:
 - ""avoidSubcategories"": values from the same subcategory list they clearly dislike (may be empty)
 - ""avoidMoods"": values from the same mood list they clearly dislike (may be empty)
 - ""avoidContent"": content they don't want to see (may be empty), ONLY from: {Quoted(ClassificationVocabulary.ContentNotes)}
+- ""maxMinutes"": the longest running time they want, in minutes, ONLY if the description limits it (""nothing over two hours"" → 120), else null
+- ""pacing"": pacing they prefer (may be empty), ONLY from: {Quoted(ClassificationVocabulary.Pacing)}
+- ""occasions"": who they watch with (may be empty), ONLY from: {Quoted(ClassificationVocabulary.Occasions)}
+- ""avoidEndings"": endings they don't want (may be empty), ONLY from: {Quoted(ClassificationVocabulary.Endings)}
+- ""awarded"": true if they like award winners or Oscar films, else false
+- ""lookingFor"": one or two plain sentences describing the films they would love, only what they DO want (no negatives)
 Places, eras and sources they like (""films set in Japan"", ""1970s"", ""based on true stories"") go into ""keywords"" as short lowercase words (""japan"", ""1970s"", ""true story"").
 
 Output ONLY the JSON object.";
@@ -79,6 +94,12 @@ Output ONLY the JSON object.";
             AvoidSubcategories = Canonical(Strings(root, "avoidSubcategories"), ClassificationVocabulary.CanonicalSubcategory),
             AvoidMoods = Canonical(Strings(root, "avoidMoods"), ClassificationVocabulary.CanonicalMood),
             AvoidContent = Canonical(Strings(root, "avoidContent"), ClassificationVocabulary.CanonicalContentNote),
+            MaxMinutes = Value(root, "maxMinutes") is { ValueKind: JsonValueKind.Number } mm && mm.TryGetInt32(out var max) && max is >= 30 and <= 400 ? max : null,
+            Pacing = Canonical(Strings(root, "pacing"), ClassificationVocabulary.CanonicalPacing),
+            Occasions = Canonical(Strings(root, "occasions"), ClassificationVocabulary.CanonicalOccasion),
+            AvoidEndings = Canonical(Strings(root, "avoidEndings"), ClassificationVocabulary.CanonicalEnding),
+            Awarded = Value(root, "awarded") is { ValueKind: JsonValueKind.True },
+            LookingFor = Value(root, "lookingFor") is { ValueKind: JsonValueKind.String } lf && lf.GetString()?.Trim() is { Length: > 0 } text ? (text.Length > 600 ? text[..600] : text) : null,
         };
         _logger.LogInformation("Brief understood as: {Subcategories} / moods {Moods}", string.Join(", ", profile.Subcategories), string.Join(", ", profile.Moods));
         return profile;
@@ -86,6 +107,13 @@ Output ONLY the JSON object.";
 
     private static List<string> Canonical(IEnumerable<string> raw, Func<string?, string?> canonical) =>
         raw.Select(canonical).Where(v => v is not null).Select(v => v!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static JsonElement? Value(JsonElement root, string name)
+    {
+        foreach (var property in root.EnumerateObject())
+            if (property.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) return property.Value;
+        return null;
+    }
 
     private static IEnumerable<string> Strings(JsonElement root, string name)
     {

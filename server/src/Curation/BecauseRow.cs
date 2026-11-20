@@ -47,6 +47,8 @@ public static class BecauseRow
     public static string? UncommonCountry(MovieMetadata seed, Dictionary<string, double> shares) =>
         Countries(seed).FirstOrDefault() is { } main && shares.TryGetValue(main, out var share) && share < Uncommon ? main : null;
 
+    public static bool SameSeries(MovieMetadata seed, MovieMetadata m) => seed.CollectionId is { } c && m.CollectionId == c;
+
     public static bool SharesPeople(MovieMetadata seed, MovieMetadata m)
     {
         var leads = Leads(seed);
@@ -74,7 +76,8 @@ public static class BecauseRow
         var samePlace = Same(seed.SettingPlace, m.SettingPlace) ? 0.04 : 0;
         var sameEra = Same(seed.SettingEra, m.SettingEra) ? 0.03 : 0;
         var basis = seed.BasedOn is { } source && source != "original" && Same(source, m.BasedOn) ? 0.03 : 0;
-        return people * st.People / 50.0 + (sameCountry + samePlace) * st.Country / 50.0 + (era + sameEra) * st.Era / 50.0 + basis;
+        var series = SameSeries(seed, m) ? 0.30 : 0;
+        return people * st.People / 50.0 + (sameCountry + samePlace) * st.Country / 50.0 + (era + sameEra) * st.Era / 50.0 + basis + series;
     }
 
     /// <summary>Why a film is in the row, for the log: "same people: …", "French" or null (tags).</summary>
@@ -91,16 +94,19 @@ public static class BecauseRow
             .OrderByDescending(x => x.Final)
             .ToList();
 
-        // Places kept for the same people and the same uncommon country, if they're related at all
-        var people = st.People > 0 ? ranked.Where(x => x.Score > 0.10 && SharesPeople(seed, x.Movie)).Take(st.PeopleSlots).ToList() : new();
-        var local = country is null ? new() : ranked.Where(x => x.Score > 0.10 && !people.Contains(x) && Countries(x.Movie).Contains(country, StringComparer.OrdinalIgnoreCase)).Take(st.CountrySlots).ToList();
-        var kept = people.Concat(local).Take(count).ToList();
+        // Places kept for the next part of the series, the same people and the same uncommon country, if they're related at all
+        var series = ranked.Where(x => SameSeries(seed, x.Movie)).Take(2).ToList();
+        var people = st.People > 0 ? ranked.Where(x => x.Score > 0.10 && !series.Contains(x) && SharesPeople(seed, x.Movie)).Take(st.PeopleSlots).ToList() : new();
+        var local = country is null ? new() : ranked.Where(x => x.Score > 0.10 && !people.Contains(x) && !series.Contains(x) && Countries(x.Movie).Contains(country, StringComparer.OrdinalIgnoreCase)).Take(st.CountrySlots).ToList();
+        var kept = series.Concat(people).Concat(local).Take(count).ToList();
 
         var rest = ranked.Where(x => x.Final > 0.15 && !kept.Contains(x)).Take(count - kept.Count);
         string? Why((MovieMetadata Movie, double Score, double Final) x) =>
-            SharesPeople(seed, x.Movie) && st.People > 0 ? "same people: " + string.Join(", ", Leads(seed).Where(Everyone(x.Movie).Contains))
+            SameSeries(seed, x.Movie) ? "the series" + (seed.CollectionName is { } name ? $" ({name})" : "")
+            : SharesPeople(seed, x.Movie) && st.People > 0 ? "same people: " + string.Join(", ", Leads(seed).Where(Everyone(x.Movie).Contains))
             : country is not null && Countries(x.Movie).Contains(country, StringComparer.OrdinalIgnoreCase) ? country
             : null;
-        return kept.Concat(rest).OrderByDescending(x => x.Final).Select(x => new Picked(x.Movie, Why(x))).ToList();
+        // The next part of the series leads the row
+        return series.Concat(kept.Except(series).Concat(rest).OrderByDescending(x => x.Final)).Select(x => new Picked(x.Movie, Why(x))).ToList();
     }
 }

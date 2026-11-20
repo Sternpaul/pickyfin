@@ -56,6 +56,40 @@ namespace Pickyfin.Server.Data.Models
         /// <summary>When and where it's set, a few words each ("1960s", "Paris").</summary>
         public string? SettingEra { get; set; }
         public string? SettingPlace { get; set; }
+        /// <summary>Running time in minutes (from Jellyfin).</summary>
+        public int? Minutes { get; set; }
+        /// <summary>OMDb's awards line ("Won 3 Oscars. 45 wins & 112 nominations total"); "" = none. Only the OMDb job writes it.</summary>
+        public string? Awards { get; set; }
+        public int OscarWins { get; set; }
+        public int OscarNominations { get; set; }
+        /// <summary>TMDB: the series it belongs to, and the films TMDB's viewers liked alongside it. Only the TMDB job writes these.</summary>
+        public int? CollectionId { get; set; }
+        public string? CollectionName { get; set; }
+        /// <summary>JSON array of TMDB ids TMDB recommends with this film.</summary>
+        public string? TmdbRecs { get; set; }
+        public DateTime? DetailsFetched { get; set; }
+        /// <summary>slow, steady or fast.</summary>
+        public string? Pacing { get; set; }
+        /// <summary>How it leaves you: happy, bittersweet, open or bleak.</summary>
+        public string? Ending { get; set; }
+        /// <summary>JSON array: date night, family, with friends, alone.</summary>
+        public string? Occasions { get; set; }
+        [NotMapped] public List<string> OccasionList => string.IsNullOrEmpty(Occasions) ? new() : JsonSerializer.Deserialize<List<string>>(Occasions) ?? new();
+        private HashSet<int>? _recSet;
+        private string? _recSource;
+        [NotMapped] public HashSet<int> RecSet
+        {
+            get
+            {
+                if (_recSet is null || !ReferenceEquals(_recSource, TmdbRecs))
+                {
+                    _recSource = TmdbRecs;
+                    try { _recSet = string.IsNullOrEmpty(TmdbRecs) ? new() : JsonSerializer.Deserialize<HashSet<int>>(TmdbRecs) ?? new(); }
+                    catch (JsonException) { _recSet = new(); }
+                }
+                return _recSet;
+            }
+        }
         [NotMapped] public List<string> ContentNoteList => string.IsNullOrEmpty(ContentNotes) ? new() : JsonSerializer.Deserialize<List<string>>(ContentNotes) ?? new();
         /// <summary>Set while a film is being re-checked: the prompt asks to change only clear mistakes.</summary>
         [NotMapped] public bool Recheck { get; set; }
@@ -104,8 +138,9 @@ namespace Pickyfin.Server.Data.Models
         /// Critical reception on a 0-10 scale. Prefers Jellyfin's real ratings (critic and
         /// community averaged when both exist) and falls back to the AI's estimate.
         /// </summary>
+        /// <summary>The rating from real scores only (OMDb, the web text, Jellyfin), 0-10; null when none is known.</summary>
         [NotMapped]
-        public double Acclaim
+        public double? RealRating
         {
             get
             {
@@ -115,11 +150,13 @@ namespace Pickyfin.Server.Data.Models
                 var critic = RtScore is > 0 and <= 100 ? RtScore / 10.0 : Metascore is > 0 and <= 100 ? Metascore / 10.0
                     : CriticsScore is > 0 and <= 100 ? CriticsScore / 10.0 : CriticRating is > 0 and <= 100 ? CriticRating / 10.0 : null;
                 if (community.HasValue && critic.HasValue) return (community.Value + critic.Value) / 2.0;
-                if (community.HasValue) return community.Value;
-                if (critic.HasValue) return critic.Value;
-                return CriticalAcclaimScore;
+                return community ?? critic;
             }
         }
+
+        /// <summary>Real scores when known, else the AI's estimate.</summary>
+        [NotMapped]
+        public double Acclaim => RealRating ?? CriticalAcclaimScore;
     }
 
     /// <summary>An ordered, case-insensitive tag list parsed from a JSON string array.</summary>

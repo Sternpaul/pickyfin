@@ -47,6 +47,7 @@ builder.Services.AddSingleton<SecondOpinion>();
 builder.Services.AddSingleton<WebSweep>();
 builder.Services.AddSingleton<Rescan>();
 builder.Services.AddSingleton<OmdbScores>();
+builder.Services.AddSingleton<TmdbDetails>();
 builder.Services.AddSingleton<MovieHistory>();
 builder.Services.AddSingleton(sp => new TmdbKeywordService(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb"),
@@ -158,12 +159,14 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         rescanned = eligible.Count(r => r.Rescanned >= cutoff);
     }
     var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
-    int scored = 0;
-    if (!string.IsNullOrWhiteSpace(s.OmdbApiKey))
+    int scored = 0, detailed = 0;
+    if (!string.IsNullOrWhiteSpace(s.OmdbApiKey) || !string.IsNullOrWhiteSpace(s.TmdbApiKey))
     {
         await using var db = database.Open();
-        var rows = await db.Movies.AsNoTracking().Where(m => m.ScoresFetched != null).Select(m => m.Libraries).ToListAsync(ct);
-        scored = rows.Count(l => !s.IsLibraryExcluded(l));
+        var rows = await db.Movies.AsNoTracking().Select(m => new { m.Libraries, Scored = m.ScoresFetched != null, Detailed = m.DetailsFetched != null }).ToListAsync(ct);
+        var counted = rows.Where(r => !s.IsLibraryExcluded(r.Libraries)).ToList();
+        scored = counted.Count(r => r.Scored);
+        detailed = counted.Count(r => r.Detailed);
     }
     var (waitingFor, seconds) = Activity.Current;
     var hasKey = !string.IsNullOrWhiteSpace(s.ApiKey);
@@ -212,6 +215,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
             WebLookup.Configured ? "Off" : "Off: no web search set up", lookedUp, classified, tip: Tip("lookup", "Described again from the web with")),
         Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
         Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total),
+        Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total),
     };
 
     return Results.Ok(new
@@ -360,6 +364,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
         MovieClassifier.RetryNow();
     // A library switched back on may have movies that were never classified
     if (before.OmdbApiKey != settings.OmdbApiKey || before.OmdbPerDay != settings.OmdbPerDay) OmdbScores.ResetPause();
+    if (before.TmdbApiKey != settings.TmdbApiKey) TmdbDetails.ResetPause();
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
         || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.UseExa != settings.UseExa || before.UseParallel != settings.UseParallel

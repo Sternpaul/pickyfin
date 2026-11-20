@@ -276,6 +276,13 @@ namespace Pickyfin.Server.Library
             movie.ContentNotes = JsonSerializer.Serialize(notes);
             movie.BasedOn = ClassificationVocabulary.CanonicalBasedOn(Text("BasedOn", 20));
             movie.SettingEra = Text("SettingEra", 30);
+            movie.Pacing = ClassificationVocabulary.CanonicalPacing(Text("Pacing", 20));
+            movie.Ending = ClassificationVocabulary.CanonicalEnding(Text("Ending", 20));
+            var occasions = new List<string>();
+            if (TryGetPropertyIgnoreCase(element, "Occasions", out var oc) && oc.ValueKind == JsonValueKind.Array)
+                foreach (var o in oc.EnumerateArray())
+                    if (o.ValueKind == JsonValueKind.String && ClassificationVocabulary.CanonicalOccasion(o.GetString()) is { } occasion && !occasions.Contains(occasion)) occasions.Add(occasion);
+            movie.Occasions = JsonSerializer.Serialize(occasions.Take(2));
             movie.SettingPlace = Text("SettingPlace", 40);
         }
 

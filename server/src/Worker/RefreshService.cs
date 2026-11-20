@@ -32,11 +32,12 @@ public sealed class RefreshService : BackgroundService
     private readonly MovieStore _store;
     private readonly MovieClassifier _classifier;
     private readonly OmdbScores _omdb;
+    private readonly TmdbDetails _tmdb;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, OmdbScores omdb, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, OmdbScores omdb, TmdbDetails tmdb, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -52,6 +53,7 @@ public sealed class RefreshService : BackgroundService
         _store = store;
         _classifier = classifier;
         _omdb = omdb;
+        _tmdb = tmdb;
     }
 
     public string State { get; private set; } = "Starting";
@@ -76,6 +78,7 @@ public sealed class RefreshService : BackgroundService
         Jobs.Ensure("picks", "Rows for each person", turn);
         Jobs.Ensure("rescan", "Re-checking everything", turn);
         Jobs.Ensure(OmdbScores.Key, OmdbScores.Title, turn);
+        Jobs.Ensure(TmdbDetails.Key, TmdbDetails.Title, turn);
         await QueueOutdatedAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -162,6 +165,15 @@ public sealed class RefreshService : BackgroundService
         {
             _logger.LogWarning("OMDb scores paused: {Error}", error.Message);
             Jobs.Idle(OmdbScores.Key, OmdbScores.Title, $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + Tick, error: true);
+        }
+
+        // Series and crowd links from TMDB
+        State = "Fetching series and related films";
+        try { await _tmdb.RunAsync(cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("TMDB details paused: {Error}", error.Message);
+            Jobs.Idle(TmdbDetails.Key, TmdbDetails.Title, $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + Tick, error: true);
         }
 
         // Tagging that stopped on an error tries again on its own, not only at the next library sync;

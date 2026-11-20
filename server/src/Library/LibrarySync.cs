@@ -64,9 +64,10 @@ public sealed class LibrarySync
             var genres = System.Text.Json.JsonSerializer.Serialize(item.Genres ?? new());
             var countries = string.Join(", ", item.ProductionLocations ?? new());
             var originalTitle = string.Equals(item.OriginalTitle, item.Name, StringComparison.OrdinalIgnoreCase) ? null : item.OriginalTitle;
+            int? minutes = item.RunTimeTicks is > 0 ? (int)Math.Round(item.RunTimeTicks.Value / 600_000_000.0) : null;
             if (!isNew && !plotChanged && movie.Title == item.Name && movie.Libraries == libraries
                 && movie.CommunityRating == item.CommunityRating && movie.CriticRating == item.CriticRating
-                && movie.Genres == genres && movie.Countries == countries && movie.OriginalTitle == originalTitle)
+                && movie.Genres == genres && movie.Countries == countries && movie.OriginalTitle == originalTitle && movie.Minutes == minutes)
                 continue;
 
             movie.Libraries = libraries;
@@ -82,6 +83,7 @@ public sealed class LibrarySync
             movie.Genres = genres;
             movie.Countries = countries;
             movie.OriginalTitle = originalTitle;
+            movie.Minutes = minutes;
             // A changed plot means the old tags may be wrong; classify again
             if (plotChanged && !movie.ManuallyEdited) movie.IsClassified = false;
             changed.Add(movie);

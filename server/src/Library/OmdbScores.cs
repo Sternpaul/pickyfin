@@ -65,9 +65,21 @@ public sealed class OmdbScores
     }
 
     public static bool Due(MovieMetadata m) =>
-        m.ScoresFetched is not { } at || DateTime.UtcNow - at > (m.ReleaseYear >= DateTime.UtcNow.Year - 1 ? RefreshNew : Refresh);
+        m.ScoresFetched is not { } at || m.Awards is null || DateTime.UtcNow - at > (m.ReleaseYear >= DateTime.UtcNow.Year - 1 ? RefreshNew : Refresh);
 
-    public sealed record Scores(bool Found, int? RottenTomatoes, int? Metacritic, double? Imdb, int? Year, string? Error);
+    public sealed record Scores(bool Found, int? RottenTomatoes, int? Metacritic, double? Imdb, int? Year, string? Error,
+        string Awards = "", int OscarWins = 0, int OscarNominations = 0);
+
+    /// <summary>"Won 3 Oscars. 45 wins…" → (3, 3); "Nominated for 2 Oscars. …" → (0, 2).</summary>
+    public static (int Wins, int Nominations) Oscars(string? awards)
+    {
+        if (string.IsNullOrWhiteSpace(awards)) return (0, 0);
+        var won = System.Text.RegularExpressions.Regex.Match(awards, @"Won (\d+) Oscars?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var nominated = System.Text.RegularExpressions.Regex.Match(awards, @"Nominated for (\d+) Oscars?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var wins = won.Success ? int.Parse(won.Groups[1].Value) : 0;
+        var noms = nominated.Success ? int.Parse(nominated.Groups[1].Value) : 0;
+        return (wins, Math.Max(wins, noms));
+    }
 
     /// <summary>Reads an OMDb answer. "N/A" and odd values count as missing.</summary>
     public static Scores Parse(JsonElement root)
@@ -91,7 +103,10 @@ public sealed class OmdbScores
         if (meta is null && int.TryParse(Str("Metascore"), out var ms) && ms is >= 0 and <= 100) meta = ms;
         if (imdb is null && double.TryParse(Str("imdbRating"), NumberStyles.Float, CultureInfo.InvariantCulture, out var ir) && ir is > 0 and <= 10) imdb = ir;
         int? year = Str("Year") is { Length: >= 4 } y && int.TryParse(y[..4], out var yy) ? yy : null;
-        return new Scores(true, rt, meta, imdb, year, null);
+        var awards = Str("Awards") is { } a && a != "N/A" ? a.Trim() : "";
+        if (awards.Length > 200) awards = awards[..200];
+        var (wins, noms) = Oscars(awards);
+        return new Scores(true, rt, meta, imdb, year, null, awards, wins, noms);
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -166,12 +181,17 @@ public sealed class OmdbScores
             var rt = scores.Found ? scores.RottenTomatoes : null;
             var meta = scores.Found ? scores.Metacritic : null;
             var imdb = scores.Found ? scores.Imdb : null;
+            var awards = scores.Found ? scores.Awards : "";
+            var (oscarWins, oscarNoms) = scores.Found ? (scores.OscarWins, scores.OscarNominations) : (0, 0);
             if (rt is not null || meta is not null || imdb is not null) found++;
             await using (var db = _database.Open())
                 await db.Movies.Where(m => m.ItemId == movie.ItemId).ExecuteUpdateAsync(u => u
                     .SetProperty(m => m.RtScore, rt)
                     .SetProperty(m => m.Metascore, meta)
                     .SetProperty(m => m.ImdbRating, imdb)
+                    .SetProperty(m => m.Awards, awards)
+                    .SetProperty(m => m.OscarWins, oscarWins)
+                    .SetProperty(m => m.OscarNominations, oscarNoms)
                     .SetProperty(m => m.ScoresFetched, DateTime.UtcNow), cancellationToken);
             done++;
         }

@@ -75,9 +75,12 @@ Return a JSON object with a ""movies"" array, one entry per input movie, with th
 - ""BasedOn"": exactly one of {Quoted(ClassificationVocabulary.BasedOn)}.
 - ""SettingEra"": when it's set, 1-3 words (e.g. ""1960s"", ""medieval"", ""near future""), or null.
 - ""SettingPlace"": where it's set, 1-3 words (e.g. ""Paris"", ""rural Japan"", ""space""), or null.
+- ""Pacing"": exactly one of {Quoted(ClassificationVocabulary.Pacing)}.
+- ""Ending"": how the ending leaves the viewer, exactly one of {Quoted(ClassificationVocabulary.Endings)}.
+- ""Occasions"": 1 or 2 situations it suits best, ONLY from: {Quoted(ClassificationVocabulary.Occasions)} (""alone"" = needs full attention or is too dark to share).
 
 Example output:
-{{""movies"": [{{""Ref"": ""m1"", ""Known"": ""yes"", ""Subcategories"": [""Cyberpunk"", ""AI & Robots""], ""Moods"": [""cerebral"", ""thrilling""], ""Themes"": [""simulated reality"", ""rebellion"", ""identity""], ""NarrativeStyle"": ""hero-journey"", ""Accessibility"": ""mainstream"", ""Intensity"": ""high"", ""CriticalAcclaimScore"": 8, ""CriticsScore"": 83, ""AudienceScore"": 85, ""ScoreSource"": ""Rotten Tomatoes"", ""ContentNotes"": [""graphic violence""], ""BasedOn"": ""original"", ""SettingEra"": ""2199"", ""SettingPlace"": ""simulated city""}}]}}
+{{""movies"": [{{""Ref"": ""m1"", ""Known"": ""yes"", ""Subcategories"": [""Cyberpunk"", ""AI & Robots""], ""Moods"": [""cerebral"", ""thrilling""], ""Themes"": [""simulated reality"", ""rebellion"", ""identity""], ""NarrativeStyle"": ""hero-journey"", ""Accessibility"": ""mainstream"", ""Intensity"": ""high"", ""CriticalAcclaimScore"": 8, ""CriticsScore"": 83, ""AudienceScore"": 85, ""ScoreSource"": ""Rotten Tomatoes"", ""ContentNotes"": [""graphic violence""], ""BasedOn"": ""original"", ""SettingEra"": ""2199"", ""SettingPlace"": ""simulated city"", ""Pacing"": ""fast"", ""Ending"": ""open"", ""Occasions"": [""with friends"", ""date night""]}}]}}
 
 Output ONLY the JSON object, no markdown. Include every input movie.
 Input:
