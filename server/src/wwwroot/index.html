@@ -295,6 +295,16 @@
   .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 10px 0; font: 500 14.5px var(--sans); cursor: pointer; white-space: nowrap; }
   .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
   .tabs sup { font-size: 10.5px; color: var(--faint); margin-left: 2px; }
+  .matrix { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  @media (max-width: 860px) { .matrix { grid-template-columns: 1fr; } }
+  #matrix-svg { width: 100%; height: auto; background: var(--raised); border-radius: 10px; display: block; }
+  #matrix-svg circle { cursor: pointer; }
+  #matrix-svg line { stroke: var(--accent); stroke-width: 1.2; opacity: .7; }
+  .matrix-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  .matrix-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 6px; }
+  #matrix-find { width: 100%; margin-bottom: 14px; }
+  #matrix-pick h3 { margin: 0 0 4px; }
+  #matrix-pick a { cursor: pointer; }
   table.list { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
   table.list th { text-align: left; font: 600 12px var(--sans); color: var(--faint); padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line-strong); }
   table.list td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -418,6 +428,7 @@
         <button class="nav" data-page="libraries">Libraries</button>
         <button class="nav" data-page="ai">AI</button>
         <button class="nav" data-page="rows">Tuning</button>
+        <button class="nav" data-page="matrix">Matrix</button>
         <button class="nav" data-page="status">Status</button>
       </nav>
       <div class="tools">
@@ -594,8 +605,12 @@
       <h2 class="group-title">Matching by meaning</h2>
       <form id="meaning-form" class="settings">
         <div class="setting">
-          <div><h3>Embedding model</h3><p class="why">Turns each film's whole description (plot, tags, what the web says) and each person's description into a "meaning". Films that mean similar things are related even without shared tags. Runs on your OpenRouter key; free models cost nothing. Changing the model matches every film again. <span id="meaning-models-note"></span></p></div>
-          <div class="control"><select id="EmbeddingModel" style="max-width:22em"></select></div>
+          <div><h3>Match films by meaning</h3><p class="why">Turns each film's whole description (plot, tags, what the web says) and each person's description into a "meaning". Films that mean similar things are related even without shared tags. Runs on your OpenRouter key; free models cost nothing. Explore the result on the Matrix page.</p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="MeaningOn"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>Model order</h3><p class="why">Every film is matched with the same model, since meanings from different models can't be compared. Pickyfin uses the first model in the order that works. A busy model is tried three times and then waited for; a model OpenRouter no longer offers hands over to the next, and every film is matched again with that one. <span id="meaning-models-note"></span></p></div>
+          <div class="control"><div class="chain" id="embed-chain"></div><datalist id="embed-all"></datalist></div>
         </div>
         <div class="setting-foot"><span class="note" id="meaning-note"></span></div>
       </form>
@@ -673,6 +688,23 @@
         </div>
         <div class="setting-foot"><button class="btn quiet" type="button" id="tuning-defaults">Back to defaults</button><span class="note" id="rows-note"></span></div>
       </form>
+    </section>
+
+    <!-- MATRIX -->
+    <section data-page="matrix" class="hidden">
+      <div class="page-head"><div><h1>Matrix</h1><p>How the films relate to each other. Pick a film, on the map or by name, to see the films closest to it and what links them.</p></div></div>
+      <p class="why" id="matrix-facts" style="max-width:80ch"></p>
+      <div class="matrix">
+        <div>
+          <svg id="matrix-svg" viewBox="0 0 600 600" role="img" aria-label="Map of films by meaning"></svg>
+          <div class="matrix-legend" id="matrix-legend"></div>
+        </div>
+        <div>
+          <input type="search" id="matrix-find" list="matrix-titles" placeholder="Find a film" autocomplete="off">
+          <datalist id="matrix-titles"></datalist>
+          <div id="matrix-pick"><p class="note">No film picked yet.</p></div>
+        </div>
+      </div>
     </section>
 
     <!-- STATUS -->
@@ -771,6 +803,7 @@ function go(page) {
   if (page === 'issues') loadIssues();
   if (page === 'ai') { loadExaUsage(); loadModelInfo(); loadAgain(); }
   if (page === 'status') loadStatus();
+  if (page === 'matrix') loadMatrix();
   if (page === 'users') loadUsers();
   history.replaceState(null, '', '#' + page);
   window.scrollTo(0, 0);
@@ -803,10 +836,13 @@ function fillModels(provider) {
 }
 
 // ---- model order (OpenRouter) ----
-const chains = { describe: [], check: [], lookup: [] }, openOff = {}, chainsAuto = { describe: true, check: true, lookup: true };
+const chains = { describe: [], check: [], lookup: [], embed: [] }, openOff = {}, chainsAuto = { describe: true, check: true, lookup: true, embed: true };
+// The free models a step chooses from, most used this week first
+const freeFor = key => key === 'embed' ? (embeddingModels || []).filter(m => m.Free).map(m => m.Id) : (modelInfo?.Free || []);
 // Automatic order: the most used free models on OpenRouter this week (the second opinion moves describing's first to the end)
 function autoChain(key) {
   if (key === 'lookup') return [...chains.describe]; // step 3 follows step 1 unless set apart
+  if (key === 'embed') return freeFor('embed').slice(0, modelInfo?.AutoCount || 5);
   const top = (modelInfo?.Free || []).slice(0, modelInfo?.AutoCount || 5);
   if (key === 'describe' || !top.length) return top;
   const first = (chainsAuto.describe ? top : chains.describe)[0];
@@ -818,38 +854,39 @@ async function loadModelInfo() {
   $('#models-all').innerHTML = (modelInfo?.Offered || []).map(m => `<option value="${esc(m)}">`).join('');
   renderChains();
 }
-function modelStat(id) {
+function modelStat(id, key) {
   const st = modelInfo?.Stats?.[id];
-  if (modelInfo?.Known && !modelInfo.Offered.includes(id)) return { text: 'Not offered by OpenRouter right now; skipped', bad: true };
-  const rank = (modelInfo?.Free || []).indexOf(id);
-  const pop = rank >= 0 ? `#${rank + 1} most used free model this week · ` : '';
+  const offered = key === 'embed' ? (embeddingModels ? embeddingModels.some(m => m.Id === id) : true) : !(modelInfo?.Known && !modelInfo.Offered.includes(id));
+  if (!offered) return { text: 'Not offered by OpenRouter right now; skipped', bad: true };
+  const rank = freeFor(key).indexOf(id);
+  const pop = rank >= 0 ? `#${rank + 1} most used free ${key === 'embed' ? 'embedding ' : ''}model this week · ` : '';
   if (!st) return { text: `${pop}not used since the server started`, bad: false };
   const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const lastFailedLatest = st.LastFailed && (!st.LastOk || new Date(st.LastFailed) > new Date(st.LastOk));
   const err = lastFailedLatest && st.LastError ? ` · failed last at ${clock(st.LastFailed)}: ${st.LastError.length > 90 ? st.LastError.slice(0, 90) + '…' : st.LastError}` : '';
   return { text: `${pop}${st.Ok} answered · ${st.Failed} failed${err}`, bad: lastFailedLatest };
 }
-function renderChains() { renderChain('describe'); renderChain('check'); renderChain('lookup'); }
+function renderChains() { renderChain('describe'); renderChain('check'); renderChain('lookup'); renderChain('embed'); }
 function renderChain(key) {
   const box = $(`#${key}-chain`);
   if (!box) return;
-  if (chainsAuto[key] && (key === 'lookup' || modelInfo?.Free?.length)) chains[key] = autoChain(key);
+  if (chainsAuto[key] && (key === 'lookup' || freeFor(key).length)) chains[key] = autoChain(key);
   const on = chains[key];
   // Any change by hand makes it the admin's own order
   const mine = fn => (...args) => { chainsAuto[key] = false; fn(...args); autoSave(chainForms[key]); };
-  const off = (modelInfo?.Free || []).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
-  const statHtml = m => { const s = modelStat(m); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
+  const off = freeFor(key).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
+  const statHtml = m => { const s = modelStat(m, key); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
   const head = key === 'lookup' ? (chainsAuto[key]
     ? `<p class="note" style="margin:0">Same as step 1, describing. Changing anything gives step 3 its own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Its own order.</span><button type="button" class="btn quiet" data-auto>Back to the same as describing</button></div>`)
     : chainsAuto[key]
-    ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free models on OpenRouter this week (by tokens), most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. Changing anything makes it your own order.</p>`
+    ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter this week, most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. Changing anything makes it your own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Your own order.</span><button type="button" class="btn quiet" data-auto>Back to most used this week</button></div>`;
   box.innerHTML = head + `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${esc(m)}</b>${statHtml(m)}</div>
       <div class="acts"><button type="button" class="btn quiet" data-up="${i}" title="Try earlier" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn quiet" data-down="${i}" title="Try later" ${i === on.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="btn quiet" data-off="${i}" ${on.length === 1 ? 'disabled title="At least one model is needed"' : ''}>Turn off</button></div></li>`).join('')}</ol>
-    ${off.length ? `<details${openOff[key] ? ' open' : ''}><summary class="note" style="cursor:pointer">Other free models on OpenRouter (${off.length}), turned off</summary><ul style="margin-top:6px">${off.map(m => `<li><div class="m">${esc(m)}${statHtml(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`
-      : modelInfo ? '' : '<p class="note">Loading the models OpenRouter offers…</p>'}
-    <div class="inline"><input type="text" placeholder="Add another model, e.g. google/gemini-2.5-flash" list="models-all"><button type="button" class="btn" data-add>Add</button></div>`;
+    ${off.length ? `<details${openOff[key] ? ' open' : ''}><summary class="note" style="cursor:pointer">Other free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter (${off.length}), turned off</summary><ul style="margin-top:6px">${off.map(m => `<li><div class="m">${esc(m)}${statHtml(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`
+      : (key === 'embed' ? embeddingModels : modelInfo) ? '' : '<p class="note">Loading the models OpenRouter offers…</p>'}
+    <div class="inline"><input type="text" placeholder="Add another model, e.g. ${key === 'embed' ? 'baai/bge-m3' : 'google/gemini-2.5-flash'}" list="${key === 'embed' ? 'embed-all' : 'models-all'}"><button type="button" class="btn" data-add>Add</button></div>`;
   const move = mine((i, d) => { const [m] = on.splice(i, 1); on.splice(i + d, 0, m); renderChains(); });
   $$('[data-up]', box).forEach(b => b.onclick = () => move(Number(b.dataset.up), -1));
   $$('[data-down]', box).forEach(b => b.onclick = () => move(Number(b.dataset.down), 1));
@@ -869,12 +906,14 @@ async function loadSettings() {
   chains.describe = [...(settings.ClassificationModels || [])]; chains.check = [...(settings.CheckModels || [])];
   chainsAuto.describe = settings.ClassificationModelsAuto !== false; chainsAuto.check = settings.CheckModelsAuto !== false;
   chains.lookup = [...(settings.LookupModels || [])]; chainsAuto.lookup = settings.LookupModelsAuto !== false;
+  chains.embed = [...(settings.EmbeddingModels || [])]; chainsAuto.embed = settings.EmbeddingModelsAuto !== false;
+  $('#MeaningOn').checked = settings.MeaningOn !== false;
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
-  fillEmbeddingModels(settings.EmbeddingModel || '');
+  loadEmbeddingModels();
   $('#MeaningWeight').value = settings.MeaningWeight ?? 50;
   $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
@@ -947,7 +986,7 @@ const formValues = {
     WebLookupAuto: $('#WebLookupAuto').checked, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
-  'meaning-form': () => ({ EmbeddingModel: $('#EmbeddingModel').value }),
+  'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
 };
@@ -983,7 +1022,7 @@ for (const form of Object.keys(formValues)) {
   // The pill buttons (seg) change on click, not on "change"
   el.addEventListener('click', e => { if (e.target.closest('.seg button')) setTimeout(() => autoSave(form), 0); });
 }
-const chainForms = { describe: 'ai-form', check: 'check-form', lookup: 'lookup-form' };
+const chainForms = { describe: 'ai-form', check: 'check-form', lookup: 'lookup-form', embed: 'meaning-form' };
 // Leaving while a change is still on its way: send it first, or warn when closing the tab
 window.addEventListener('beforeunload', e => { if (savePending()) { e.preventDefault(); e.returnValue = ''; } });
 const tuningValues = () => ({
@@ -1027,23 +1066,81 @@ function tagDiff(before, after) {
   };
   return after ? `<div class="h-tags">${row('S')}${row('M')}</div>` : '';
 }
-// Embedding models from OpenRouter, free ones first; the current one stays even if the list can't load
+// Embedding models from OpenRouter (most used this week, free first), for the meaning model order
 let embeddingModels = null;
-async function fillEmbeddingModels(current) {
-  const select = $('#EmbeddingModel'); if (!select) return;
-  const draw = () => {
-    const list = embeddingModels || [];
-    const options = [['', 'Off']].concat(list.map(m => [m.Id, `${m.Name}${m.Free ? ' · free' : ` · $${m.PerMillion} per million tokens`}`]));
-    if (current && !list.some(m => m.Id === current)) options.push([current, current + (embeddingModels ? ' · no longer offered' : '')]);
-    select.innerHTML = options.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
-    select.value = current;
-  };
-  draw();
+async function loadEmbeddingModels() {
   if (!embeddingModels) {
     try { embeddingModels = await call('GET', '/api/ai/embedding-models'); $('#meaning-models-note').textContent = ''; }
-    catch { $('#meaning-models-note').textContent = 'Couldn\'t load the list from OpenRouter.'; return; }
-    draw();
+    catch { $('#meaning-models-note').textContent = 'Couldn\'t load the list from OpenRouter.'; }
   }
+  $('#embed-all').innerHTML = (embeddingModels || []).map(m => `<option value="${esc(m.Id)}">`).join('');
+  renderChain('embed');
+}
+
+// ---- matrix: every matched film on a map, and one film's closest films ----
+let matrix = null, matrixPick = null;
+const groupColors = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc948', '#b07aa1', '#ff9da7'];
+async function loadMatrix() {
+  try { matrix = await call('GET', '/api/matrix'); }
+  catch { $('#matrix-facts').textContent = 'Couldn\'t load the matrix.'; return; }
+  const model = matrix.Model ? matrix.Model.replace(/^[^/]+\//, '').replace(':free', '') : null;
+  $('#matrix-facts').innerHTML = !matrix.On
+    ? 'Matching by meaning is off (AI page), so films are compared by their tags only.'
+    : `<b>${matrix.Matched.toLocaleString()}</b> of ${matrix.Films.toLocaleString()} described films are matched by meaning${model ? ` with <b>${esc(model)}</b>` : ''}. `
+      + `Each film's meaning is stored once, in the server's database (pickyfin.db, table Embeddings). The closest films are worked out from those whenever you look, `
+      + `mixing tags and meaning as set on Tuning (now ${100 - matrix.Weight}% tags, ${matrix.Weight}% meaning). The map flattens the meanings onto two directions, so treat it as a rough overview; the list of closest films is exact.`;
+  $('#matrix-titles').innerHTML = matrix.All.map(f => `<option value="${esc(f.Title)}${f.Year ? ` (${f.Year})` : ''}">`).join('');
+  $('#matrix-find').onchange = e => {
+    const v = e.target.value.trim().toLowerCase();
+    if (!v) return;
+    const hit = matrix.All.find(f => `${f.Title}${f.Year ? ` (${f.Year})` : ''}`.toLowerCase() === v) || matrix.All.find(f => f.Title.toLowerCase() === v)
+      || matrix.All.find(f => f.Title.toLowerCase().includes(v));
+    if (hit) { e.target.value = ''; pickFilm(hit.Id); }
+  };
+  drawMap();
+  if (matrixPick) pickFilm(matrixPick);
+}
+function drawMap(pick) {
+  const svg = $('#matrix-svg'), pts = matrix?.Points || [];
+  if (!pts.length) {
+    svg.innerHTML = `<text x="300" y="300" text-anchor="middle" fill="currentColor" style="font-size:15px;opacity:.6">${matrix?.On ? 'No film is matched by meaning yet' : 'Matching by meaning is off'}</text>`;
+    $('#matrix-legend').innerHTML = ''; return;
+  }
+  const xs = pts.map(p => p.X), ys = pts.map(p => p.Y);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const sx = x => 16 + (x - x0) / ((x1 - x0) || 1) * 568, sy = y => 584 - (y - y0) / ((y1 - y0) || 1) * 568;
+  const counts = {}; pts.forEach(p => { if (p.Group) counts[p.Group] = (counts[p.Group] || 0) + 1; });
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, groupColors.length).map(([g]) => g);
+  const color = g => top.includes(g) ? groupColors[top.indexOf(g)] : 'var(--faint)';
+  const at = Object.fromEntries(pts.map(p => [p.Id, p]));
+  const near = new Set(pick?.related || []);
+  const lines = pick && at[pick.id] ? pick.related.filter(id => at[id]).map(id => `<line x1="${sx(at[pick.id].X)}" y1="${sy(at[pick.id].Y)}" x2="${sx(at[id].X)}" y2="${sy(at[id].Y)}"/>`).join('') : '';
+  const dot = p => {
+    const chosen = pick?.id === p.Id, close = near.has(p.Id);
+    const dim = pick && !chosen && !close ? ' opacity=".35"' : '';
+    return `<circle cx="${sx(p.X).toFixed(1)}" cy="${sy(p.Y).toFixed(1)}" r="${chosen ? 7 : close ? 5 : 3.2}" fill="${color(p.Group)}"${chosen || close ? ' stroke="var(--text)" stroke-width="1.5"' : ''}${dim} data-id="${p.Id}"><title>${esc(p.Title)}${p.Year ? ` (${p.Year})` : ''}${p.Group ? ' · ' + esc(p.Group) : ''}</title></circle>`;
+  };
+  // the picked film and its closest go on top
+  const order = [...pts.filter(p => p.Id !== pick?.id && !near.has(p.Id)), ...pts.filter(p => near.has(p.Id)), ...pts.filter(p => p.Id === pick?.id)];
+  svg.innerHTML = lines + order.map(dot).join('');
+  svg.querySelectorAll('circle').forEach(c => c.onclick = () => pickFilm(c.dataset.id));
+  $('#matrix-legend').innerHTML = top.map((g, i) => `<span style="--c:${groupColors[i]}">${esc(g)}</span>`).join('') + (Object.keys(counts).length > top.length ? '<span style="--c:var(--faint)">other</span>' : '');
+}
+async function pickFilm(id) {
+  matrixPick = id;
+  const film = matrix?.All.find(f => f.Id === id);
+  const box = $('#matrix-pick');
+  box.innerHTML = '<p class="note">Loading…</p>';
+  let r; try { r = await call('GET', `/api/movies/${id}/related`); } catch { box.innerHTML = '<p class="note">Couldn\'t load its closest films.</p>'; return; }
+  const links = f => [f.Series ? 'same series' : '', f.Crowd ? 'TMDB viewers liked both' : ''].filter(Boolean).join(', ');
+  box.innerHTML = `<div class="inline" style="align-items:center;justify-content:space-between"><h3>${esc(film?.Title || '')}${film?.Year ? ` <span class="note">${film.Year}</span>` : ''}</h3><button type="button" class="btn quiet" id="matrix-open">Open film</button></div>
+    ${r.Meaning ? '' : '<p class="note">This film isn\'t matched by meaning yet, so it\'s compared by tags only.</p>'}
+    ${r.Films.length ? `<table class="list"><thead><tr><th>Closest films</th><th title="Tags and meaning together, as set on Tuning">Match</th><th title="How close in meaning, 100 = closest in the library">Meaning</th><th title="How many tags they share">Tags</th></tr></thead><tbody>
+      ${r.Films.map(f => `<tr><td><a data-pick="${f.ItemId}">${esc(f.Title)}</a> <span class="y">${f.ReleaseYear || ''}</span>${links(f) ? `<div class="note">${links(f)}</div>` : ''}</td><td>${f.Score}</td><td>${f.Meaning ?? '–'}</td><td>${f.Tags}</td></tr>`).join('')}
+      </tbody></table><p class="note">Click a film to see its own closest films.</p>` : '<p class="note">None yet: the film needs its tags first.</p>'}`;
+  box.querySelectorAll('[data-pick]').forEach(a => a.onclick = () => pickFilm(a.dataset.pick));
+  $('#matrix-open').onclick = () => openMovie(id);
+  drawMap({ id, related: r.Films.map(f => f.ItemId) });
 }
 
 // The films closest to this one: tags and meaning together, with what links them

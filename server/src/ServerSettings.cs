@@ -123,8 +123,12 @@ public sealed class ServerSettings
     // ---- tuning: what gets picked ----
     /// <summary>0 = follow watch history, 100 = follow the description.</summary>
     public int BriefWeight { get; set; } = 65;
-    /// <summary>Embedding model on OpenRouter for matching by meaning; empty = off.</summary>
-    public string EmbeddingModel { get; set; } = "nvidia/nemotron-3.5-embed-8b:free";
+    /// <summary>Matching by meaning on or off.</summary>
+    public bool MeaningOn { get; set; } = true;
+    /// <summary>Embedding models to try, in order. Every film uses the first one that works.</summary>
+    public List<string> EmbeddingModels { get; set; } = new();
+    /// <summary>True: the free embedding models most used on OpenRouter this week.</summary>
+    public bool EmbeddingModelsAuto { get; set; } = true;
     /// <summary>0 = tags only, 100 = meaning only, when comparing films and descriptions.</summary>
     public int MeaningWeight { get; set; } = 50;
     /// <summary>0 = safe, well-known picks, 100 = lesser-known discoveries.</summary>

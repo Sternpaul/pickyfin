@@ -161,10 +161,17 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     }
     var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
     int scored = 0, detailed = 0, embedded = 0;
+    string? meaningTip = null;
     if (Meaning.On(s))
     {
-        var model = s.EmbeddingModel.Trim();
         await using var db = database.Open();
+        var byModel = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film").GroupBy(e => e.Model).Select(g => new { Model = g.Key, Films = g.Count() }).ToListAsync(ct);
+        var model = Meaning.ActiveModel ?? byModel.OrderByDescending(m => m.Films).FirstOrDefault()?.Model ?? "";
+        var lines = new List<string>();
+        if (byModel.Count > 0) lines.Add("Matched with:\n" + string.Join("\n", byModel.OrderByDescending(m => m.Films).Select(m => $"  {m.Model}: {m.Films:N0} film{(m.Films == 1 ? "" : "s")}")));
+        var failed = OpenRouterModels.StepFailures.Where(f => f.Key.StartsWith("meaning|")).OrderByDescending(f => f.Value).ToList();
+        if (failed.Count > 0) lines.Add("Failed since the server started:\n" + string.Join("\n", failed.Take(6).Select(f => $"  {f.Key[8..]}: {f.Value}×")));
+        meaningTip = lines.Count == 0 ? "No model used yet" : string.Join("\n\n", lines);
         var ids = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film" && e.Model == model).Select(e => e.ItemId).ToListAsync(ct);
         var set = ids.ToHashSet();
         var rows = await db.Movies.AsNoTracking().Select(m => new { m.ItemId, m.Libraries }).ToListAsync(ct);
@@ -226,7 +233,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
         Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total),
         Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total),
-        Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified),
+        Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip),
     };
 
     return Results.Ok(new
@@ -254,13 +261,13 @@ admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, Cancellatio
     {
         var client = http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(20);
-        using var doc = System.Text.Json.JsonDocument.Parse(await client.GetStringAsync("https://openrouter.ai/api/v1/models?output_modalities=embeddings", ct));
+        using var doc = System.Text.Json.JsonDocument.Parse(await client.GetStringAsync("https://openrouter.ai/api/v1/models?output_modalities=embeddings&sort=top-weekly", ct));
         var list = doc.RootElement.GetProperty("data").EnumerateArray().Select(m =>
         {
             var id = m.GetProperty("id").GetString() ?? "";
             var price = m.TryGetProperty("pricing", out var p) && p.TryGetProperty("prompt", out var pp) && double.TryParse(pp.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0;
             return new { Id = id, Name = m.TryGetProperty("name", out var n) ? n.GetString() : id, Free = price == 0, PerMillion = Math.Round(price * 1_000_000, 3) };
-        }).Where(m => m.Id.Length > 0).OrderByDescending(m => m.Free).ThenBy(m => m.PerMillion).ToList();
+        }).Where(m => m.Id.Length > 0).OrderByDescending(m => m.Free).ToList();
         return Results.Ok(list);
     }
     catch (Exception error) { return Results.Problem("Couldn't reach OpenRouter: " + error.Message, statusCode: 502); }
@@ -395,7 +402,8 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A library switched back on may have movies that were never classified
     if (before.OmdbApiKey != settings.OmdbApiKey || before.OmdbPerDay != settings.OmdbPerDay) OmdbScores.ResetPause();
     if (before.TmdbApiKey != settings.TmdbApiKey) TmdbDetails.ResetPause();
-    if (before.EmbeddingModel != settings.EmbeddingModel || before.ApiKey != settings.ApiKey) Meaning.ResetPause();
+    if (before.MeaningOn != settings.MeaningOn || before.EmbeddingModelsAuto != settings.EmbeddingModelsAuto
+        || !before.EmbeddingModels.SequenceEqual(settings.EmbeddingModels) || before.ApiKey != settings.ApiKey) Meaning.ResetPause();
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
         || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.UseExa != settings.UseExa || before.UseParallel != settings.UseParallel
@@ -536,7 +544,9 @@ record SettingsView
     public int BecauseEra { get; init; } = 50;
     public List<Guid> ExcludedLibraries { get; init; } = new();
     public int BriefWeight { get; init; }
-    public string EmbeddingModel { get; init; } = "";
+    public bool MeaningOn { get; init; } = true;
+    public List<string>? EmbeddingModels { get; init; }
+    public bool? EmbeddingModelsAuto { get; init; }
     public int MeaningWeight { get; init; } = 50;
     public int Discovery { get; init; }
     public string Variety { get; init; } = "medium";
@@ -597,7 +607,9 @@ record SettingsView
         BecauseEra = s.BecauseEra,
         ExcludedLibraries = s.ExcludedLibraries,
         BriefWeight = s.BriefWeight,
-        EmbeddingModel = s.EmbeddingModel,
+        MeaningOn = s.MeaningOn,
+        EmbeddingModels = Meaning.Order(s),
+        EmbeddingModelsAuto = s.EmbeddingModelsAuto,
         MeaningWeight = s.MeaningWeight,
         Discovery = s.Discovery,
         Variety = s.Variety,
@@ -693,7 +705,9 @@ record SettingsView
         s.BecauseEra = Math.Clamp(BecauseEra, 0, 100);
         s.ExcludedLibraries = ExcludedLibraries.Distinct().ToList();
         s.BriefWeight = Math.Clamp(BriefWeight, 0, 100);
-        s.EmbeddingModel = (EmbeddingModel ?? "").Trim();
+        s.MeaningOn = MeaningOn;
+        if (EmbeddingModels is { Count: > 0 } embed) s.EmbeddingModels = Clean(embed);
+        if (EmbeddingModelsAuto is { } embedAuto) s.EmbeddingModelsAuto = embedAuto;
         s.MeaningWeight = Math.Clamp(MeaningWeight, 0, 100);
         s.Discovery = Math.Clamp(Discovery, 0, 100);
         s.Variety = Variety is "low" or "medium" or "high" ? Variety : "medium";

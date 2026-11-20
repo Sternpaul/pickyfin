@@ -205,6 +205,33 @@ public static class BrowserApi
             return movie is null ? Results.NotFound() : Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
         });
 
+        // The matrix page: every matched film on a map, and how far matching has got
+        admin.MapGet("/matrix", async (Database database, Meaning meaning, CancellationToken ct) =>
+        {
+            var s = ServerSettings.Current;
+            var snapshot = await meaning.SnapshotAsync(ct);
+            List<MovieMetadata> films;
+            await using (var db = database.Open())
+                films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(ct)).Where(m => !s.IsLibraryExcluded(m.Libraries)).ToList();
+            var map = snapshot.Map();
+            var points = films.Where(f => map.ContainsKey(f.ItemId)).Select(f => new
+            {
+                Id = f.ItemId, f.Title, Year = f.ReleaseYear,
+                X = Math.Round(map[f.ItemId].X, 4), Y = Math.Round(map[f.ItemId].Y, 4),
+                Group = f.SubcategorySet.Items.FirstOrDefault() ?? "",
+            }).ToList();
+            return Results.Ok(new
+            {
+                On = Meaning.On(s),
+                Model = snapshot.Model,
+                Matched = points.Count,
+                Films = films.Count,
+                Weight = s.MeaningWeight,
+                Points = points,
+                All = films.OrderBy(f => f.Title).Select(f => new { Id = f.ItemId, f.Title, Year = f.ReleaseYear }),
+            });
+        });
+
         // The films closest to this one, by tags and meaning together: one row of the "matrix"
         admin.MapGet("/movies/{id:guid}/related", async (Guid id, Database database, Meaning meaning, CancellationToken ct) =>
         {

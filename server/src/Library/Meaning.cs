@@ -54,7 +54,41 @@ public sealed class Meaning
     public static void ResetPause() => _pausedUntil = null;
 
     public static bool On(ServerSettings s) =>
-        s.AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(s.ApiKey) && !string.IsNullOrWhiteSpace(s.EmbeddingModel);
+        s.MeaningOn && s.AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(s.ApiKey);
+
+    /// <summary>The model the films are being matched with right now (the first in the order that works).</summary>
+    public static string? ActiveModel { get; private set; }
+
+    // The free embedding models on OpenRouter, most used this week first; refreshed every hour
+    private static List<string> _free = new();
+    private static DateTime _freeAt;
+    private const string Fallback = "nvidia/nemotron-3.5-embed-8b:free";
+
+    /// <summary>The order to try: the free models most used this week, or the admin's own list.</summary>
+    public static List<string> Order(ServerSettings s) =>
+        !s.EmbeddingModelsAuto && s.EmbeddingModels.Count > 0 ? s.EmbeddingModels.ToList()
+        : _free.Count > 0 ? _free.Take(OpenRouterModels.AutoCount).ToList()
+        : new List<string> { Fallback };
+
+    private async Task RefreshFreeAsync(CancellationToken cancellationToken)
+    {
+        if (DateTime.UtcNow - _freeAt < TimeSpan.FromHours(1)) return;
+        _freeAt = DateTime.UtcNow;
+        try
+        {
+            var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(20);
+            using var doc = JsonDocument.Parse(await client.GetStringAsync("https://openrouter.ai/api/v1/models?output_modalities=embeddings&sort=top-weekly", cancellationToken));
+            var free = doc.RootElement.GetProperty("data").EnumerateArray()
+                .Select(m => m.GetProperty("id").GetString() ?? "")
+                .Where(id => id.EndsWith(":free")).ToList();
+            if (free.Count > 0) _free = free;
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Couldn't read OpenRouter's embedding models: {Error}", error.Message);
+        }
+    }
 
     /// <summary>The text a film is understood by: everything we know about it, most telling first.</summary>
     public static string Document(MovieMetadata m)
@@ -95,8 +129,23 @@ public sealed class Meaning
         var s = ServerSettings.Current;
         if (!On(s)) { Jobs.Idle(Key, Title, s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter"); return; }
         if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
-        var model = s.EmbeddingModel.Trim();
+        await RefreshFreeAsync(cancellationToken);
+        foreach (var model in Order(s).Where(m => !OpenRouterModels.IsGone(m)))
+        {
+            ActiveModel = model;
+            if (await RunWithAsync(s, model, cancellationToken) != Outcome.Gone) return;
+            OpenRouterModels.MarkGone(model);
+            _logger.LogWarning("Meaning: {Model} isn't available, every film moves to the next model in the order", model);
+        }
+        ActiveModel = null;
+        Pause(TimeSpan.FromHours(1), "Paused: no model in the order is available", "Meaning: no model in the order is available");
+        Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true);
+    }
 
+    private enum Outcome { Done, Gone, Paused }
+
+    private async Task<Outcome> RunWithAsync(ServerSettings s, string model, CancellationToken cancellationToken)
+    {
         List<(Guid Id, string Kind, string Text, string Hash)> todo;
         await using (var db = _database.Open())
         {
@@ -115,7 +164,7 @@ public sealed class Meaning
                 .OrderBy(x => x.Kind == "brief" ? 0 : stored.ContainsKey(x.Id) ? 2 : 1)
                 .ToList();
         }
-        if (todo.Count == 0) { Jobs.Idle(Key, Title, "Up to date"); return; }
+        if (todo.Count == 0) { Jobs.Idle(Key, Title, "Up to date"); return Outcome.Done; }
 
         var round = todo.Take(PerRequest * RequestsPerRound).ToList();
         Jobs.Running(Key, Title, $"{round.Count} films");
@@ -123,9 +172,8 @@ public sealed class Meaning
         foreach (var chunk in round.Chunk(PerRequest))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            List<float[]>? vectors;
-            using (Activity.Begin($"Matching by meaning: waiting for {model}"))
-                vectors = await EmbedAsync(s, model, chunk.Select(c => c.Text).ToList(), cancellationToken);
+            var (vectors, outcome) = await EmbedWithTriesAsync(s, model, chunk.Select(c => c.Text).ToList(), cancellationToken);
+            if (outcome == Outcome.Gone) return Outcome.Gone;
             if (vectors is null) break;
             await using (var db = _database.Open())
             {
@@ -148,13 +196,43 @@ public sealed class Meaning
         }
 
         if (done > 0) _logger.LogInformation("Meaning: {Done} embedded with {Model}, {Left} to go", done, model, todo.Count - done);
-        if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
+        if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return Outcome.Paused; }
         var left = todo.Count - done;
-        Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} to go" : "Up to date", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
+        Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} to go · {Short(model)}" : $"Up to date · {Short(model)}", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
+        return Outcome.Done;
     }
 
-    /// <summary>One request to OpenRouter's embeddings endpoint; null (and paused) on failure.</summary>
-    private async Task<List<float[]>?> EmbedAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
+    private static string Short(string model) => model.Contains('/') ? model[(model.IndexOf('/') + 1)..].Replace(":free", "") : model;
+
+    /// <summary>Three tries on the same model when it's busy or slow; a model that's gone hands over to the next.</summary>
+    private async Task<(List<float[]>? Vectors, Outcome Outcome)> EmbedWithTriesAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            (List<float[]>? Vectors, int Code, string? Error) result;
+            using (Activity.Begin($"Matching by meaning: waiting for {model}" + (attempt > 1 ? $" (try {attempt} of 3)" : "")))
+                result = await EmbedAsync(s, model, texts, cancellationToken);
+            if (result.Vectors is not null) { OpenRouterModels.Record(model, null); return (result.Vectors, Outcome.Done); }
+            OpenRouterModels.Record(model, result.Error);
+            OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
+            if (result.Code is 404 || (result.Code is 400 && (result.Error ?? "").Contains("model", StringComparison.OrdinalIgnoreCase)))
+                return (null, Outcome.Gone);
+            if (result.Code is 401 or 402 or 403)
+            {
+                Pause(TimeSpan.FromHours(1), $"Paused: OpenRouter answered HTTP {result.Code}", $"Meaning: {result.Error}");
+                return (null, Outcome.Paused);
+            }
+            if (attempt >= 3)
+            {
+                Pause(TimeSpan.FromMinutes(15), result.Code == 429 ? "Paused: the model is busy" : "Paused: the model didn't answer", $"Meaning: {model} failed 3 times: {result.Error}");
+                return (null, Outcome.Paused);
+            }
+            await Task.Delay(TimeSpan.FromSeconds(attempt == 1 ? 10 : 30), cancellationToken);
+        }
+    }
+
+    /// <summary>One request to OpenRouter's embeddings endpoint.</summary>
+    private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
     {
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(2);
@@ -170,23 +248,15 @@ public sealed class Meaning
             using var response = await client.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             var code = (int)response.StatusCode;
-            if (!response.IsSuccessStatusCode)
-            {
-                var message = ErrorText(body) ?? $"HTTP {code}";
-                if (code == 404 || code == 400) Pause(TimeSpan.FromHours(6), $"Paused: {model} isn't available (pick another on the AI page)", $"Meaning: {model}: {message}");
-                else if (code == 429) Pause(TimeSpan.FromMinutes(15), "Paused: the model is busy", $"Meaning: busy ({message})");
-                else if (code is 401 or 402 or 403) Pause(TimeSpan.FromHours(1), $"Paused: OpenRouter answered HTTP {code}", $"Meaning: {message}");
-                else Pause(TimeSpan.FromMinutes(15), $"Paused: OpenRouter answered HTTP {code}", $"Meaning: {message}");
-                return null;
-            }
+            if (!response.IsSuccessStatusCode) return (null, code, $"HTTP {code}: {ErrorText(body) ?? "no details"}");
             var vectors = Parse(body, texts.Count);
-            if (vectors is null) { Pause(TimeSpan.FromMinutes(15), "Paused: odd answer from the model", $"Meaning: odd answer: {(body.Length > 200 ? body[..200] : body)}"); return null; }
-            return vectors;
+            // OpenRouter sometimes answers 200 with an error inside
+            if (vectors is null) return (null, ErrorCode(body) ?? 0, $"odd answer: {(body.Length > 200 ? body[..200] : body)}");
+            return (vectors, code, null);
         }
         catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            Pause(TimeSpan.FromMinutes(15), "Paused: OpenRouter didn't answer", $"Meaning: no answer: {error.Message}");
-            return null;
+            return (null, 0, $"no answer: {error.Message}");
         }
     }
 
@@ -208,6 +278,16 @@ public sealed class Meaning
             }
             if (result.Any(v => v is null || v.Length == 0) || result.Select(v => v.Length).Distinct().Count() != 1) return null;
             return result.ToList();
+        }
+        catch (Exception) { return null; }
+    }
+
+    private static int? ErrorCode(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("error", out var e) && e.TryGetProperty("code", out var c) && c.TryGetInt32(out var n) ? n : null;
         }
         catch (Exception) { return null; }
     }
@@ -256,14 +336,18 @@ public sealed class Meaning
     public async Task<Snapshot> SnapshotAsync(CancellationToken cancellationToken)
     {
         var s = ServerSettings.Current;
-        var model = s.EmbeddingModel?.Trim() ?? "";
+        if (!On(s)) return Snapshot.Empty;
         var version = Interlocked.Read(ref _version);
         lock (_gate)
-            if (_snapshot is { } cached && cached.Version == version && cached.Model == model) return cached;
-        if (!On(s)) return Snapshot.Empty;
+            if (_snapshot is { } cached && cached.Version == version) return cached;
         List<Embedding> rows;
+        string model;
         await using (var db = _database.Open())
+        {
+            model = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film").GroupBy(e => e.Model)
+                .OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefaultAsync(cancellationToken) ?? "";
             rows = await db.Embeddings.AsNoTracking().Where(e => e.Model == model).ToListAsync(cancellationToken);
+        }
         var snapshot = new Snapshot(model, version,
             rows.Where(r => r.Kind == "film").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)),
             rows.Where(r => r.Kind == "brief").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)));
@@ -326,6 +410,53 @@ public sealed class Meaning
                 }
             }
             return ranks.TryGetValue(target, out var r) ? r : null;
+        }
+
+        private Dictionary<Guid, (double X, double Y)>? _map;
+
+        /// <summary>
+        /// Every film as a point on a flat map: the two directions in which the films' meanings
+        /// differ most (principal components). Close points mean similar things; the map
+        /// flattens a lot, so the closest-films list is the exact answer.
+        /// </summary>
+        public Dictionary<Guid, (double X, double Y)> Map()
+        {
+            lock (_ranks)
+            {
+                if (_map is not null) return _map;
+                var ids = Films.Keys.ToList();
+                if (ids.Count < 3) return _map = new();
+                var dim = Films[ids[0]].Length;
+                var rows = ids.Select(id => Films[id]).Where(v => v.Length == dim).ToList();
+                var mean = new double[dim];
+                foreach (var v in rows) for (var j = 0; j < dim; j++) mean[j] += v[j];
+                for (var j = 0; j < dim; j++) mean[j] /= rows.Count;
+
+                double[] Times(double[] v)
+                {
+                    var scores = rows.Select(r => { double t = 0; for (var j = 0; j < dim; j++) t += (r[j] - mean[j]) * v[j]; return t; }).ToArray();
+                    var result = new double[dim];
+                    for (var i = 0; i < rows.Count; i++) for (var j = 0; j < dim; j++) result[j] += scores[i] * (rows[i][j] - mean[j]);
+                    return result;
+                }
+                static void Unit(double[] v) { var n = Math.Sqrt(v.Sum(x => x * x)); if (n > 0) for (var j = 0; j < v.Length; j++) v[j] /= n; }
+                static void Away(double[] v, double[] from) { var d = 0.0; for (var j = 0; j < v.Length; j++) d += v[j] * from[j]; for (var j = 0; j < v.Length; j++) v[j] -= d * from[j]; }
+
+                var random = new Random(7);
+                double[] Component(double[]? before)
+                {
+                    var v = Enumerable.Range(0, dim).Select(_ => random.NextDouble() - 0.5).ToArray();
+                    for (var k = 0; k < 30; k++) { if (before is not null) Away(v, before); Unit(v); v = Times(v); }
+                    if (before is not null) Away(v, before);
+                    Unit(v);
+                    return v;
+                }
+                var first = Component(null);
+                var second = Component(first);
+                double Along(float[] r, double[] axis) { double t = 0; for (var j = 0; j < dim; j++) t += (r[j] - mean[j]) * axis[j]; return t; }
+                _map = ids.Where(id => Films[id].Length == dim).ToDictionary(id => id, id => (Along(Films[id], first), Along(Films[id], second)));
+                return _map;
+            }
         }
 
         private static double Dot(float[] a, float[] b)
