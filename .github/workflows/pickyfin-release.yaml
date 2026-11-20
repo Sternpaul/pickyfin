@@ -41,6 +41,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          # Full history, for the "What's new" list since the previous release
+          fetch-depth: 0
           # GitHub's own token may not push merges that change workflow files;
           # a personal token with the "workflow" scope can, if one is set.
           token: ${{ secrets.PICKYFIN_PUSH_TOKEN || github.token }}
@@ -115,7 +117,8 @@ jobs:
           apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
           # Refuse to publish an unsigned build: installed apps could not update to it
           if [[ "$apk" == *unsigned* ]]; then echo "APK is unsigned, check the signing secrets"; exit 1; fi
-          cp "$apk" "$RUNNER_TEMP/pickyfin-tv-v${JELLYFIN_VERSION}.apk"
+          # Readable file name: pickyfin-tv-0.20.0-build3.apk
+          cp "$apk" "$RUNNER_TEMP/pickyfin-tv-${JELLYFIN_VERSION%-pickyfin.*}-build${JELLYFIN_VERSION##*-pickyfin.}.apk"
           # Same APK under a fixed name, so .../releases/latest/download/pickyfin-tv.apk
           # always gives the newest version (for Downloader codes and links)
           cp "$apk" "$RUNNER_TEMP/pickyfin-tv.apk"
@@ -126,7 +129,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.name }}
         run: |
-          gh release create "tv-v$VERSION" "$RUNNER_TEMP/pickyfin-tv-v$VERSION.apk" "$RUNNER_TEMP/pickyfin-tv.apk" \
+          # The tag stays tv-v0.20.0-pickyfin.3 (installed apps compare it); the title reads
+          # "Pickyfin TV 0.20.0 · build 3", and the notes list what changed in the TV app
+          base="${VERSION%-pickyfin.*}"; build="${VERSION##*-pickyfin.}"
+          git fetch --tags --quiet
+          previous=$(git tag --list 'tv-v*' --sort=-v:refname | head -1)
+          {
+            echo "Pickyfin for Android TV and Fire TV, build $build on the official Jellyfin Android TV v$base."
+            if [ -n "$previous" ]; then
+              changes=$(git log "$previous..HEAD" --first-parent --no-merges --pretty='- %s' -- . ':(exclude)server' ':(exclude).github' | head -30)
+              if [ -n "$changes" ]; then echo; echo "## What's new"; echo "$changes"; fi
+            fi
+            echo
+            echo "Install or update: download \`pickyfin-tv.apk\`, or let the app update itself."
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "tv-v$VERSION" "$RUNNER_TEMP/pickyfin-tv-$base-build$build.apk" "$RUNNER_TEMP/pickyfin-tv.apk" \
             --target "$(git rev-parse HEAD)" \
-            --title "Pickyfin TV $VERSION" \
-            --notes "Pickyfin for Android TV and Fire TV. Based on the official Jellyfin Android TV release v${VERSION%-pickyfin.*}."
+            --title "Pickyfin TV $base · build $build" \
+            --notes-file "$RUNNER_TEMP/notes.md"

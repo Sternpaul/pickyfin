@@ -50,5 +50,10 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=Pickyfin Server: personal recommendation rows for Jellyfin
             org.opencontainers.image.licenses=GPL-2.0
+          # Multi-arch images: GitHub reads the description from the image index
+          annotations: |
+            index:org.opencontainers.image.description=Pickyfin Server: personal recommendation rows for Jellyfin
+            index:org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            index:org.opencontainers.image.licenses=GPL-2.0
           cache-from: type=gha
           cache-to: type=gha,mode=max
