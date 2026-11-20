@@ -46,6 +46,7 @@ builder.Services.AddSingleton<MovieClassifier>();
 builder.Services.AddSingleton<SecondOpinion>();
 builder.Services.AddSingleton<WebSweep>();
 builder.Services.AddSingleton<Rescan>();
+builder.Services.AddSingleton<OmdbScores>();
 builder.Services.AddSingleton<MovieHistory>();
 builder.Services.AddSingleton(sp => new TmdbKeywordService(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb"),
@@ -157,6 +158,13 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         rescanned = eligible.Count(r => r.Rescanned >= cutoff);
     }
     var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
+    int scored = 0;
+    if (!string.IsNullOrWhiteSpace(s.OmdbApiKey))
+    {
+        await using var db = database.Open();
+        var rows = await db.Movies.AsNoTracking().Where(m => m.ScoresFetched != null).Select(m => m.Libraries).ToListAsync(ct);
+        scored = rows.Count(l => !s.IsLibraryExcluded(l));
+    }
     var (waitingFor, seconds) = Activity.Current;
     var hasKey = !string.IsNullOrWhiteSpace(s.ApiKey);
     var anyRunning = Jobs.Snapshot().Any(j => j.Running);
@@ -203,6 +211,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Row(lookupKey, "3 · Look up", WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto || lookupAll is { Running: true }),
             WebLookup.Configured ? "Off" : "Off: no web search set up", lookedUp, classified, tip: Tip("lookup", "Described again from the web with")),
         Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
+        Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total),
     };
 
     return Results.Ok(new
@@ -350,6 +359,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     if (!before.ClassificationModels.SequenceEqual(settings.ClassificationModels) || before.ClassificationModelsAuto != settings.ClassificationModelsAuto || before.ApiKey != settings.ApiKey)
         MovieClassifier.RetryNow();
     // A library switched back on may have movies that were never classified
+    if (before.OmdbApiKey != settings.OmdbApiKey || before.OmdbPerDay != settings.OmdbPerDay) OmdbScores.ResetPause();
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
     worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
         || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.UseExa != settings.UseExa || before.UseParallel != settings.UseParallel
@@ -479,6 +489,9 @@ record SettingsView
     public string CustomEndpoint { get; init; } = "";
     public bool HasTmdbApiKey { get; init; }
     public string? TmdbApiKey { get; init; }
+    public bool HasOmdbApiKey { get; init; }
+    public string? OmdbApiKey { get; init; }
+    public int OmdbPerDay { get; init; } = 1000;
     public int RefreshHours { get; init; }
     public int PicksPerRow { get; init; }
     public int BecauseRows { get; init; }
@@ -536,6 +549,8 @@ record SettingsView
         ChatModel = s.ChatModel,
         CustomEndpoint = s.CustomEndpoint,
         HasTmdbApiKey = !string.IsNullOrWhiteSpace(s.TmdbApiKey),
+        HasOmdbApiKey = !string.IsNullOrWhiteSpace(s.OmdbApiKey),
+        OmdbPerDay = s.OmdbPerDay,
         RefreshHours = s.RefreshHours,
         PicksPerRow = s.PicksPerRow,
         BecauseRows = s.BecauseRows,
@@ -595,6 +610,8 @@ record SettingsView
         s.ChatModel = ChatModel.Trim();
         s.CustomEndpoint = CustomEndpoint.Trim();
         if (!string.IsNullOrWhiteSpace(TmdbApiKey)) s.TmdbApiKey = TmdbApiKey.Trim();
+        if (!string.IsNullOrWhiteSpace(OmdbApiKey)) s.OmdbApiKey = OmdbApiKey.Trim();
+        s.OmdbPerDay = Math.Clamp(OmdbPerDay, 1, 1_000_000);
         if (!string.IsNullOrWhiteSpace(ExaApiKey)) s.ExaApiKey = ExaApiKey.Trim();
         s.WebSearchProvider = WebSearchProvider == "parallel" ? "parallel" : "exa";
         if (!string.IsNullOrWhiteSpace(ParallelApiKey)) s.ParallelApiKey = ParallelApiKey.Trim();

@@ -31,11 +31,12 @@ public sealed class RefreshService : BackgroundService
     private readonly Rescan _rescan;
     private readonly MovieStore _store;
     private readonly MovieClassifier _classifier;
+    private readonly OmdbScores _omdb;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, OmdbScores omdb, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -50,6 +51,7 @@ public sealed class RefreshService : BackgroundService
         _rescan = rescan;
         _store = store;
         _classifier = classifier;
+        _omdb = omdb;
     }
 
     public string State { get; private set; } = "Starting";
@@ -73,6 +75,7 @@ public sealed class RefreshService : BackgroundService
         Jobs.Ensure("sweep", "Looking up the whole library", turn);
         Jobs.Ensure("picks", "Rows for each person", turn);
         Jobs.Ensure("rescan", "Re-checking everything", turn);
+        Jobs.Ensure(OmdbScores.Key, OmdbScores.Title, turn);
         await QueueOutdatedAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -151,6 +154,15 @@ public sealed class RefreshService : BackgroundService
         }
 
         Jobs.Idle("picks", "Rows for each person", "Up to date", DateTime.UtcNow + Tick);
+
+        // Real scores from OMDb, a batch per round up to the daily number
+        State = "Fetching scores";
+        try { await _omdb.RunAsync(cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("OMDb scores paused: {Error}", error.Message);
+            Jobs.Idle(OmdbScores.Key, OmdbScores.Title, $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + Tick, error: true);
+        }
 
         // Tagging that stopped on an error tries again on its own, not only at the next library sync;
         // films queued to be described again go 8 calls per round

@@ -572,11 +572,19 @@
         <div class="setting-foot"><span class="note" id="rescan-note"></span></div>
       </form>
 
-      <h2 class="group-title">TMDB</h2>
+      <h2 class="group-title">Keywords and scores</h2>
       <form id="tmdb-form" class="settings">
         <div class="setting">
           <div><h3>TMDB key <span class="state" id="tmdb-state"></span></h3><p class="why">Optional. Adds precise keywords from The Movie Database ("heist", "time travel"), which sharpens matching. A free key comes from themoviedb.org → Settings → API.</p></div>
           <div class="control"><input type="password" id="TmdbApiKey" placeholder="Paste a key" autocomplete="off"></div>
+        </div>
+        <div class="setting">
+          <div><h3>OMDb key <span class="state" id="omdb-state"></span></h3><p class="why">Optional. Real scores for every film: Rotten Tomatoes, Metacritic and IMDb. They replace the guessed rating in the picks. A free key (1,000 requests a day) comes from omdbapi.com → API Key.</p></div>
+          <div class="control"><input type="password" id="OmdbApiKey" placeholder="Paste a key" autocomplete="off"></div>
+        </div>
+        <div class="setting">
+          <div><h3>OMDb requests per day</h3><p class="why">One request per film. Films are fetched again after six months, new films after a month.</p></div>
+          <div class="control"><input type="number" id="OmdbPerDay" min="1" step="100" style="width:7em"></div>
         </div>
         <div class="setting-foot"><span class="note" id="tmdb-note"></span></div>
       </form>
@@ -849,8 +857,9 @@ async function loadSettings() {
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
-  $('#ApiKey').value = ''; $('#TmdbApiKey').value = '';
-  $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey);
+  $('#ApiKey').value = ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
+  $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
+  $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
   $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery;
   seg($('#Variety'), settings.Variety); seg($('#NewArrivals'), settings.NewArrivals); seg($('#Rotation'), settings.Rotation);
@@ -898,7 +907,7 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', TmdbApiKey: '', OmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
@@ -920,7 +929,7 @@ const formValues = {
     WebLookupAuto: $('#WebLookupAuto').checked, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
-  'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value }),
+  'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
 };
 const formNotes = { 'ai-form': '#ai-note', 'check-form': '#check-note', 'lookup-form': '#lookup-note', 'rescan-form': '#rescan-note', 'tmdb-form': '#tmdb-note', 'rows-form': '#rows-note' };
@@ -938,11 +947,11 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', OmdbApiKey: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
-    $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey);
+    for (const k of ['ApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
     if (form === 'lookup-form') { engines = (settings.SearchEngines || []).map(e => ({ ...e })); renderEngines(); }
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
   } catch (err) { note.className = 'note err'; note.textContent = `Not saved: ${err.message}`; }
@@ -1145,7 +1154,9 @@ async function openMovie(id) {
         ${d.Director ? `<div>Directed by <b>${esc(d.Director)}</b></div>` : ''}
         ${d.Cast ? `<div>With <b>${esc(d.Cast)}</b></div>` : ''}
         ${m.Libraries.filter(l => l !== '?').length ? `<div>In <b>${esc(m.Libraries.filter(l => l !== '?').join(', '))}</b>${m.Excluded ? ' (switched off)' : ''}</div>` : ''}
-        <div>Rated <b>${m.Acclaim || '–'}</b> of 10${d.CriticsScore != null ? ` · critics <b>${d.CriticsScore}%</b>` : d.CriticRating ? ` · critics ${Math.round(d.CriticRating)}%` : ''}${d.AudienceScore != null ? ` · audience <b>${d.AudienceScore}%</b>` : d.CommunityRating ? ` · audience ${d.CommunityRating.toFixed(1)}` : ''}${d.ScoreSource ? ` <span class="note">(${esc(d.ScoreSource)})</span>` : ''}</div>
+        <div>Rated <b>${m.Acclaim || '–'}</b> of 10${d.RtScore != null || d.Metascore != null || d.ImdbRating != null
+          ? [d.RtScore != null ? ` · Rotten Tomatoes <b>${d.RtScore}%</b>` : '', d.Metascore != null ? ` · Metacritic <b>${d.Metascore}</b>` : '', d.ImdbRating != null ? ` · IMDb <b>${d.ImdbRating.toFixed(1)}</b>` : ''].join('')
+          : `${d.CriticsScore != null ? ` · critics <b>${d.CriticsScore}%</b>` : d.CriticRating ? ` · critics ${Math.round(d.CriticRating)}%` : ''}${d.AudienceScore != null ? ` · audience <b>${d.AudienceScore}%</b>` : d.CommunityRating ? ` · audience ${d.CommunityRating.toFixed(1)}` : ''}${d.ScoreSource ? ` <span class="note">(${esc(d.ScoreSource)})</span>` : ''}`}</div>
         ${d.BasedOn || d.SettingEra || d.SettingPlace ? `<div>${d.BasedOn && d.BasedOn !== 'original' ? `Based on a <b>${esc(d.BasedOn)}</b>` : d.BasedOn === 'original' ? '<b>Original</b> story' : ''}${(d.SettingEra || d.SettingPlace) ? `${d.BasedOn ? ' · ' : ''}Set in <b>${esc([d.SettingEra, d.SettingPlace].filter(Boolean).join(', '))}</b>` : ''}</div>` : ''}
         ${d.ContentNotes?.length ? `<div>Content <b>${esc(d.ContentNotes.join(', '))}</b></div>` : ''}
         ${d.Plot ? `<p class="plot">${esc(d.Plot)}</p>` : ''}

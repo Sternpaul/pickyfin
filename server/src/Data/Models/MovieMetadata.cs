@@ -43,6 +43,12 @@ namespace Pickyfin.Server.Data.Models
         /// <summary>Audience score 0–100 from the web (Rotten Tomatoes Popcornmeter, else IMDb × 10).</summary>
         public int? AudienceScore { get; set; }
         public string? ScoreSource { get; set; }
+        /// <summary>From OMDb: Rotten Tomatoes Tomatometer (0–100), Metacritic (0–100), IMDb rating (0–10). Only the OMDb job writes these.</summary>
+        public int? RtScore { get; set; }
+        public int? Metascore { get; set; }
+        public double? ImdbRating { get; set; }
+        /// <summary>When OMDb was last asked about this film (also when it had nothing).</summary>
+        public DateTime? ScoresFetched { get; set; }
         /// <summary>JSON array of content notes (gore, animal harm, …), only when clearly present.</summary>
         public string? ContentNotes { get; set; }
         /// <summary>original, novel, true story, remake, …</summary>
@@ -103,8 +109,11 @@ namespace Pickyfin.Server.Data.Models
         {
             get
             {
-                var community = AudienceScore is > 0 and <= 100 ? AudienceScore / 10.0 : CommunityRating is > 0 and <= 10 ? CommunityRating : null;
-                var critic = CriticsScore is > 0 and <= 100 ? CriticsScore / 10.0 : CriticRating is > 0 and <= 100 ? CriticRating / 10.0 : null;
+                // OMDb's real scores first, then scores the web text stated, then Jellyfin's
+                var community = ImdbRating is > 0 and <= 10 ? ImdbRating
+                    : AudienceScore is > 0 and <= 100 ? AudienceScore / 10.0 : CommunityRating is > 0 and <= 10 ? CommunityRating : null;
+                var critic = RtScore is > 0 and <= 100 ? RtScore / 10.0 : Metascore is > 0 and <= 100 ? Metascore / 10.0
+                    : CriticsScore is > 0 and <= 100 ? CriticsScore / 10.0 : CriticRating is > 0 and <= 100 ? CriticRating / 10.0 : null;
                 if (community.HasValue && critic.HasValue) return (community.Value + critic.Value) / 2.0;
                 if (community.HasValue) return community.Value;
                 if (critic.HasValue) return critic.Value;

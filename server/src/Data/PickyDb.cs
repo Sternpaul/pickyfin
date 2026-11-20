@@ -179,6 +179,10 @@ public sealed class Database
         AddColumn("Movies", "CriticsScore", "INTEGER NULL");
         AddColumn("Movies", "AudienceScore", "INTEGER NULL");
         AddColumn("Movies", "ScoreSource", "TEXT NULL");
+        AddColumn("Movies", "RtScore", "INTEGER NULL");
+        AddColumn("Movies", "Metascore", "INTEGER NULL");
+        AddColumn("Movies", "ImdbRating", "REAL NULL");
+        AddColumn("Movies", "ScoresFetched", "TEXT NULL");
         AddColumn("Movies", "ContentNotes", "TEXT NULL");
         AddColumn("Movies", "BasedOn", "TEXT NULL");
         AddColumn("Movies", "SettingEra", "TEXT NULL");

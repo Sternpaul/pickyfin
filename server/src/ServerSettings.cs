@@ -29,6 +29,10 @@ public sealed class ServerSettings
     public string ChatModel { get; set; } = "google/gemini-2.5-flash";
     public string CustomEndpoint { get; set; } = "";
     public string TmdbApiKey { get; set; } = "";
+    /// <summary>OMDb (omdbapi.com) key for real Rotten Tomatoes, Metacritic and IMDb scores. Empty = off.</summary>
+    public string OmdbApiKey { get; set; } = "";
+    /// <summary>OMDb requests per day (the free key allows 1,000).</summary>
+    public int OmdbPerDay { get; set; } = 1000;
     public bool ReclassifyOutdatedMovies { get; set; }
 
     // ---- checking the AI's work ----

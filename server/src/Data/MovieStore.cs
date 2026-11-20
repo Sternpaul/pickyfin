@@ -51,7 +51,8 @@ public sealed class MovieStore
         await using var db = _database.Open();
         var list = movies.ToList();
         var ids = list.Select(m => m.ItemId).ToList();
-        var rows = await db.Movies.AsNoTracking().Where(m => ids.Contains(m.ItemId)).Select(m => new { m.ItemId, m.ManuallyEdited }).ToListAsync(cancellationToken);
+        var rows = await db.Movies.AsNoTracking().Where(m => ids.Contains(m.ItemId)).Select(m => new { m.ItemId, m.ManuallyEdited, m.RtScore, m.Metascore, m.ImdbRating, m.ScoresFetched }).ToListAsync(cancellationToken);
+        var scores = rows.ToDictionary(r => r.ItemId);
         var existing = rows.Select(r => r.ItemId).ToHashSet();
         // A background job holding an older copy must not overwrite a hand edit made meanwhile
         var handEdited = rows.Where(r => r.ManuallyEdited).Select(r => r.ItemId).ToHashSet();
@@ -59,6 +60,8 @@ public sealed class MovieStore
         {
             if (handEdited.Contains(movie.ItemId) && !movie.ManuallyEdited) continue;
             movie.LastUpdated = DateTime.UtcNow;
+            if (scores.TryGetValue(movie.ItemId, out var sc))
+                (movie.RtScore, movie.Metascore, movie.ImdbRating, movie.ScoresFetched) = (sc.RtScore, sc.Metascore, sc.ImdbRating, sc.ScoresFetched);
             if (existing.Contains(movie.ItemId)) db.Movies.Update(movie);
             else db.Movies.Add(movie);
         }
