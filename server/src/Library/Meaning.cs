@@ -51,13 +51,22 @@ public sealed class Meaning
         _logger = logger;
     }
 
-    public static void ResetPause() => _pausedUntil = null;
+    public static void ResetPause()
+    {
+        _pausedUntil = null;
+        lock (Resting) Resting.Clear();
+    }
 
     public static bool On(ServerSettings s) =>
         s.MeaningOn && s.AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(s.ApiKey);
 
-    /// <summary>The model the films are being matched with right now (the first in the order that works).</summary>
+    /// <summary>The model being asked right now.</summary>
     public static string? ActiveModel { get; private set; }
+
+    /// <summary>A model that was busy or failed: skipped until then; the other models carry on.</summary>
+    private static readonly Dictionary<string, (DateTime Until, string Why)> Resting = new();
+    /// <summary>Per model: how many films and descriptions it still has to do (for Status).</summary>
+    public static Dictionary<string, int> Left { get; private set; } = new();
 
     // The free embedding models on OpenRouter, most used this week first; refreshed every hour
     private static List<string> _free = new();
@@ -127,67 +136,109 @@ public sealed class Meaning
     private static string Hash(string model, string text) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(model + "\n" + text)))[..20];
 
+    /// <summary>
+    /// Every model in the order builds its own matrix: each gets its batch every round. A model
+    /// that's busy or failing is skipped for a while and the others carry on; one that's gone
+    /// drops out. Scores are the average over the models that know both films.
+    /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         var s = ServerSettings.Current;
         if (!On(s)) { Jobs.Idle(Key, Title, s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter"); return; }
         if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
         await RefreshFreeAsync(cancellationToken);
-        foreach (var model in Order(s).Where(m => !OpenRouterModels.IsGone(m)))
+        var models = Order(s).Where(m => !OpenRouterModels.IsGone(m)).ToList();
+        if (models.Count == 0)
         {
+            Pause(TimeSpan.FromHours(1), "Paused: no model in the order is available", "Meaning: no model in the order is available");
+            Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true);
+            return;
+        }
+
+        var todo = await TodoAsync(s, models, cancellationToken);
+        Left = models.ToDictionary(m => m, m => todo[m].Count);
+        if (todo.Values.All(t => t.Count == 0)) { Jobs.Idle(Key, Title, $"Up to date · {models.Count} model{(models.Count == 1 ? "" : "s")}"); return; }
+
+        var done = 0;
+        foreach (var model in models)
+        {
+            if (todo[model].Count == 0) continue;
+            lock (Resting)
+                if (Resting.TryGetValue(model, out var rest) && rest.Until > DateTime.UtcNow) continue;
             ActiveModel = model;
-            if (await RunWithAsync(s, model, cancellationToken) != Outcome.Gone) return;
-            OpenRouterModels.MarkGone(model);
-            _logger.LogWarning("Meaning: {Model} isn't available, every film moves to the next model in the order", model);
+            Jobs.Running(Key, Title, $"{Short(model)}: {todo[model].Count:N0} to go");
+            var (count, outcome) = await RunWithAsync(s, model, todo[model], cancellationToken);
+            done += count;
+            Left[model] = todo[model].Count - count;
+            if (outcome == Outcome.Gone)
+            {
+                OpenRouterModels.MarkGone(model);
+                _logger.LogWarning("Meaning: {Model} isn't available any more; the other models carry on", model);
+            }
+            if (_pausedUntil > DateTime.UtcNow) break; // the key itself was refused
         }
         ActiveModel = null;
-        Pause(TimeSpan.FromHours(1), "Paused: no model in the order is available", "Meaning: no model in the order is available");
-        Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true);
+        if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
+
+        var left = Left.Values.Sum();
+        var working = models.Count(m => !OpenRouterModels.IsGone(m) && !IsResting(m));
+        Jobs.Idle(Key, Title,
+            left > 0 ? $"{left:N0} to go · {working} of {models.Count} models working" : $"Up to date · {models.Count} models",
+            left > 0 ? DateTime.UtcNow.AddMinutes(5) : null, error: working == 0);
+    }
+
+    private static bool IsResting(string model)
+    {
+        lock (Resting) return Resting.TryGetValue(model, out var r) && r.Until > DateTime.UtcNow;
+    }
+
+    /// <summary>Why a model is skipped right now, for Status; null when it's working.</summary>
+    public static string? RestingWhy(string model)
+    {
+        lock (Resting) return Resting.TryGetValue(model, out var r) && r.Until > DateTime.UtcNow ? r.Why : null;
     }
 
     private enum Outcome { Done, Gone, Paused }
 
-    private async Task<Outcome> RunWithAsync(ServerSettings s, string model, CancellationToken cancellationToken)
+    /// <summary>Per model, what it still has to embed: descriptions first, then films it never had, then changed ones.</summary>
+    private async Task<Dictionary<string, List<(Guid Id, string Kind, string Text, string Hash)>>> TodoAsync(ServerSettings s, List<string> models, CancellationToken cancellationToken)
     {
-        List<(Guid Id, string Kind, string Text, string Hash)> todo;
-        await using (var db = _database.Open())
-        {
-            var stored = await db.Embeddings.AsNoTracking().Select(e => new { e.ItemId, e.Hash }).ToDictionaryAsync(e => e.ItemId, e => e.Hash, cancellationToken);
-            var films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(cancellationToken))
-                .Where(m => !s.IsLibraryExcluded(m.Libraries))
-                .Select(m => (Id: m.ItemId, Kind: "film", Text: Document(m)));
-            var briefs = (await db.Users.AsNoTracking().Where(u => u.Enabled).ToListAsync(cancellationToken))
-                .Select(u => (Id: u.UserId, Kind: "brief", Text: BriefText(u)))
-                .Where(x => x.Text is not null)
-                .Select(x => (x.Id, x.Kind, Text: x.Text!));
-            // Descriptions first (few, and they matter for every pick), then films never embedded, then changed ones
-            todo = briefs.Concat(films)
-                .Select(x => (x.Id, x.Kind, x.Text, Hash: Hash(model, x.Text)))
-                .Where(x => !stored.TryGetValue(x.Id, out var h) || h != x.Hash)
-                .OrderBy(x => x.Kind == "brief" ? 0 : stored.ContainsKey(x.Id) ? 2 : 1)
-                .ToList();
-        }
-        if (todo.Count == 0) { Jobs.Idle(Key, Title, "Up to date"); return Outcome.Done; }
+        await using var db = _database.Open();
+        var stored = (await db.Embeddings.AsNoTracking().Select(e => new { e.ItemId, e.Model, e.Hash }).ToListAsync(cancellationToken))
+            .ToDictionary(e => (e.ItemId, e.Model), e => e.Hash);
+        var films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(cancellationToken))
+            .Where(m => !s.IsLibraryExcluded(m.Libraries))
+            .Select(m => (Id: m.ItemId, Kind: "film", Text: Document(m))).ToList();
+        var briefs = (await db.Users.AsNoTracking().Where(u => u.Enabled).ToListAsync(cancellationToken))
+            .Select(u => (Id: u.UserId, Kind: "brief", Text: BriefText(u)))
+            .Where(x => x.Text is not null)
+            .Select(x => (x.Id, x.Kind, Text: x.Text!)).ToList();
+        return models.ToDictionary(model => model, model => briefs.Concat(films)
+            .Select(x => (x.Id, x.Kind, x.Text, Hash: Hash(model, x.Text)))
+            .Where(x => !stored.TryGetValue((x.Id, model), out var h) || h != x.Hash)
+            .OrderBy(x => x.Kind == "brief" ? 0 : stored.ContainsKey((x.Id, model)) ? 2 : 1)
+            .ToList());
+    }
 
+    private async Task<(int Done, Outcome Outcome)> RunWithAsync(ServerSettings s, string model, List<(Guid Id, string Kind, string Text, string Hash)> todo, CancellationToken cancellationToken)
+    {
         var round = todo.Take(PerRequest * RequestsPerRound).ToList();
-        Jobs.Running(Key, Title, $"{round.Count} films");
         var done = 0;
         foreach (var chunk in round.Chunk(PerRequest))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var (vectors, outcome) = await EmbedWithTriesAsync(s, model, chunk.Select(c => c.Text).ToList(), cancellationToken);
-            if (outcome == Outcome.Gone) return Outcome.Gone;
-            if (vectors is null) break;
+            if (outcome == Outcome.Gone) return (done, Outcome.Gone);
+            if (vectors is null) return (done, Outcome.Paused);
             await using (var db = _database.Open())
             {
                 var ids = chunk.Select(c => c.Id).ToList();
-                var rows = await db.Embeddings.Where(e => ids.Contains(e.ItemId)).ToDictionaryAsync(e => e.ItemId, cancellationToken);
+                var rows = await db.Embeddings.Where(e => e.Model == model && ids.Contains(e.ItemId)).ToDictionaryAsync(e => e.ItemId, cancellationToken);
                 for (var i = 0; i < chunk.Length; i++)
                 {
                     var (id, kind, _, hash) = chunk[i];
-                    if (!rows.TryGetValue(id, out var row)) db.Embeddings.Add(row = new Embedding { ItemId = id });
+                    if (!rows.TryGetValue(id, out var row)) db.Embeddings.Add(row = new Embedding { ItemId = id, Model = model });
                     row.Kind = kind;
-                    row.Model = model;
                     row.Hash = hash;
                     row.Vector = Pack(Normalize(vectors[i]));
                     row.At = DateTime.UtcNow;
@@ -197,15 +248,11 @@ public sealed class Meaning
             done += chunk.Length;
             Interlocked.Increment(ref _version);
         }
-
         if (done > 0) _logger.LogInformation("Meaning: {Done} embedded with {Model}, {Left} to go", done, model, todo.Count - done);
-        if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return Outcome.Paused; }
-        var left = todo.Count - done;
-        Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} to go · {Short(model)}" : $"Up to date · {Short(model)}", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
-        return Outcome.Done;
+        return (done, Outcome.Done);
     }
 
-    private static string Short(string model) => model.Contains('/') ? model[(model.IndexOf('/') + 1)..].Replace(":free", "") : model;
+    public static string Short(string model) => model.Contains('/') ? model[(model.IndexOf('/') + 1)..].Replace(":free", "") : model;
 
     /// <summary>Three tries on the same model when it's busy or slow; a model that's gone hands over to the next.</summary>
     private async Task<(List<float[]>? Vectors, Outcome Outcome)> EmbedWithTriesAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
@@ -227,7 +274,9 @@ public sealed class Meaning
             }
             if (attempt >= 3)
             {
-                Pause(TimeSpan.FromMinutes(15), result.Code == 429 ? "Paused: the model is busy" : "Paused: the model didn't answer", $"Meaning: {model} failed 3 times: {result.Error}");
+                // skipped this round only; the other models carry on, and it's asked again next round
+                lock (Resting) Resting[model] = (DateTime.UtcNow.AddMinutes(4), result.Code == 429 ? "busy" : "didn't answer");
+                _logger.LogWarning("Meaning: {Model} failed 3 times ({Error}); the other models carry on", model, result.Error);
                 return (null, Outcome.Paused);
             }
             await Task.Delay(TimeSpan.FromSeconds(attempt == 1 ? 10 : 30), cancellationToken);
@@ -335,7 +384,7 @@ public sealed class Meaning
         return v;
     }
 
-    /// <summary>All vectors of the current model, loaded once and kept until new ones arrive.</summary>
+    /// <summary>All models' vectors, loaded once and kept until new ones arrive.</summary>
     public async Task<Snapshot> SnapshotAsync(CancellationToken cancellationToken)
     {
         var s = ServerSettings.Current;
@@ -343,52 +392,45 @@ public sealed class Meaning
         var version = Interlocked.Read(ref _version);
         lock (_gate)
             if (_snapshot is { } cached && cached.Version == version) return cached;
+        // Models that dropped out of the order no longer count
+        var order = Order(s).Where(m => !OpenRouterModels.IsGone(m)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         List<Embedding> rows;
-        string model;
         await using (var db = _database.Open())
-        {
-            model = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film").GroupBy(e => e.Model)
-                .OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefaultAsync(cancellationToken) ?? "";
-            rows = await db.Embeddings.AsNoTracking().Where(e => e.Model == model).ToListAsync(cancellationToken);
-        }
-        var snapshot = new Snapshot(model, version,
-            rows.Where(r => r.Kind == "film").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)),
-            rows.Where(r => r.Kind == "brief").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)));
+            rows = await db.Embeddings.AsNoTracking().ToListAsync(cancellationToken);
+        var parts = rows.GroupBy(r => r.Model)
+            .Where(g => order.Count == 0 || order.Contains(g.Key))
+            .Select(g => new Part(g.Key,
+                g.Where(r => r.Kind == "film").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)),
+                g.Where(r => r.Kind == "brief").ToDictionary(r => r.ItemId, r => Unpack(r.Vector))))
+            .OrderByDescending(p => p.Films.Count).ToList();
+        var snapshot = new Snapshot(version, parts);
         lock (_gate) _snapshot = snapshot;
         return snapshot;
     }
 
     /// <summary>
-    /// Vectors at one moment. A score is where the target ranks among all films for the
-    /// source (the closest ones near 1, an average film 0), so models with different
-    /// similarity ranges behave the same.
+    /// One model's matrix. A score is where the target ranks among all films for the source
+    /// (the closest ones near 1, an average film 0), so models with different similarity
+    /// ranges can be averaged.
     /// </summary>
-    public sealed class Snapshot
+    public sealed class Part
     {
-        public static readonly Snapshot Empty = new("", -1, new(), new());
         public string Model { get; }
-        public long Version { get; }
         public Dictionary<Guid, float[]> Films { get; }
         public Dictionary<Guid, float[]> Briefs { get; }
         private readonly Dictionary<(Guid, bool), Dictionary<Guid, double>> _ranks = new();
+        private Dictionary<Guid, (double X, double Y)>? _map;
 
-        public Snapshot(string model, long version, Dictionary<Guid, float[]> films, Dictionary<Guid, float[]> briefs)
+        public Part(string model, Dictionary<Guid, float[]> films, Dictionary<Guid, float[]> briefs)
         {
             Model = model;
-            Version = version;
             Films = films;
             Briefs = briefs;
         }
 
         public bool Any => Films.Count >= 20;
 
-        /// <summary>How close a film is to another, 0..0.7 (as strong as a very good tag match at most); null when unknown.</summary>
-        public double? Score(Guid source, Guid target) => Rank(source, target, brief: false);
-
-        /// <summary>How close a film is to what this person wants, 0..0.7; null when unknown.</summary>
-        public double? BriefScore(Guid userId, Guid target) => Rank(userId, target, brief: true);
-
-        private double? Rank(Guid source, Guid target, bool brief)
+        public double? Rank(Guid source, Guid target, bool brief)
         {
             if (!Any || source == target && !brief) return null;
             if (!Films.ContainsKey(target)) return null;
@@ -414,8 +456,6 @@ public sealed class Meaning
             }
             return ranks.TryGetValue(target, out var r) ? r : null;
         }
-
-        private Dictionary<Guid, (double X, double Y)>? _map;
 
         /// <summary>
         /// Every film as a point on a flat map: the two directions in which the films' meanings
@@ -469,6 +509,51 @@ public sealed class Meaning
             for (var i = 0; i < a.Length; i++) sum += a[i] * b[i];
             return sum;
         }
+    }
+
+    /// <summary>All models' matrices at one moment; scores are averaged over the models that know both.</summary>
+    public sealed class Snapshot
+    {
+        public static readonly Snapshot Empty = new(-1, new List<Part>());
+        public long Version { get; }
+        /// <summary>Most films first.</summary>
+        public IReadOnlyList<Part> Parts { get; }
+
+        public Snapshot(long version, List<Part> parts)
+        {
+            Version = version;
+            Parts = parts;
+        }
+
+        /// <summary>One model only (tests, and the single-model case).</summary>
+        public Snapshot(string model, long version, Dictionary<Guid, float[]> films, Dictionary<Guid, float[]> briefs)
+            : this(version, new List<Part> { new(model, films, briefs) }) { }
+
+        /// <summary>The model with the most films.</summary>
+        public string Model => Parts.FirstOrDefault()?.Model ?? "";
+        public bool Any => Parts.Any(p => p.Any);
+        public bool Has(Guid film) => Parts.Any(p => p.Any && p.Films.ContainsKey(film));
+        public Part? For(string? model) => Parts.FirstOrDefault(p => string.Equals(p.Model, model, StringComparison.OrdinalIgnoreCase)) ?? Parts.FirstOrDefault();
+
+        /// <summary>How close a film is to another, 0..0.7 (as strong as a very good tag match at most); null when unknown.</summary>
+        public double? Score(Guid source, Guid target) => Average(p => p.Rank(source, target, brief: false));
+
+        /// <summary>How close a film is to what this person wants, 0..0.7; null when unknown.</summary>
+        public double? BriefScore(Guid userId, Guid target) => Average(p => p.Rank(userId, target, brief: true));
+
+        /// <summary>Each model's own score, for showing how they agree.</summary>
+        public Dictionary<string, double> ScoreBy(Guid source, Guid target) =>
+            Parts.Select(p => (p.Model, Score: p.Rank(source, target, brief: false)))
+                .Where(x => x.Score is not null).ToDictionary(x => x.Model, x => x.Score!.Value);
+
+        private double? Average(Func<Part, double?> score)
+        {
+            double sum = 0; var n = 0;
+            foreach (var p in Parts) if (score(p) is { } v) { sum += v; n++; }
+            return n == 0 ? null : sum / n;
+        }
+
+        public Dictionary<Guid, (double X, double Y)> Map(string? model = null) => For(model)?.Map() ?? new();
     }
 
     /// <summary>Tags and meaning together: weight 0 = tags only, 1 = meaning only.</summary>

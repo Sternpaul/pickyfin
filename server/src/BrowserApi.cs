@@ -211,14 +211,16 @@ public static class BrowserApi
         });
 
         // The matrix page: every matched film on a map, and how far matching has got
-        admin.MapGet("/matrix", async (Database database, Meaning meaning, CancellationToken ct) =>
+        admin.MapGet("/matrix", async (string? model, Database database, Meaning meaning, CancellationToken ct) =>
         {
             var s = ServerSettings.Current;
             var snapshot = await meaning.SnapshotAsync(ct);
+            // Every model has its own map; the page shows one at a time
+            var part = snapshot.For(model);
             List<MovieMetadata> films;
             await using (var db = database.Open())
                 films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(ct)).Where(m => !s.IsLibraryExcluded(m.Libraries)).ToList();
-            var map = snapshot.Map();
+            var map = part?.Map() ?? new();
             var points = films.Where(f => map.ContainsKey(f.ItemId)).Select(f => new
             {
                 Id = f.ItemId, f.Title, Year = f.ReleaseYear,
@@ -228,7 +230,8 @@ public static class BrowserApi
             return Results.Ok(new
             {
                 On = Meaning.On(s),
-                Model = snapshot.Model,
+                Model = part?.Model,
+                Models = snapshot.Parts.Select(x => new { Id = x.Model, Name = Meaning.Short(x.Model), Films = x.Films.Keys.Count(id => films.Any(f => f.ItemId == id)) }),
                 Matched = points.Count,
                 Films = films.Count,
                 Weight = s.MeaningWeight,
@@ -262,11 +265,13 @@ public static class BrowserApi
                     x.Movie.ItemId, x.Movie.Title, x.Movie.ReleaseYear,
                     Score = (int)Math.Round(x.Score * 100), Tags = (int)Math.Round(x.Tags * 100),
                     Meaning = x.Near is { } near ? (int?)Math.Round(near / 0.7 * 100) : null,
+                    // each model's own view, to see where they agree
+                    By = weight > 0 ? snapshot.ScoreBy(id, x.Movie.ItemId).ToDictionary(b => Meaning.Short(b.Key), b => (int)Math.Round(b.Value / 0.7 * 100)) : new(),
                     Crowd = SimilarityEngine.CrowdLinked(movie, x.Movie),
                     Series = movie.CollectionId is { } c && x.Movie.CollectionId == c,
                 })
                 .ToList();
-            return Results.Ok(new { Meaning = snapshot.Films.ContainsKey(id), Films = films });
+            return Results.Ok(new { Meaning = snapshot.Has(id), Films = films });
         });
 
         admin.MapPut("/movies/{id:guid}", async (Guid id, MovieEdit edit, Database database, LibrarySync sync, JellyfinClient jellyfin, MovieHistory history, CancellationToken ct) =>

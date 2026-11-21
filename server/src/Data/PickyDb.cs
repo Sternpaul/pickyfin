@@ -120,7 +120,7 @@ public sealed class PickyDb : DbContext
         model.Entity<LetterboxdFilm>().HasIndex(f => new { f.UserId, f.Kind });
         model.Entity<RowPin>().HasIndex(r => new { r.UserId, r.Slot }).IsUnique();
         model.Entity<Library.HistoryEntry>().ToTable("History").HasIndex(h => h.ItemId);
-        model.Entity<Library.Embedding>().ToTable("Embeddings").HasKey(e => e.ItemId);
+        model.Entity<Library.Embedding>().ToTable("Embeddings").HasKey(e => new { e.ItemId, e.Model });
     }
 }
 
@@ -154,6 +154,13 @@ public sealed class Database
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (reader.Read()) names.Add(reader.GetString(1));
             return names;
+        }
+
+        int KeyColumns(string table)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE pk > 0";
+            return Convert.ToInt32(command.ExecuteScalar());
         }
 
         void Run(string sql)
@@ -244,12 +251,28 @@ public sealed class Database
             ""Text"" TEXT NULL)");
         Run(@"CREATE INDEX IF NOT EXISTS ""IX_History_ItemId"" ON ""History"" (""ItemId"")");
         Run(@"CREATE TABLE IF NOT EXISTS ""Embeddings"" (
-            ""ItemId"" TEXT NOT NULL CONSTRAINT ""PK_Embeddings"" PRIMARY KEY,
+            ""ItemId"" TEXT NOT NULL,
             ""Kind"" TEXT NOT NULL,
             ""Model"" TEXT NOT NULL,
             ""Hash"" TEXT NOT NULL,
             ""Vector"" BLOB NOT NULL,
-            ""At"" TEXT NOT NULL)");
+            ""At"" TEXT NOT NULL,
+            CONSTRAINT ""PK_Embeddings"" PRIMARY KEY (""ItemId"", ""Model""))");
+        // Before: one meaning per film. Now one per film per model, so every model builds its own matrix
+        if (KeyColumns("Embeddings") == 1)
+        {
+            Run(@"ALTER TABLE ""Embeddings"" RENAME TO ""EmbeddingsOld""");
+            Run(@"CREATE TABLE ""Embeddings"" (
+                ""ItemId"" TEXT NOT NULL,
+                ""Kind"" TEXT NOT NULL,
+                ""Model"" TEXT NOT NULL,
+                ""Hash"" TEXT NOT NULL,
+                ""Vector"" BLOB NOT NULL,
+                ""At"" TEXT NOT NULL,
+                CONSTRAINT ""PK_Embeddings"" PRIMARY KEY (""ItemId"", ""Model""))");
+            Run(@"INSERT INTO ""Embeddings"" SELECT ""ItemId"", ""Kind"", ""Model"", ""Hash"", ""Vector"", ""At"" FROM ""EmbeddingsOld""");
+            Run(@"DROP TABLE ""EmbeddingsOld""");
+        }
     }
 
     public PickyDb Open() => new(_path);

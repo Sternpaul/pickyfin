@@ -324,8 +324,12 @@
   .mx-top { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; gap: 12px; align-items: center; z-index: 2; pointer-events: none; }
   .mx-top > * { pointer-events: auto; }
   #matrix-find { width: min(320px, 100%); border-radius: 999px; padding-left: 16px; }
-  .mx-facts { font-size: 12.5px; color: var(--muted); padding: 5px 12px; border-radius: 999px; }
+  .mx-facts { display: flex; padding: 3px; border-radius: 999px; gap: 2px; overflow-x: auto; max-width: 100%; }
   .mx-facts:empty { display: none; }
+  .mx-facts button { border: 0; background: none; color: var(--muted); font: 500 12.5px var(--sans); padding: 5px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .mx-facts button span { color: var(--faint); margin-left: 3px; font-variant-numeric: tabular-nums; }
+  .mx-facts button.on { background: var(--accent); color: var(--accent-ink); }
+  .mx-facts button.on span { color: inherit; opacity: .75; }
   .mx-legend { position: absolute; left: 14px; bottom: 14px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; max-width: min(720px, calc(100% - 90px)); }
   .mx-legend button { font: 500 12px var(--sans); color: var(--text); padding: 4px 10px 4px 8px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
   .mx-legend button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent); }
@@ -364,7 +368,7 @@
     .mx-panel { position: static; width: auto; margin-top: 12px; max-height: none; }
     .mx.with-panel .mx-zoom { right: 14px; }
     .mx-list { max-height: none; }
-    .mx-facts { display: none; }
+    .mx-top { flex-wrap: wrap; }
     .mx-legend { max-width: calc(100% - 70px); }
     .mx-legend button:nth-child(n+5) { display: none; }
   }
@@ -717,7 +721,7 @@
           <div class="control"><label class="switch"><input type="checkbox" id="MeaningOn"><span></span></label></div>
         </div>
         <div class="setting">
-          <div><h3>Model order</h3><p class="why">Every film is matched with the same model, since meanings from different models can't be compared. Pickyfin uses the first model in the order that works. A busy model is tried three times and then waited for; a model OpenRouter no longer offers hands over to the next, and every film is matched again with that one. <span id="meaning-models-note"></span></p></div>
+          <div><h3>Model order</h3><p class="why">Every model in the order matches all films and builds its own matrix (meanings from different models can't be mixed, so each keeps its own). How close two films are is the average over the models that know both, which is steadier than any one model. A busy model is tried three times, then skipped for that round while the others carry on; a model OpenRouter no longer offers drops out. More models means more requests, so the first ones fill up first. <span id="meaning-models-note"></span></p></div>
           <div class="control"><div class="chain" id="embed-chain"></div><datalist id="embed-all"></datalist></div>
         </div>
         <div class="setting-foot"><span class="note" id="meaning-note"></span></div>
@@ -1229,15 +1233,19 @@ const mxImg = (id, cls = '') => `<img src="${posterUrl(id)}" alt="" class="${cls
 
 async function loadMatrix() {
   wireMatrix();
-  try { mx.data = await call('GET', '/api/matrix'); }
+  try { mx.data = await call('GET', '/api/matrix' + (mx.model ? `?model=${encodeURIComponent(mx.model)}` : '')); }
   catch { showMxEmpty('Couldn\'t load the matrix.'); return; }
   const d = mx.data;
   const model = d.Model ? d.Model.replace(/^[^/]+\//, '').replace(':free', '') : null;
-  $('#matrix-facts').textContent = d.On && d.Matched ? `${d.Matched.toLocaleString()} films${model ? ' · ' + model : ''}` : '';
-  $('#matrix-facts').classList.toggle('glass', !!(d.On && d.Matched));
+  // one map per model: switch between them
+  const models = (d.Models || []).filter(m => m.Films > 0);
+  $('#matrix-facts').innerHTML = models.map(m => `<button type="button" class="${m.Id === d.Model ? 'on' : ''}" data-model="${esc(m.Id)}" title="${esc(m.Id)}">${esc(m.Name)} <span>${m.Films.toLocaleString()}</span></button>`).join('');
+  $('#matrix-facts').classList.toggle('glass', models.length > 0);
+  $$('#matrix-facts button').forEach(b => b.onclick = () => { if (b.dataset.model !== d.Model) { mx.model = b.dataset.model; loadMatrix(); } });
   $('#matrix-about').innerHTML = !d.On
     ? 'Matching by meaning is off (AI page), so there is no map; films are compared by their tags only.'
-    : `${d.Matched.toLocaleString()} of ${d.Films.toLocaleString()} described films are matched by meaning${model ? ` with ${esc(model)}` : ''}. Each film's meaning is stored once, in the server's database (pickyfin.db, table Embeddings). `
+    : `Every embedding model builds its own matrix${models.length > 1 ? ` (${models.length} so far)` : ''}; the map shows ${esc(model || 'one')} with ${d.Matched.toLocaleString()} of ${d.Films.toLocaleString()} described films. Switch models at the top of the map. `
+      + `Each film's meaning is stored once per model in the server's database (pickyfin.db, table Embeddings). The percentages average all models. `
       + `The percentages are worked out whenever you look, mixing tags and meaning as set on Tuning (now ${100 - d.Weight}% tags, ${d.Weight}% meaning). `
       + `The map squeezes the meanings onto two directions, so two films can look close without being alike; the percentages are exact.`;
   $('#matrix-titles').innerHTML = d.All.map(f => `<option value="${esc(mxTitle(f))}">`).join('');
@@ -1524,8 +1532,10 @@ async function pickFilm(id, move = true) {
   $('#mx').classList.toggle('picked', !!point);
   // the picked film and its closest films are drawn last, so they sit on top (mx.circles keeps the original order)
   mx.circles?.filter(c => c.classList.contains('near') || c.classList.contains('me')).forEach(c => c.parentNode.appendChild(c));
+  // with several models: each one's own meaning score, to see where they agree
+  const by = f => { const e = Object.entries(f.By || {}); return e.length > 1 ? ` (${e.map(([m, v]) => `<span title="${esc(m)}">${v}</span>`).join(' / ')})` : ''; };
   const why = f => [f.Series ? '<span class="mx-tag">same series</span>' : '', f.Crowd ? '<span class="mx-tag">TMDB viewers liked both</span>' : ''].join('')
-    + `meaning ${f.Meaning ?? '–'} · tags ${f.Tags}`;
+    + `meaning ${f.Meaning ?? '–'}${by(f)} · tags ${f.Tags}`;
   $('.mx-list', box).innerHTML = (r.Meaning ? '' : '<p class="note" style="padding:4px 8px">Not matched by meaning yet, so compared by tags only.</p>')
     + (r.Films.length ? r.Films.map((f, i) => `<div class="mx-row" data-pick="${f.ItemId}"><span class="n">${i + 1}</span><span class="t">${esc(f.Title)}<span>${f.ReleaseYear || ''}</span></span><span class="p">${f.Score}%</span>
         <span class="bar"><i style="width:${Math.max(2, f.Score)}%"></i></span><span class="why">${why(f)}</span></div>`).join('')

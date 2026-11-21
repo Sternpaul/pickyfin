@@ -173,13 +173,22 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     {
         await using var db = database.Open();
         var byModel = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film").GroupBy(e => e.Model).Select(g => new { Model = g.Key, Films = g.Count() }).ToListAsync(ct);
-        var model = Meaning.ActiveModel ?? byModel.OrderByDescending(m => m.Films).FirstOrDefault()?.Model ?? "";
         var lines = new List<string>();
-        if (byModel.Count > 0) lines.Add("Matched with:\n" + string.Join("\n", byModel.OrderByDescending(m => m.Films).Select(m => $"  {m.Model}: {m.Films:N0} film{(m.Films == 1 ? "" : "s")}")));
+        // every model in the order builds its own matrix
+        var order = Meaning.Order(s);
+        var shown = order.Concat(byModel.Select(m => m.Model)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (shown.Count > 0) lines.Add("Each model builds its own matrix:\n" + string.Join("\n", shown.Select(m =>
+        {
+            var films = byModel.FirstOrDefault(b => string.Equals(b.Model, m, StringComparison.OrdinalIgnoreCase))?.Films ?? 0;
+            var state = OpenRouterModels.IsGone(m) ? "gone from OpenRouter" : !order.Contains(m, StringComparer.OrdinalIgnoreCase) ? "not in the order, not used"
+                : Meaning.RestingWhy(m) is { } why ? $"{why}, tried again next round" : Meaning.Left.TryGetValue(m, out var left) && left > 0 ? $"{left:N0} to go" : "up to date";
+            return $"  {Meaning.Short(m)}: {films:N0} film{(films == 1 ? "" : "s")} · {state}";
+        })));
         var failed = OpenRouterModels.StepFailures.Where(f => f.Key.StartsWith("meaning|")).OrderByDescending(f => f.Value).ToList();
         if (failed.Count > 0) lines.Add("Failed since the server started:\n" + string.Join("\n", failed.Take(6).Select(f => $"  {f.Key[8..]}: {f.Value}×")));
         meaningTip = lines.Count == 0 ? "No model used yet" : string.Join("\n\n", lines);
-        var ids = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film" && e.Model == model).Select(e => e.ItemId).ToListAsync(ct);
+        // a film counts as matched once any model has it
+        var ids = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film" && order.Contains(e.Model)).Select(e => e.ItemId).Distinct().ToListAsync(ct);
         var set = ids.ToHashSet();
         var rows = await db.Movies.AsNoTracking().Select(m => new { m.ItemId, m.Libraries }).ToListAsync(ct);
         embedded = rows.Count(r => set.Contains(r.ItemId) && !s.IsLibraryExcluded(r.Libraries));

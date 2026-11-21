@@ -106,6 +106,29 @@ public class MeaningTests
     }
 
     [Fact]
+    public void ModelsAreAveragedOnlyWhereTheyKnowBothFilms()
+    {
+        var rnd = new Random(2);
+        var seed = Guid.NewGuid(); var twin = Guid.NewGuid(); var onlyA = Guid.NewGuid();
+        Dictionary<Guid, float[]> Films(float[] twinVector)
+        {
+            var films = new Dictionary<Guid, float[]> { [seed] = Meaning.Normalize(new[] { 1f, 0f }), [twin] = Meaning.Normalize(twinVector) };
+            for (var i = 0; i < 30; i++) films[Guid.NewGuid()] = Meaning.Normalize(new[] { (float)rnd.NextDouble() - 0.5f, (float)rnd.NextDouble() });
+            return films;
+        }
+        var a = Films(new[] { 0.95f, 0.05f });
+        a[onlyA] = Meaning.Normalize(new[] { 0.9f, 0.1f });
+        var b = Films(new[] { -1f, 0.1f }); // model B thinks they're far apart
+        var snap = new Meaning.Snapshot(1, new List<Meaning.Part> { new("a", a, new()), new("b", b, new()) });
+        var bothSay = snap.ScoreBy(seed, twin);
+        Assert.Equal(2, bothSay.Count);
+        Assert.Equal((bothSay["a"] + bothSay["b"]) / 2, snap.Score(seed, twin)!.Value, 6);
+        // only model A has this film: its score alone counts
+        Assert.Equal(snap.Parts[0].Model == "a" ? snap.Parts[0].Rank(seed, onlyA, false) : snap.Parts[1].Rank(seed, onlyA, false), snap.Score(seed, onlyA));
+        Assert.True(snap.Has(onlyA));
+    }
+
+    [Fact]
     public void DocumentCarriesTheWholeDescription()
     {
         var m = new Pickyfin.Server.Data.Models.MovieMetadata { Title = "Heat", ReleaseYear = 1995, Plot = "A heist.", Director = "Michael Mann", WebNotes = "Critics loved it." };
