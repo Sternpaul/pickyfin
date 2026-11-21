@@ -484,8 +484,14 @@ public sealed class Meaning
         // Models that dropped out of the order no longer count
         var order = Order(s).Where(m => !OpenRouterModels.IsGone(m)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         List<Embedding> rows;
+        HashSet<Guid> visible;
         await using (var db = _database.Open())
+        {
             rows = await db.Embeddings.AsNoTracking().ToListAsync(cancellationToken);
+            // films Jellyfin no longer has (hidden until the admin confirms) don't count
+            visible = (await db.Movies.Select(m => m.ItemId).ToListAsync(cancellationToken)).ToHashSet();
+        }
+        rows = rows.Where(r => r.Kind != "film" || visible.Contains(r.ItemId)).ToList();
         var parts = rows.GroupBy(r => r.Model)
             .Where(g => order.Count == 0 || order.Contains(g.Key))
             .Select(g => new Part(g.Key,

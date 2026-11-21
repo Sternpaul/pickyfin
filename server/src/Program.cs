@@ -282,6 +282,9 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip),
     };
 
+    int gone;
+    await using (var goneDb = database.Open())
+        gone = await goneDb.Movies.IgnoreQueryFilters().CountAsync(m => m.GoneSince != null, ct);
     return Results.Ok(new
     {
         // What is happening this second: the job, what it waits for, which model and which try
@@ -289,6 +292,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         NowDetail = waitingFor is not null ? Activity.Detail : null,
         Waiting = waitingFor is null ? 0 : seconds,
         TaggingLeft = TaggingEta.SecondsLeft,
+        // films Jellyfin no longer lists, waiting for the admin to confirm their removal
+        Gone = gone,
         worker.LastError,
         LastErrorAt = worker.LastErrorAt,
         LibrarySynced = library.LastSync,
@@ -450,6 +455,18 @@ admin.MapPost("/steps/{step}/stop", async (string step, Database database, ILogg
         return Results.Ok(new { Count = 0 });
     }
     return Results.NotFound();
+});
+
+// Films Jellyfin no longer lists: hidden, and deleted only when the admin confirms
+admin.MapGet("/library/gone", async (MovieStore store, CancellationToken ct) =>
+    Results.Ok((await store.GetGoneAsync(ct)).Select(m => new { Id = m.ItemId, m.Title, Year = m.ReleaseYear, Since = m.GoneSince, m.IsClassified })));
+
+admin.MapPost("/library/gone/remove", async (GoneRemoval request, MovieStore store, Meaning meaning, ILoggerFactory logs, CancellationToken ct) =>
+{
+    var removed = await store.DeleteGoneAsync(request.Ids, ct);
+    if (removed.Count > 0)
+        logs.CreateLogger("Library").LogInformation("Library: removed {Count} film(s) Jellyfin no longer has, as confirmed: {Titles}", removed.Count, string.Join(", ", removed.Take(20)) + (removed.Count > 20 ? ", …" : ""));
+    return Results.Ok(new { Removed = removed.Count });
 });
 
 admin.MapPost("/library/sync", (RefreshService worker) =>
@@ -821,3 +838,6 @@ record SettingsView
         s.MinRating = Math.Clamp(MinRating, 0, 9);
     }
 }
+
+/// <summary>Which hidden films to delete; null = all of them.</summary>
+public sealed record GoneRemoval(List<Guid>? Ids);

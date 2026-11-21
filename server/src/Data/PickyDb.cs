@@ -115,6 +115,8 @@ public sealed class PickyDb : DbContext
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<MovieMetadata>().HasKey(m => m.ItemId);
+        // Films Jellyfin no longer has stay in the database until the admin confirms, but nothing sees them
+        model.Entity<MovieMetadata>().HasQueryFilter(m => m.GoneSince == null);
         model.Entity<UserProfile>().HasKey(u => u.UserId);
         model.Entity<ManagedPlaylist>().HasIndex(p => new { p.UserId, p.Slot }).IsUnique();
         model.Entity<LetterboxdFilm>().HasIndex(f => new { f.UserId, f.Kind });
@@ -203,6 +205,7 @@ public sealed class Database
         AddColumn("Movies", "Pacing", "TEXT NULL");
         AddColumn("Movies", "Ending", "TEXT NULL");
         AddColumn("Movies", "Occasions", "TEXT NULL");
+        AddColumn("Movies", "GoneSince", "TEXT NULL");
         AddColumn("Movies", "LbRating", "REAL NULL");
         AddColumn("Movies", "LbCount", "INTEGER NULL");
         AddColumn("Movies", "LbUrl", "TEXT NULL");

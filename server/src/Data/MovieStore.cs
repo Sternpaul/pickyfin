@@ -51,7 +51,7 @@ public sealed class MovieStore
         await using var db = _database.Open();
         var list = movies.ToList();
         var ids = list.Select(m => m.ItemId).ToList();
-        var rows = await db.Movies.AsNoTracking().Where(m => ids.Contains(m.ItemId)).Select(m => new { m.ItemId, m.ManuallyEdited, m.RtScore, m.Metascore, m.ImdbRating, m.ScoresFetched, m.Awards, m.OscarWins, m.OscarNominations,
+        var rows = await db.Movies.IgnoreQueryFilters().AsNoTracking().Where(m => ids.Contains(m.ItemId)).Select(m => new { m.ItemId, m.ManuallyEdited, m.RtScore, m.Metascore, m.ImdbRating, m.ScoresFetched, m.Awards, m.OscarWins, m.OscarNominations,
                 m.CollectionId, m.CollectionName, m.TmdbRecs, m.DetailsFetched, m.LbRating, m.LbCount, m.LbUrl, m.LbHistogram, m.LbReviews, m.LbFetched }).ToListAsync(cancellationToken);
         var scores = rows.ToDictionary(r => r.ItemId);
         var existing = rows.Select(r => r.ItemId).ToHashSet();
@@ -74,12 +74,63 @@ public sealed class MovieStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<int> DeleteMoviesNotInAsync(HashSet<Guid> liveIds, CancellationToken cancellationToken = default)
+    /// <summary>Every film, also those Jellyfin no longer lists (for the library sync).</summary>
+    public async Task<List<MovieMetadata>> GetAllIncludingGoneAsync(CancellationToken cancellationToken = default)
     {
         await using var db = _database.Open();
-        var gone = await db.Movies.Where(m => !liveIds.Contains(m.ItemId)).ToListAsync(cancellationToken);
+        return await db.Movies.IgnoreQueryFilters().AsNoTracking().ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Films Jellyfin doesn't list (any more) are hidden; ones it lists again come back.
+    /// Returns how many were newly hidden and how many came back.
+    /// </summary>
+    public async Task<(int Hidden, int Back)> MarkGoneAsync(HashSet<Guid> liveIds, CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        var all = await db.Movies.IgnoreQueryFilters().Select(m => new { m.ItemId, m.GoneSince }).ToListAsync(cancellationToken);
+        var hide = all.Where(m => m.GoneSince is null && !liveIds.Contains(m.ItemId)).Select(m => m.ItemId).ToList();
+        var back = all.Where(m => m.GoneSince is not null && liveIds.Contains(m.ItemId)).Select(m => m.ItemId).ToList();
+        var now = DateTime.UtcNow;
+        foreach (var chunk in hide.Chunk(500))
+            await db.Movies.IgnoreQueryFilters().Where(m => chunk.Contains(m.ItemId)).ExecuteUpdateAsync(u => u.SetProperty(m => m.GoneSince, now), cancellationToken);
+        foreach (var chunk in back.Chunk(500))
+            await db.Movies.IgnoreQueryFilters().Where(m => chunk.Contains(m.ItemId)).ExecuteUpdateAsync(u => u.SetProperty(m => m.GoneSince, (DateTime?)null), cancellationToken);
+        return (hide.Count, back.Count);
+    }
+
+    /// <summary>The films waiting for the admin to confirm their removal.</summary>
+    public async Task<List<MovieMetadata>> GetGoneAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        return await db.Movies.IgnoreQueryFilters().AsNoTracking().Where(m => m.GoneSince != null).OrderBy(m => m.Title).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes films the admin confirmed, with what was kept for them (their meanings for every
+    /// model and their history). Only films that are still gone. Returns the titles removed.
+    /// </summary>
+    public async Task<List<string>> DeleteGoneAsync(IReadOnlyCollection<Guid>? only, CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        var gone = await db.Movies.IgnoreQueryFilters().Where(m => m.GoneSince != null).ToListAsync(cancellationToken);
+        if (only is not null) gone = gone.Where(m => only.Contains(m.ItemId)).ToList();
+        if (gone.Count == 0) return new();
+        var ids = gone.Select(m => m.ItemId).ToList();
         db.Movies.RemoveRange(gone);
         await db.SaveChangesAsync(cancellationToken);
-        return gone.Count;
+        foreach (var chunk in ids.Chunk(500))
+        {
+            await db.Embeddings.Where(e => e.Kind == "film" && chunk.Contains(e.ItemId)).ExecuteDeleteAsync(cancellationToken);
+            await db.History.Where(h => chunk.Contains(h.ItemId)).ExecuteDeleteAsync(cancellationToken);
+        }
+        return gone.Select(m => $"{m.Title}{(m.ReleaseYear is { } y ? $" ({y})" : "")}").ToList();
+    }
+
+    /// <summary>Meanings of films that are gone (from before removals cleaned them up).</summary>
+    public async Task<int> DeleteOrphanedEmbeddingsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        return await db.Embeddings.Where(e => e.Kind == "film" && !db.Movies.IgnoreQueryFilters().Any(m => m.ItemId == e.ItemId)).ExecuteDeleteAsync(cancellationToken);
     }
 }

@@ -79,6 +79,11 @@ namespace Pickyfin.Server.Data.Models
         /// rated it, the film page, the rating spread (10 half-star counts, JSON) and a few of the
         /// most-liked reviews without spoilers (JSON). Only the Letterboxd job writes these.
         /// </summary>
+        /// <summary>
+        /// When Jellyfin stopped listing this film. Such films are hidden everywhere (a query
+        /// filter) and only deleted when the admin confirms; they come back if Jellyfin lists them again.
+        /// </summary>
+        public DateTime? GoneSince { get; set; }
         public double? LbRating { get; set; }
         public int? LbCount { get; set; }
         public string? LbUrl { get; set; }

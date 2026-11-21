@@ -11,6 +11,7 @@ namespace Pickyfin.Server.Library;
 /// </summary>
 public sealed class LibrarySync
 {
+
     private readonly JellyfinClient _jellyfin;
     private readonly MovieStore _store;
     private readonly MovieClassifier _classifier;
@@ -43,7 +44,7 @@ public sealed class LibrarySync
             ?? throw new JellyfinException("No enabled administrator account found in Jellyfin.");
 
         var items = await _jellyfin.GetMoviesAsync(admin.Id, withDetails: true, cancellationToken);
-        var known = (await _store.GetAllMoviesAsync(cancellationToken)).ToDictionary(m => m.ItemId);
+        var known = (await _store.GetAllIncludingGoneAsync(cancellationToken)).ToDictionary(m => m.ItemId);
 
         // Which library each movie is in, so libraries can be switched off
         var membership = new Dictionary<Guid, List<Guid>>();
@@ -90,8 +91,14 @@ public sealed class LibrarySync
         }
 
         if (changed.Count > 0) await _store.SaveMoviesAsync(changed, cancellationToken);
-        var removed = await _store.DeleteMoviesNotInAsync(items.Select(i => i.Id).ToHashSet(), cancellationToken);
-        _logger.LogInformation("Library: {Total} movies, {Changed} new or changed, {Removed} removed", items.Count, changed.Count, removed);
+        // Films Jellyfin no longer lists are only hidden: deleting them (with tags that took days to
+        // make) waits for the admin to confirm on the admin page, in case Jellyfin lost them by accident
+        var (hidden, back) = await _store.MarkGoneAsync(items.Select(i => i.Id).ToHashSet(), cancellationToken);
+        if (hidden > 0) _logger.LogWarning("Library: {Count} film(s) are no longer in Jellyfin; hidden, and kept until you confirm their removal on the admin page", hidden);
+        if (back > 0) _logger.LogInformation("Library: {Count} film(s) are back in Jellyfin, with their tags as before", back);
+        var orphans = await _store.DeleteOrphanedEmbeddingsAsync(cancellationToken);
+        if (orphans > 0) _logger.LogInformation("Library: cleared {Count} stored meanings of films that no longer exist", orphans);
+        _logger.LogInformation("Library: {Total} movies, {Changed} new or changed, {Hidden} no longer in Jellyfin", items.Count, changed.Count, hidden);
 
         // TMDB keywords first: quick, free, and the AI tagging can use them
         if (!string.IsNullOrWhiteSpace(ServerSettings.Current.TmdbApiKey))

@@ -137,10 +137,10 @@
   .now-box .what { font-weight: 650; }
   .now-box .detail { color: var(--muted); font-size: 13.5px; }
   .queue { border-top: 1px solid var(--line); margin-bottom: 28px; }
-  .q-row { display: grid; grid-template-columns: 14px 190px 140px 84px 1fr auto; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .q-row { display: grid; grid-template-columns: 14px 190px 140px 104px 1fr auto; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .q-row .count { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); }
   .q-row .count .meter { margin-top: 4px; height: 4px; }
-  .q-row .badge { font-size: 12px; font-weight: 650; padding: 2px 8px; border-radius: 999px; text-align: center; background: var(--line); color: var(--muted); }
+  .q-row .badge { font-size: 12px; font-weight: 650; padding: 2px 8px; white-space: nowrap; justify-self: start; border-radius: 999px; text-align: center; background: var(--line); color: var(--muted); }
   .q-row .badge.running { background: var(--accent-soft); color: var(--text); }
   .q-row .badge.paused { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
   .q-row .badge.waiting { background: transparent; border: 1px solid var(--line); }
@@ -179,6 +179,22 @@
   .btn.primary { background: var(--text); border-color: var(--text); color: var(--bg); }
   .btn.primary:hover { opacity: .88; background: var(--text); }
   .btn.quiet { border-color: transparent; color: var(--muted); padding: 0 8px; }
+  .btn.danger { background: var(--err); border-color: var(--err); color: #fff; }
+  .btn.danger:hover { background: var(--err); opacity: .88; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  dialog.gone { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px 18px;
+    background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  dialog.gone::backdrop { background: var(--scrim); backdrop-filter: blur(2px); }
+  dialog.gone h2 { margin: 0 0 10px; font-size: 19px; }
+  dialog.gone .why { margin: 0 0 10px; }
+  .gone-tools { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 13px; }
+  .gone-list { list-style: none; margin: 8px 0 16px; padding: 4px 0; max-height: 38vh; overflow-y: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .gone-list label { display: flex; gap: 10px; align-items: baseline; padding: 6px 2px; cursor: pointer; }
+  .gone-list .y, .gone-list .since { color: var(--faint); font-size: 12.5px; }
+  .gone-list .since { margin-left: auto; white-space: nowrap; }
+  .gone-acts { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+  .gone-line { margin: -6px 0 18px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .gone-line .btn { height: 30px; font-size: 13px; padding: 0 12px; }
   .btn.quiet:hover { color: var(--text); background: none; text-decoration: underline; text-underline-offset: 4px; }
   .btn:disabled { opacity: .45; cursor: default; }
   .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 22px; }
@@ -826,6 +842,7 @@
     <section data-page="status" class="hidden">
       <div class="page-head"><div><h1>Status</h1><p>What the server is doing and what it did recently.</p></div><div class="spacer"></div><button class="btn" id="sync">Sync library now</button></div>
       <div class="now-box" id="now"></div>
+      <div class="gone-line hidden" id="gone-line"></div>
       <div class="label" style="margin:0 0 8px" title="Every 5 minutes the server runs these one after another, top to bottom">Queue, in the order they run</div>
       <div class="queue" id="queue"></div>
       <div class="facts-grid">
@@ -840,6 +857,16 @@
 </div>
 
 <div class="scrim hidden" id="scrim"></div>
+<dialog class="gone" id="gone-dialog" aria-labelledby="gone-title">
+  <form method="dialog">
+    <h2 id="gone-title"></h2>
+    <p class="why">Jellyfin doesn't list them any more: deleted, merged as duplicates, or turned into extras of another film. Pickyfin has already hidden them from the picks and the Matrix, but kept their tags and meanings.</p>
+    <p class="why">Remove them for good? If Jellyfin lost them by accident, for example a disk or share that wasn't mounted, choose <b>Keep for now</b>: they come back exactly as they were once Jellyfin lists them again.</p>
+    <div class="gone-tools"><label><input type="checkbox" id="gone-all" checked> All</label><span class="note" id="gone-count"></span></div>
+    <ul class="gone-list" id="gone-list"></ul>
+    <div class="gone-acts"><button type="button" class="btn" id="gone-keep">Keep for now</button><button type="button" class="btn danger" id="gone-remove"></button></div>
+  </form>
+</dialog>
 <aside class="drawer hidden" id="drawer" aria-modal="true" role="dialog">
   <div class="drawer-head"><h2 id="d-title"></h2><button class="icon-btn" id="d-close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="drawer-body" id="d-body"></div>
@@ -2266,9 +2293,56 @@ function dur(sec) {
   const h = Math.floor(m / 60), r = m % 60;
   return r ? `${h} h ${r} min` : `${h} h`;
 }
+// ---- films Jellyfin no longer lists: hidden, removed only once the admin confirms ----
+let goneShownFor = null;
+try { goneShownFor = sessionStorage.getItem('goneShownFor'); } catch {}
+function goneNotice(count) {
+  const line = $('#gone-line');
+  line.classList.toggle('hidden', !count);
+  if (count) line.innerHTML = `<span>${count.toLocaleString()} film${count === 1 ? ' is' : 's are'} no longer in Jellyfin and hidden, waiting for you to confirm their removal.</span><button type="button" class="btn" id="gone-review">Review</button>`;
+  $('#gone-review')?.addEventListener('click', openGone);
+  // ask only when more films went missing than were already shown; kept ones don't ask again
+  const seen = Number(goneShownFor || 0);
+  if (count > seen && !$('#gone-dialog').open) { goneSeen(count); openGone(); }
+  else if (count < seen) goneSeen(count);
+}
+function goneSeen(count) { goneShownFor = String(count); try { sessionStorage.setItem('goneShownFor', goneShownFor); } catch {} }
+async function openGone() {
+  let list; try { list = await call('GET', '/api/library/gone'); } catch { return; }
+  if (!list.length) return;
+  const d = $('#gone-dialog');
+  $('#gone-title').textContent = `${list.length.toLocaleString()} film${list.length === 1 ? ' is' : 's are'} no longer in Jellyfin`;
+  const day = t => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  $('#gone-list').innerHTML = list.map(f => `<li><label><input type="checkbox" value="${f.Id}" checked><span>${esc(f.Title)} <span class="y">${f.Year || ''}</span></span><span class="since">since ${day(f.Since)}</span></label></li>`).join('');
+  const boxes = () => $$('#gone-list input');
+  const sync = () => {
+    const n = boxes().filter(b => b.checked).length;
+    $('#gone-remove').textContent = `Remove ${n.toLocaleString()} film${n === 1 ? '' : 's'}`;
+    $('#gone-remove').disabled = n === 0;
+    $('#gone-all').checked = n === boxes().length;
+    $('#gone-count').textContent = n === boxes().length ? '' : `${n} of ${boxes().length} chosen; the others stay hidden`;
+  };
+  boxes().forEach(b => b.onchange = sync);
+  $('#gone-all').onchange = e => { boxes().forEach(b => b.checked = e.target.checked); sync(); };
+  sync();
+  $('#gone-keep').onclick = () => d.close();
+  $('#gone-remove').onclick = async () => {
+    const ids = boxes().filter(b => b.checked).map(b => b.value);
+    $('#gone-remove').disabled = true;
+    try {
+      const r = await call('POST', '/api/library/gone/remove', { Ids: ids });
+      goneSeen(boxes().length - ids.length);
+      d.close(); toast(`Removed ${r.Removed.toLocaleString()} film${r.Removed === 1 ? '' : 's'}`);
+      loadStatus();
+    } catch (err) { toast(`Not removed: ${err.message}`); $('#gone-remove').disabled = false; }
+  };
+  if (!d.open) d.showModal();
+}
+
 async function loadStatus() {
   try {
     const s = await call('GET', '/api/status');
+    goneNotice(s.Gone || 0);
     const n = x => (x ?? 0).toLocaleString();
     const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
     const inMin = t => { const m = Math.round((new Date(t) - Date.now()) / 60000); return m < 1 ? 'any moment' : `in ${dur(m * 60)}`; };
