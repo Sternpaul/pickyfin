@@ -265,6 +265,7 @@ fun BaseItemInfoRow(
 	item: BaseItemDto,
 	mediaSource: MediaSourceInfo?,
 	includeRuntime: Boolean,
+	pickyfinScores: Boolean = false,
 ) {
 	val userPreferences = koinInject<UserPreferences>()
 
@@ -274,6 +275,7 @@ fun BaseItemInfoRow(
 	) {
 		item.communityRating?.let { InfoRowCommunityRating(it / 10f) }
 		item.criticRating?.let { InfoRowCriticRating(it / 100f) }
+		if (pickyfinScores && item.type == BaseItemKind.MOVIE) PickyfinInfoRowScores(item)
 
 		when (item.type) {
 			BaseItemKind.EPISODE -> {
@@ -408,6 +410,14 @@ class BaseItemInfoRowView @JvmOverloads constructor(
 	private val _item = MutableStateFlow<BaseItemDto?>(null)
 	private val _mediaSource = MutableStateFlow<MediaSourceInfo?>(null)
 	private val _includeRuntime = MutableStateFlow(false)
+	private val _pickyfinScores = MutableStateFlow(false)
+
+	/** Also show the scores from Pickyfin Server (Letterboxd); only on the details screen. */
+	var pickyfinScores: Boolean
+		get() = _pickyfinScores.value
+		set(value) {
+			_pickyfinScores.value = value
+		}
 
 	var item: BaseItemDto?
 		get() = _item.value
@@ -437,7 +447,8 @@ class BaseItemInfoRowView @JvmOverloads constructor(
 		val item by _item.collectAsState()
 		val mediaSource by _mediaSource.collectAsState()
 		val includeRuntime by _includeRuntime.collectAsState()
+		val pickyfinScores by _pickyfinScores.collectAsState()
 
-		item?.let { BaseItemInfoRow(it, mediaSource, includeRuntime) }
+		item?.let { BaseItemInfoRow(it, mediaSource, includeRuntime, pickyfinScores) }
 	}
 }

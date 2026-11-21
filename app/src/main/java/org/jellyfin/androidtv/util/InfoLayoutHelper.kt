@@ -45,4 +45,16 @@ object InfoLayoutHelper {
 		layout: LinearLayout,
 		includeRuntime: Boolean
 	) = addInfoRow(context, item, null, layout, includeRuntime)
+
+	/** The info row on a film's details screen, with the scores from Pickyfin Server. */
+	@JvmStatic
+	fun addDetailsInfoRow(
+		context: Context,
+		item: BaseItemDto?,
+		mediaSource: MediaSourceInfo?,
+		layout: LinearLayout,
+	) {
+		addInfoRow(context, item, mediaSource, layout, false)
+		for (i in 0 until layout.childCount) (layout.getChildAt(i) as? BaseItemInfoRowView)?.pickyfinScores = true
+	}
 }

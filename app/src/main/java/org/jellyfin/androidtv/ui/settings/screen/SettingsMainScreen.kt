@@ -13,6 +13,17 @@ import org.jellyfin.androidtv.ui.navigation.LocalRouter
 import org.jellyfin.androidtv.ui.navigation.focus.focusKey
 import org.jellyfin.androidtv.ui.settings.Routes
 import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
+import android.app.AlertDialog
+import android.text.InputType
+import android.widget.EditText
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import org.jellyfin.androidtv.pickyfin.PickyfinScores
+import org.jellyfin.androidtv.pickyfin.PickyfinServerStore
+import org.koin.compose.koinInject
 
 @Composable
 fun SettingsMainScreen() {
@@ -74,6 +85,8 @@ fun SettingsMainScreen() {
 
 		}
 
+		item { PickyfinServerButton() }
+
 		item {
 			ListButton(
 				leadingContent = { Icon(painterResource(R.drawable.ic_jellyfin), contentDescription = null) },
@@ -83,4 +96,47 @@ fun SettingsMainScreen() {
 			)
 		}
 	}
+}
+
+/**
+ * Where Pickyfin Server runs, for the Letterboxd rating on the details screen.
+ * Automatic (the Jellyfin server's host, port 8097) fits most setups.
+ */
+@Composable
+private fun PickyfinServerButton() {
+	val context = LocalContext.current
+	val store = koinInject<PickyfinServerStore>()
+	val scores = koinInject<PickyfinScores>()
+	var address by remember { mutableStateOf(store.address) }
+	val automatic = stringResource(R.string.pickyfin_server_automatic, scores.address().orEmpty())
+
+	ListButton(
+		leadingContent = { Icon(painterResource(R.drawable.ic_star), contentDescription = null) },
+		headingContent = { Text(stringResource(R.string.pickyfin_server_title)) },
+		captionContent = { Text(address.ifBlank { automatic }) },
+		onClick = {
+			val input = EditText(context).apply {
+				setText(address)
+				hint = scores.address() ?: "http://192.168.1.20:8097"
+				inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+				setSingleLine()
+			}
+			AlertDialog.Builder(context)
+				.setTitle(R.string.pickyfin_server_title)
+				.setMessage(R.string.pickyfin_server_message)
+				.setView(input)
+				.setPositiveButton(R.string.pickyfin_server_save) { _, _ ->
+					store.address = PickyfinServerStore.normalize(input.text.toString())
+					address = store.address
+					scores.reset()
+				}
+				.setNeutralButton(R.string.pickyfin_server_use_automatic) { _, _ ->
+					store.address = ""
+					address = ""
+					scores.reset()
+				}
+				.setNegativeButton(android.R.string.cancel, null)
+				.show()
+		},
+	)
 }
