@@ -19,7 +19,8 @@ public sealed class LetterboxdRatings
     /// <summary>Where the collector is when it runs in the same Docker stack under its usual name.</summary>
     public const string DefaultUrl = "http://letterboxd-collector:8098";
     private const int Page = 500, ReviewsPerFilm = 5, ReviewChars = 700;
-    private static readonly TimeSpan Every = TimeSpan.FromHours(6);
+    /// <summary>How often the collector is read (and the TV app downloads the list), from the settings.</summary>
+    private static TimeSpan Every => TimeSpan.FromHours(Math.Clamp(ServerSettings.Current.LetterboxdHours, 1, 168));
 
     private readonly IHttpClientFactory _http;
     private readonly Database _database;

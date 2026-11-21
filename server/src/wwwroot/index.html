@@ -612,7 +612,7 @@
       <h2 class="group-title">Letterboxd</h2>
       <form id="lb-form" class="settings">
         <div class="setting">
-          <div><h3>Letterboxd ratings and reviews <span class="state" id="lb-state"></span></h3><p class="why">Optional. Pickyfin reads them from <a href="https://github.com/Sternpaul/letterboxd-collector" target="_blank" rel="noopener">letterboxd-collector</a>, a separate small service you run next to Pickyfin. It collects each film's Letterboxd rating and its most-liked reviews once a week. The rating counts most in the picks, the reviews help matching by meaning, and both show on the film page and in the TV app. Pickyfin itself never contacts Letterboxd.</p>
+          <div><h3>Letterboxd ratings and reviews <span class="state" id="lb-state"></span></h3><p class="why">Optional. Pickyfin reads them from <a href="https://github.com/Sternpaul/letterboxd-collector" target="_blank" rel="noopener">letterboxd-collector</a>, a separate small service you run next to Pickyfin. It collects each film's Letterboxd rating and its most-liked reviews once a week. The rating counts most in the picks and shows on the film page and in the TV app; the reviews help matching by meaning and show on the film page. Pickyfin itself never contacts Letterboxd.</p>
             <details class="web"><summary>How to set it up</summary>
               <p>Add the collector (and FlareSolverr, which it needs for the reviews) to the same Docker stack as Pickyfin. Pickyfin then finds it on its own at <code>http://letterboxd-collector:8098</code>; nothing to fill in here.</p>
               <pre class="snippet">  letterboxd-collector:
@@ -629,7 +629,7 @@
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     restart: unless-stopped</pre>
-              <p>The first run takes a while (about 10 seconds per film); Pickyfin picks up ratings as they come in. Running it elsewhere, or behind a token? Fill in its address and token below. All options are in the <a href="https://github.com/Sternpaul/letterboxd-collector#readme" target="_blank" rel="noopener">collector's README</a>.</p>
+              <p>The first run takes a while (about 10 seconds per film); Pickyfin picks up new ratings at its next check. Running it elsewhere, or behind a token? Fill in its address and token below. All options are in the <a href="https://github.com/Sternpaul/letterboxd-collector#readme" target="_blank" rel="noopener">collector's README</a>.</p>
             </details></div>
           <div class="control"><label class="switch"><input type="checkbox" id="LetterboxdOn"><span></span></label></div>
         </div>
@@ -640,6 +640,10 @@
         <div class="setting">
           <div><h3>Collector token <span class="state" id="lbtoken-state"></span></h3><p class="why">Only if the collector has <code>API_TOKEN</code> set. Type a single <code>-</code> to remove a saved token.</p></div>
           <div class="control"><input type="password" id="LetterboxdToken" placeholder="Paste a token" autocomplete="off"></div>
+        </div>
+        <div class="setting">
+          <div><h3>Check for new ratings every</h3><p class="why">How often Pickyfin reads the collector. The TV app downloads all ratings at start and then as often. The collector itself refreshes ratings once a week.</p></div>
+          <div class="control"><div class="inline" style="align-items:center"><input type="number" id="LetterboxdHours" min="1" max="168" step="1" style="width:5em"> <span class="note">hours</span></div></div>
         </div>
         <div class="setting-foot"><button type="button" class="btn quiet" id="lb-check">Check connection</button> <span class="note" id="lb-note"></span></div>
       </form>
@@ -955,7 +959,7 @@ async function loadSettings() {
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
-  $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdToken').value = '';
+  $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdHours').value = settings.LetterboxdHours || 6; $('#LetterboxdToken').value = '';
   $('#lbtoken-state').innerHTML = stateText(settings.HasLetterboxdToken); checkLetterboxd(false);
   loadEmbeddingModels();
   $('#MeaningWeight').value = settings.MeaningWeight ?? 50;
@@ -1031,7 +1035,7 @@ const formValues = {
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
   'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed }),
-  'lb-form': () => ({ LetterboxdOn: $('#LetterboxdOn').checked, LetterboxdUrl: $('#LetterboxdUrl').value.trim(), LetterboxdToken: $('#LetterboxdToken').value }),
+  'lb-form': () => ({ LetterboxdOn: $('#LetterboxdOn').checked, LetterboxdUrl: $('#LetterboxdUrl').value.trim(), LetterboxdHours: Math.min(168, Math.max(1, Number($('#LetterboxdHours').value) || 6)), LetterboxdToken: $('#LetterboxdToken').value }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
 };

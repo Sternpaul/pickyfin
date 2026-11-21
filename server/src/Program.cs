@@ -276,33 +276,33 @@ admin.MapPost("/letterboxd/check", async (LetterboxdRatings letterboxd, RefreshS
 // ---------- for the TV app: scores of one film, signed in with the viewer's Jellyfin token ----------
 
 var tvTokens = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
-api.MapGet("/tv/films/{id:guid}", async (Guid id, HttpContext http, JellyfinClient jellyfin, Database database, CancellationToken ct) =>
+// The viewer's own Jellyfin token, checked with Jellyfin once an hour
+async Task<IResult?> TvSignedIn(HttpContext http, JellyfinClient jellyfin, CancellationToken ct)
 {
     var token = http.Request.Headers["X-Emby-Token"].ToString();
     if (token.Length == 0) token = http.Request.Headers["X-MediaBrowser-Token"].ToString();
     if (token.Length == 0 && System.Text.RegularExpressions.Regex.Match(http.Request.Headers.Authorization.ToString(), "Token=\"([^\"]+)\"") is { Success: true } match)
         token = match.Groups[1].Value;
     if (token.Length == 0) return Results.Unauthorized();
-    if (!tvTokens.TryGetValue(token, out var until) || until < DateTime.UtcNow)
-    {
-        bool valid;
-        try { valid = await jellyfin.IsValidTokenAsync(token, ct); }
-        catch (Exception) { return Results.Problem("Can't reach Jellyfin", statusCode: 502); }
-        if (!valid) return Results.Unauthorized();
-        if (tvTokens.Count > 1000) tvTokens.Clear();
-        tvTokens[token] = DateTime.UtcNow.AddHours(1);
-    }
+    if (tvTokens.TryGetValue(token, out var until) && until > DateTime.UtcNow) return null;
+    bool valid;
+    try { valid = await jellyfin.IsValidTokenAsync(token, ct); }
+    catch (Exception) { return Results.Problem("Can't reach Jellyfin", statusCode: 502); }
+    if (!valid) return Results.Unauthorized();
+    if (tvTokens.Count > 1000) tvTokens.Clear();
+    tvTokens[token] = DateTime.UtcNow.AddHours(1);
+    return null;
+}
+
+// Every film's scores in one list: the TV app downloads it at start and every few hours.
+// I = Jellyfin item id, L = Letterboxd (0.5–5), R = Rotten Tomatoes (0–100)
+api.MapGet("/tv/ratings", async (HttpContext http, JellyfinClient jellyfin, Database database, CancellationToken ct) =>
+{
+    if (await TvSignedIn(http, jellyfin, ct) is { } refused) return refused;
     await using var db = database.Open();
-    var m = await db.Movies.AsNoTracking().FirstOrDefaultAsync(x => x.ItemId == id, ct);
-    if (m is null) return Results.NotFound();
-    return Results.Ok(new
-    {
-        Letterboxd = m.LbRating is null ? null : new { Rating = m.LbRating, Count = m.LbCount, Url = m.LbUrl, Histogram = m.LbHistogramCounts },
-        Reviews = m.LbReviewList.Select(r => new { r.Author, r.Rating, r.Likes, r.Text }),
-        RottenTomatoes = m.RtScore,
-        Metacritic = m.Metascore,
-        Imdb = m.ImdbRating,
-    });
+    var films = await db.Movies.AsNoTracking().Where(m => m.LbRating != null || m.RtScore != null)
+        .Select(m => new { I = m.ItemId, L = m.LbRating, R = m.RtScore }).ToListAsync(ct);
+    return Results.Ok(new { Hours = Math.Clamp(ServerSettings.Current.LetterboxdHours, 1, 168), Films = films });
 });
 
 admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, CancellationToken ct) =>
@@ -452,7 +452,8 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A library switched back on may have movies that were never classified
     if (before.OmdbApiKey != settings.OmdbApiKey || before.OmdbPerDay != settings.OmdbPerDay) OmdbScores.ResetPause();
     if (before.TmdbApiKey != settings.TmdbApiKey) TmdbDetails.ResetPause();
-    if (before.LetterboxdOn != settings.LetterboxdOn || before.LetterboxdUrl != settings.LetterboxdUrl || before.LetterboxdToken != settings.LetterboxdToken)
+    if (before.LetterboxdOn != settings.LetterboxdOn || before.LetterboxdUrl != settings.LetterboxdUrl || before.LetterboxdToken != settings.LetterboxdToken
+        || before.LetterboxdHours != settings.LetterboxdHours)
         LetterboxdRatings.ResetPause();
     if (before.MeaningOn != settings.MeaningOn || before.EmbeddingModelsAuto != settings.EmbeddingModelsAuto
         || !before.EmbeddingModels.SequenceEqual(settings.EmbeddingModels) || before.ApiKey != settings.ApiKey) Meaning.ResetPause();
@@ -592,6 +593,7 @@ record SettingsView
     public string LetterboxdUrl { get; init; } = "";
     public bool HasLetterboxdToken { get; init; }
     public string? LetterboxdToken { get; init; }
+    public int LetterboxdHours { get; init; } = 6;
     public int RefreshHours { get; init; }
     public int PicksPerRow { get; init; }
     public int BecauseRows { get; init; }
@@ -658,6 +660,7 @@ record SettingsView
         LetterboxdOn = s.LetterboxdOn,
         LetterboxdUrl = s.LetterboxdUrl,
         HasLetterboxdToken = !string.IsNullOrWhiteSpace(s.LetterboxdToken),
+        LetterboxdHours = s.LetterboxdHours,
         RefreshHours = s.RefreshHours,
         PicksPerRow = s.PicksPerRow,
         BecauseRows = s.BecauseRows,
@@ -725,6 +728,7 @@ record SettingsView
         s.OmdbPerDay = Math.Clamp(OmdbPerDay, 1, 1_000_000);
         s.LetterboxdOn = LetterboxdOn;
         s.LetterboxdUrl = (LetterboxdUrl ?? "").Trim().TrimEnd('/');
+        s.LetterboxdHours = Math.Clamp(LetterboxdHours, 1, 168);
         // A single "-" clears the token
         if (LetterboxdToken?.Trim() == "-") s.LetterboxdToken = "";
         else if (!string.IsNullOrWhiteSpace(LetterboxdToken)) s.LetterboxdToken = LetterboxdToken.Trim();

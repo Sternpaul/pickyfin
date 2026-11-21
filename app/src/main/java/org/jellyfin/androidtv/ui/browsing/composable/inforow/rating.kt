@@ -7,9 +7,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.pickyfin.PickyfinScores
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -75,8 +73,9 @@ fun InfoRowParentalRating(parentalRating: String) {
 @Composable
 fun PickyfinInfoRowScores(item: BaseItemDto) {
 	val scores = koinInject<PickyfinScores>()
-	var found by remember(item.id) { mutableStateOf(scores.cached(item.id)) }
-	LaunchedEffect(item.id) { found = scores.get(item.id) }
+	val ratings by scores.ratings.collectAsState()
+	LaunchedEffect(item.id) { scores.refreshIfDue() }
+	val found = ratings[item.id]
 
 	found?.letterboxd?.let { rating ->
 		InfoRowItem(contentDescription = stringResource(R.string.pickyfin_letterboxd_rating)) {

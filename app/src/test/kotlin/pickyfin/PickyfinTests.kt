@@ -23,6 +23,15 @@ class PickyfinTests : FunSpec({
 		PickyfinServerStore.normalize("  ") shouldBe ""
 	}
 
+	test("PickyfinScores.parse() reads the server's ratings list") {
+		val films = PickyfinScores.parse(
+			"""{"Hours":6,"Films":[{"I":"0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0","L":4.4,"R":91},{"I":"11111111-2222-3333-4444-555555555555","L":null,"R":60},{"I":"bad","L":3.0}],"New":1}"""
+		)
+		films.size shouldBe 2
+		films[java.util.UUID.fromString("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")] shouldBe PickyfinScores.Scores(4.4, 91)
+		films[java.util.UUID.fromString("11111111-2222-3333-4444-555555555555")] shouldBe PickyfinScores.Scores(null, 60)
+	}
+
 	test("Updater.versionCodeOf() matches the build's version codes") {
 		Updater.versionCodeOf("0.19.10-pickyfin.1") shouldBe 191001
 		Updater.versionCodeOf("0.19.10-pickyfin.12") shouldBe 191012

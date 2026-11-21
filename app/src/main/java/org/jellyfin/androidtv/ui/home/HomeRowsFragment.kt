@@ -71,6 +71,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val userSettingPreferences by inject<UserSettingPreferences>()
 	private val userViewsRepository by inject<UserViewsRepository>()
 	private val dataRefreshService by inject<DataRefreshService>()
+	private val pickyfinScores by inject<org.jellyfin.androidtv.pickyfin.PickyfinScores>()
 	private val customMessageRepository by inject<CustomMessageRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
 	private val itemLauncher by inject<ItemLauncher>()
@@ -107,6 +108,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			if (!isActive) return@launch
 
 			// Pickyfin: personal recommendation rows, placed after Continue Watching / Next Up
+			// Every film's ratings from Pickyfin Server, downloaded now so the details screen has them at once
+			pickyfinScores.refreshIfDue()
 			val recommendationRows = org.jellyfin.androidtv.pickyfin.RecommendationRows.load(requireContext(), api)
 			var recommendationIndex = 0
 

@@ -129,11 +129,13 @@ private fun PickyfinServerButton() {
 					store.address = PickyfinServerStore.normalize(input.text.toString())
 					address = store.address
 					scores.reset()
+					scores.refreshIfDue()
 				}
 				.setNeutralButton(R.string.pickyfin_server_use_automatic) { _, _ ->
 					store.address = ""
 					address = ""
 					scores.reset()
+					scores.refreshIfDue()
 				}
 				.setNegativeButton(android.R.string.cancel, null)
 				.show()

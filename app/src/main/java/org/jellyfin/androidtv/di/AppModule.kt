@@ -82,7 +82,7 @@ val appModule = module {
 	// Pickyfin: every request (API, images, playback, socket) goes through this one client
 	single { org.jellyfin.androidtv.pickyfin.AccessHeaderStore(androidContext()) }
 	single { org.jellyfin.androidtv.pickyfin.PickyfinServerStore(androidContext()) }
-	single { org.jellyfin.androidtv.pickyfin.PickyfinScores(get(), get(), get()) }
+	single { org.jellyfin.androidtv.pickyfin.PickyfinScores(androidContext(), get(), get(), get()) }
 	single {
 		OkHttpFactory(
 			okhttp3.OkHttpClient.Builder()

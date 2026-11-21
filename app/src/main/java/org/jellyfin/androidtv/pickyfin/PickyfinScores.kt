@@ -3,15 +3,22 @@ package org.jellyfin.androidtv.pickyfin
 import android.content.Context
 import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jellyfin.sdk.api.client.ApiClient
-import org.json.JSONObject
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import timber.log.Timber
 import java.net.URI
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 /**
@@ -46,82 +53,148 @@ class PickyfinServerStore(context: Context) {
 }
 
 /**
- * A film's scores from Pickyfin Server: the Letterboxd rating (from the
+ * Every film's scores from Pickyfin Server: the Letterboxd rating (from the
  * letterboxd-collector service the server reads) and Rotten Tomatoes from OMDb.
+ *
+ * The whole list is downloaded at start and again after the interval the server
+ * sends with it (its Letterboxd setting, 6 hours by default), and kept on disk,
+ * so ratings show at once and survive a restart or a server that's briefly down.
  * Asked with the viewer's own Jellyfin token, so nothing else needs to be set up.
  */
 class PickyfinScores(
+	context: Context,
 	private val store: PickyfinServerStore,
 	accessHeaders: AccessHeaderStore,
 	private val api: ApiClient,
 ) {
 	data class Scores(
 		val letterboxd: Double?,
-		val letterboxdCount: Int?,
 		val rottenTomatoes: Int?,
 	)
 
 	private val client = OkHttpClient.Builder()
 		.addInterceptor(AccessHeaderInterceptor(accessHeaders))
-		.connectTimeout(3, TimeUnit.SECONDS)
-		.readTimeout(5, TimeUnit.SECONDS)
+		.connectTimeout(5, TimeUnit.SECONDS)
+		.readTimeout(30, TimeUnit.SECONDS)
 		.build()
 
-	private val cache = ConcurrentHashMap<UUID, Scores>()
-	private val none = Scores(null, null, null)
+	private val file = File(context.filesDir, "pickyfin_ratings.json")
+	private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+	private val loading = AtomicBoolean(false)
 
-	/** After the server didn't answer, wait a bit before trying again, so details pages don't hang on it. */
-	@Volatile
-	private var quietUntil = 0L
+	private val _ratings = MutableStateFlow<Map<UUID, Scores>>(emptyMap())
+	val ratings: StateFlow<Map<UUID, Scores>> = _ratings
+
+	/** The server the list on disk came from, when it was downloaded, and the interval to the next. */
+	@Volatile private var source: String? = null
+	@Volatile private var fetchedAt = 0L
+	@Volatile private var hours = DEFAULT_HOURS
+	@Volatile private var failedAt = 0L
+
+	init {
+		scope.launch { readFile() }
+	}
 
 	fun address(): String? = store.address.ifBlank { null } ?: PickyfinServerStore.automatic(api.baseUrl)
 
-	fun cached(id: UUID): Scores? = cache[id]?.takeIf { it !== none }
-
-	suspend fun get(id: UUID): Scores? {
-		cache[id]?.let { return it.takeIf { s -> s !== none } }
-		if (System.currentTimeMillis() < quietUntil) return null
-		val base = address() ?: return null
-		val token = api.accessToken ?: return null
-		return withContext(Dispatchers.IO) {
+	/** Downloads the list when it's older than the server's interval (or from another server). */
+	fun refreshIfDue() {
+		val now = System.currentTimeMillis()
+		val base = address() ?: return
+		val due = source != base || now - fetchedAt > hours * HOUR_MS
+		if (!due || now - failedAt < RETRY_MS) return
+		if (!loading.compareAndSet(false, true)) return
+		scope.launch {
 			try {
-				val request = Request.Builder()
-					.url("$base/api/tv/films/$id")
-					.header("X-Emby-Token", token)
-					.build()
-				client.newCall(request).execute().use { response ->
-					when {
-						response.isSuccessful -> parse(response.body?.string().orEmpty()).also { cache[id] = it }
-						// Not a film Pickyfin knows
-						response.code == 404 -> { cache[id] = none; null }
-						else -> { quietUntil = System.currentTimeMillis() + QUIET_MS; null }
-					}
-				}
-			} catch (error: Exception) {
-				Timber.d(error, "Pickyfin Server not reached at %s", base)
-				quietUntil = System.currentTimeMillis() + QUIET_MS
-				null
+				download(base)
+			} finally {
+				loading.set(false)
 			}
 		}
 	}
 
-	/** Forget what was fetched, e.g. after the address changed. */
+	/** Forget the list, e.g. after the address changed. */
 	fun reset() {
-		cache.clear()
-		quietUntil = 0
+		_ratings.value = emptyMap()
+		source = null
+		fetchedAt = 0
+		failedAt = 0
+		scope.launch { file.delete() }
 	}
 
-	private fun parse(body: String): Scores {
-		val json = JSONObject(body)
-		val letterboxd = json.optJSONObject("Letterboxd")
-		return Scores(
-			letterboxd = letterboxd?.optDouble("Rating")?.takeIf { !it.isNaN() && it > 0 },
-			letterboxdCount = letterboxd?.optInt("Count", -1)?.takeIf { it >= 0 },
-			rottenTomatoes = json.optInt("RottenTomatoes", -1).takeIf { it in 0..100 },
-		)
+	private fun download(base: String) {
+		val token = api.accessToken ?: return
+		try {
+			val request = Request.Builder()
+				.url("$base/api/tv/ratings")
+				.header("X-Emby-Token", token)
+				.build()
+			client.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) {
+					failedAt = System.currentTimeMillis()
+					return
+				}
+				val list = json.decodeFromString<RatingsList>(response.body?.string().orEmpty())
+				apply(list, base, System.currentTimeMillis())
+				file.writeText(json.encodeToString(Saved(base, fetchedAt, list)))
+			}
+		} catch (error: Exception) {
+			Timber.d(error, "Pickyfin Server not reached at %s", base)
+			failedAt = System.currentTimeMillis()
+		}
 	}
 
-	private companion object {
-		const val QUIET_MS = 5 * 60 * 1000L
+	private fun readFile() {
+		try {
+			if (!file.exists()) return
+			val saved = json.decodeFromString<Saved>(file.readText())
+			apply(saved.list, saved.source, saved.at)
+		} catch (error: Exception) {
+			Timber.d(error, "Pickyfin: saved ratings unreadable")
+		}
+	}
+
+	private fun apply(list: RatingsList, from: String, at: Long) {
+		_ratings.value = parse(list)
+		hours = list.hours.coerceIn(1, 168)
+		source = from
+		fetchedAt = at
+		failedAt = 0
+	}
+
+	companion object {
+		private const val DEFAULT_HOURS = 6
+		private const val HOUR_MS = 60 * 60 * 1000L
+		/** After the server didn't answer, try again after this long. */
+		private const val RETRY_MS = 10 * 60 * 1000L
+
+		private val json = Json { ignoreUnknownKeys = true }
+
+		fun parse(body: String): Map<UUID, Scores> = parse(json.decodeFromString<RatingsList>(body))
+
+		fun parse(list: RatingsList): Map<UUID, Scores> = list.films.mapNotNull { film ->
+			val id = runCatching { UUID.fromString(film.id) }.getOrNull() ?: return@mapNotNull null
+			val letterboxd = film.letterboxd?.takeIf { it > 0 && it <= 5 }
+			val rottenTomatoes = film.rottenTomatoes?.takeIf { it in 0..100 }
+			if (letterboxd == null && rottenTomatoes == null) null else id to Scores(letterboxd, rottenTomatoes)
+		}.toMap()
 	}
 }
+
+/** What /api/tv/ratings sends: the interval, and per film I = item id, L = Letterboxd, R = Rotten Tomatoes. */
+@Serializable
+data class RatingsList(
+	@SerialName("Hours") val hours: Int = 6,
+	@SerialName("Films") val films: List<Film> = emptyList(),
+) {
+	@Serializable
+	data class Film(
+		@SerialName("I") val id: String,
+		@SerialName("L") val letterboxd: Double? = null,
+		@SerialName("R") val rottenTomatoes: Int? = null,
+	)
+}
+
+/** The list as kept on disk, with where and when it came from. */
+@Serializable
+private data class Saved(val source: String, val at: Long, val list: RatingsList)

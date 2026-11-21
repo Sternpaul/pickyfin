@@ -152,7 +152,11 @@ In the same stack Pickyfin finds it on its own at
 `API_TOKEN` set? Enter its address and token on the **AI** page under
 *Letterboxd*; *Check connection* shows whether it's reached and how many films it
 has rated. The first collection takes about 10 seconds per film; Pickyfin reads
-new ratings every 6 hours. See the collector's README for all its options.
+new ratings every 6 hours (changeable there). The Pickyfin TV app downloads all
+ratings at start and as often, and shows the Letterboxd rating on a film's details
+screen. It finds Pickyfin Server at Jellyfin's address on port 8097; if Jellyfin is
+behind a reverse proxy, enter the address in the app under *Settings → Pickyfin
+Server*. See the collector's README for all its options.
 
 Then open `http://<server>:8097` and sign in with a Jellyfin administrator account:
 

@@ -39,6 +39,8 @@ public sealed class ServerSettings
     public string LetterboxdUrl { get; set; } = "";
     /// <summary>The collector's API_TOKEN, when it has one.</summary>
     public string LetterboxdToken { get; set; } = "";
+    /// <summary>Hours between reads of the collector; the TV app downloads the ratings as often.</summary>
+    public int LetterboxdHours { get; set; } = 6;
     public bool ReclassifyOutdatedMovies { get; set; }
 
     // ---- checking the AI's work ----
