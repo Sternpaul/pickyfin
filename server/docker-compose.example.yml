@@ -16,3 +16,21 @@ services:
       TZ: Europe/Berlin   # log times in your time zone
     volumes:
       - ./pickyfin-data:/data
+
+  # Optional: Letterboxd ratings and reviews. Remove the # in front of the lines
+  # below; Pickyfin then finds the collector by its name on its own.
+  # https://github.com/Sternpaul/letterboxd-collector
+  # letterboxd-collector:
+  #   image: ghcr.io/sternpaul/letterboxd-collector:latest
+  #   container_name: letterboxd-collector
+  #   restart: unless-stopped
+  #   environment:
+  #     JELLYFIN_URL: http://jellyfin:8096
+  #     JELLYFIN_API_KEY: ""   # its own key: Dashboard -> API Keys
+  #     LBXD_FLARESOLVERR_URL: http://flaresolverr:8191/v1
+  #   volumes:
+  #     - ./letterboxd-data:/data
+  # flaresolverr:
+  #   image: ghcr.io/flaresolverr/flaresolverr:latest
+  #   container_name: flaresolverr
+  #   restart: unless-stopped

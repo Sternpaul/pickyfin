@@ -74,6 +74,20 @@ namespace Pickyfin.Server.Data.Models
         public string? Ending { get; set; }
         /// <summary>JSON array: date night, family, with friends, alone.</summary>
         public string? Occasions { get; set; }
+        /// <summary>
+        /// From a letterboxd-collector service: Letterboxd's average (0.5–5 stars), how many people
+        /// rated it, the film page, the rating spread (10 half-star counts, JSON) and a few of the
+        /// most-liked reviews without spoilers (JSON). Only the Letterboxd job writes these.
+        /// </summary>
+        public double? LbRating { get; set; }
+        public int? LbCount { get; set; }
+        public string? LbUrl { get; set; }
+        public string? LbHistogram { get; set; }
+        public string? LbReviews { get; set; }
+        public DateTime? LbFetched { get; set; }
+        [NotMapped] public List<Library.LetterboxdRatings.Review> LbReviewList =>
+            string.IsNullOrEmpty(LbReviews) ? new() : JsonSerializer.Deserialize<List<Library.LetterboxdRatings.Review>>(LbReviews) ?? new();
+        [NotMapped] public int[]? LbHistogramCounts => string.IsNullOrEmpty(LbHistogram) ? null : JsonSerializer.Deserialize<int[]>(LbHistogram);
         [NotMapped] public List<string> OccasionList => string.IsNullOrEmpty(Occasions) ? new() : JsonSerializer.Deserialize<List<string>>(Occasions) ?? new();
         private HashSet<int>? _recSet;
         private string? _recSource;
@@ -149,8 +163,14 @@ namespace Pickyfin.Server.Data.Models
                     : AudienceScore is > 0 and <= 100 ? AudienceScore / 10.0 : CommunityRating is > 0 and <= 10 ? CommunityRating : null;
                 var critic = RtScore is > 0 and <= 100 ? RtScore / 10.0 : Metascore is > 0 and <= 100 ? Metascore / 10.0
                     : CriticsScore is > 0 and <= 100 ? CriticsScore / 10.0 : CriticRating is > 0 and <= 100 ? CriticRating / 10.0 : null;
-                if (community.HasValue && critic.HasValue) return (community.Value + critic.Value) / 2.0;
-                return community ?? critic;
+                // Letterboxd counts most (it's the audience Pickyfin trusts most), once enough people rated it
+                double? letterboxd = LbRating is > 0 and <= 5 ? LbRating * 2 : null;
+                var lbWeight = LbCount switch { >= 1000 => 2.0, >= 100 => 1.0, _ => 0.5 };
+                double sum = 0, weight = 0;
+                if (critic is { } c) { sum += c; weight += 1; }
+                if (community is { } co) { sum += co; weight += 1; }
+                if (letterboxd is { } lb) { sum += lb * lbWeight; weight += lbWeight; }
+                return weight > 0 ? sum / weight : null;
             }
         }
 

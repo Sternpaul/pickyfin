@@ -236,6 +236,13 @@ public sealed class JellyfinClient
         public string? AccessToken { get; set; }
     }
 
+    /// <summary>Whether a Jellyfin user's access token is valid (the TV app signs in with one).</summary>
+    public async Task<bool> IsValidTokenAsync(string token, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.SendAsync(Request(HttpMethod.Get, "/Users/Me", token), cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
     /// <summary>Checks a Jellyfin username and password; returns the user if they're an administrator.</summary>
     public async Task<JellyfinUser?> AuthenticateAdminAsync(string username, string password, CancellationToken cancellationToken = default)
     {

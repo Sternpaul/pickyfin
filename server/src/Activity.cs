@@ -89,7 +89,7 @@ public static class Jobs
 {
     public sealed record Job(string Key, string Title, string Now, bool Running, bool Error, DateTime? Next, DateTime Since);
 
-    private static readonly string[] Order = { "library", "tagging", "second", "lookupall", "sweep", "picks", "scores", "tmdb", "meaning" };
+    private static readonly string[] Order = { "library", "tagging", "second", "lookupall", "sweep", "picks", "scores", "lbratings", "tmdb", "meaning" };
     private static readonly object Gate = new();
     private static readonly Dictionary<string, Job> All = new();
 

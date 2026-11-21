@@ -109,6 +109,9 @@ public sealed class Meaning
         if (m.SettingEra is not null || m.SettingPlace is not null) b.Append($" Set in {string.Join(", ", new[] { m.SettingEra, m.SettingPlace }.Where(x => x is not null))}.");
         if (!string.IsNullOrWhiteSpace(m.Plot)) b.Append($"\n{m.Plot.Trim()}");
         if (!string.IsNullOrWhiteSpace(m.WebNotes)) b.Append($"\n{m.WebNotes.Trim()}");
+        // What Letterboxd's most-liked reviewers said; sorted by text, so a change in likes alone doesn't match the film again
+        var reviews = m.LbReviewList.Where(r => r.Text.Length >= 40).Take(3).Select(r => r.Text.Length > 400 ? r.Text[..400] : r.Text).OrderBy(t => t, StringComparer.Ordinal).ToList();
+        if (reviews.Count > 0) b.Append("\nReviews: " + string.Join(" | ", reviews.Select(r => r.Replace('\n', ' '))));
         var text = b.ToString();
         return text.Length > MaxChars ? text[..MaxChars] : text;
     }

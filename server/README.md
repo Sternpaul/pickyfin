@@ -120,6 +120,40 @@ address the container can reach, e.g. `http://<home server IP>:8096`.
 
 **Updating later:** Stack → *Update the stack* with *Re-pull image* switched on.
 
+### Letterboxd ratings and reviews (optional)
+
+Pickyfin can show each film's Letterboxd rating and most-liked reviews, count the
+rating in the picks (more than any other score) and use the reviews when it
+matches films by meaning. It reads them from
+[letterboxd-collector](https://github.com/Sternpaul/letterboxd-collector), a
+separate small service; Pickyfin itself never contacts Letterboxd.
+
+Add it, with FlareSolverr (needed for the reviews), to the same stack:
+
+```yaml
+  letterboxd-collector:
+    image: ghcr.io/sternpaul/letterboxd-collector:latest
+    container_name: letterboxd-collector
+    restart: unless-stopped
+    environment:
+      JELLYFIN_URL: http://jellyfin:8096
+      JELLYFIN_API_KEY: "..."   # its own key: Dashboard → API Keys → +
+      LBXD_FLARESOLVERR_URL: http://flaresolverr:8191/v1
+    volumes:
+      - ./letterboxd-data:/data
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+```
+
+In the same stack Pickyfin finds it on its own at
+`http://letterboxd-collector:8098`. Running it somewhere else, or with
+`API_TOKEN` set? Enter its address and token on the **AI** page under
+*Letterboxd*; *Check connection* shows whether it's reached and how many films it
+has rated. The first collection takes about 10 seconds per film; Pickyfin reads
+new ratings every 6 hours. See the collector's README for all its options.
+
 Then open `http://<server>:8097` and sign in with a Jellyfin administrator account:
 
 1. **AI**: choose a provider (OpenRouter, Google AI, OpenAI or Anthropic) and enter

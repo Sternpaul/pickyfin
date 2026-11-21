@@ -33,6 +33,12 @@ public sealed class ServerSettings
     public string OmdbApiKey { get; set; } = "";
     /// <summary>OMDb requests per day (the free key allows 1,000).</summary>
     public int OmdbPerDay { get; set; } = 1000;
+    /// <summary>Read Letterboxd ratings and reviews from a letterboxd-collector service.</summary>
+    public bool LetterboxdOn { get; set; } = true;
+    /// <summary>The collector's address; empty = http://letterboxd-collector:8098 (same Docker stack).</summary>
+    public string LetterboxdUrl { get; set; } = "";
+    /// <summary>The collector's API_TOKEN, when it has one.</summary>
+    public string LetterboxdToken { get; set; } = "";
     public bool ReclassifyOutdatedMovies { get; set; }
 
     // ---- checking the AI's work ----

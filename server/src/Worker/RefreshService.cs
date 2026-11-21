@@ -33,12 +33,13 @@ public sealed class RefreshService : BackgroundService
     private readonly MovieClassifier _classifier;
     private readonly OmdbScores _omdb;
     private readonly TmdbDetails _tmdb;
+    private readonly LetterboxdRatings _lbRatings;
     private readonly Meaning _meaning;
     private readonly SemaphoreSlim _wake = new(0);
     private bool _librarySyncRequested = true;
 
     public RefreshService(JellyfinClient jellyfin, Database database, LibrarySync library, BriefInterpreter briefs,
-        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, OmdbScores omdb, TmdbDetails tmdb, Meaning meaning, ILogger<RefreshService> logger)
+        Curator curator, PlaylistWriter writer, Letterboxd.LetterboxdSync letterboxd, Library.WebSweep sweep, SecondOpinion secondOpinion, MovieClassifier classifier, Rescan rescan, MovieStore store, OmdbScores omdb, TmdbDetails tmdb, Meaning meaning, LetterboxdRatings lbRatings, ILogger<RefreshService> logger)
     {
         _jellyfin = jellyfin;
         _database = database;
@@ -55,6 +56,7 @@ public sealed class RefreshService : BackgroundService
         _classifier = classifier;
         _omdb = omdb;
         _tmdb = tmdb;
+        _lbRatings = lbRatings;
         _meaning = meaning;
     }
 
@@ -80,6 +82,7 @@ public sealed class RefreshService : BackgroundService
         Jobs.Ensure("picks", "Rows for each person", turn);
         Jobs.Ensure("rescan", "Re-checking everything", turn);
         Jobs.Ensure(OmdbScores.Key, OmdbScores.Title, turn);
+        Jobs.Ensure(LetterboxdRatings.Key, LetterboxdRatings.Title, turn);
         Jobs.Ensure(TmdbDetails.Key, TmdbDetails.Title, turn);
         Jobs.Ensure(Meaning.Key, Meaning.Title, turn);
         await QueueOutdatedAsync(stoppingToken);
@@ -168,6 +171,15 @@ public sealed class RefreshService : BackgroundService
         {
             _logger.LogWarning("OMDb scores paused: {Error}", error.Message);
             Jobs.Idle(OmdbScores.Key, OmdbScores.Title, $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + Tick, error: true);
+        }
+
+        // Letterboxd ratings and reviews from a letterboxd-collector service, read every few hours
+        State = "Reading Letterboxd ratings";
+        try { await _lbRatings.RunAsync(cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("Letterboxd ratings paused: {Error}", error.Message);
+            Jobs.Idle(LetterboxdRatings.Key, LetterboxdRatings.Title, $"Failed: {Jobs.Short(error.Message)}", DateTime.UtcNow + TimeSpan.FromMinutes(30), error: true);
         }
 
         // Series and crowd links from TMDB

@@ -196,6 +196,12 @@ public sealed class Database
         AddColumn("Movies", "Pacing", "TEXT NULL");
         AddColumn("Movies", "Ending", "TEXT NULL");
         AddColumn("Movies", "Occasions", "TEXT NULL");
+        AddColumn("Movies", "LbRating", "REAL NULL");
+        AddColumn("Movies", "LbCount", "INTEGER NULL");
+        AddColumn("Movies", "LbUrl", "TEXT NULL");
+        AddColumn("Movies", "LbHistogram", "TEXT NULL");
+        AddColumn("Movies", "LbReviews", "TEXT NULL");
+        AddColumn("Movies", "LbFetched", "TEXT NULL");
         AddColumn("Movies", "ContentNotes", "TEXT NULL");
         AddColumn("Movies", "BasedOn", "TEXT NULL");
         AddColumn("Movies", "SettingEra", "TEXT NULL");

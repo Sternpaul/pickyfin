@@ -454,6 +454,7 @@ public sealed class Curator
         if (m.OscarWins > 0) facts.Add($"won {m.OscarWins} Oscar{(m.OscarWins == 1 ? "" : "s")}");
         else if (m.OscarNominations > 0) facts.Add("Oscar-nominated");
         if (m.CollectionName is { } series) facts.Add($"part of {series}");
+        if (m.LbRating is { } lb && m.LbCount >= 100) facts.Add($"Letterboxd {lb:0.0}/5");
         return $"{m.Title} ({m.ReleaseYear}) [{tags}]{(facts.Count > 0 ? " (" + string.Join(", ", facts) + ")" : "")} {plot}";
     }
 }

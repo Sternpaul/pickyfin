@@ -47,6 +47,7 @@ builder.Services.AddSingleton<SecondOpinion>();
 builder.Services.AddSingleton<WebSweep>();
 builder.Services.AddSingleton<Rescan>();
 builder.Services.AddSingleton<OmdbScores>();
+builder.Services.AddSingleton<LetterboxdRatings>();
 builder.Services.AddSingleton<TmdbDetails>();
 builder.Services.AddSingleton<Meaning>();
 builder.Services.AddSingleton<MovieHistory>();
@@ -160,7 +161,13 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         rescanned = eligible.Count(r => r.Rescanned >= cutoff);
     }
     var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
-    int scored = 0, detailed = 0, embedded = 0;
+    int scored = 0, detailed = 0, embedded = 0, lbRated = 0;
+    if (LetterboxdRatings.Last is { Reached: true })
+    {
+        await using var db = database.Open();
+        var rows = await db.Movies.AsNoTracking().Where(m => m.LbRating != null).Select(m => m.Libraries).ToListAsync(ct);
+        lbRated = rows.Count(l => !s.IsLibraryExcluded(l));
+    }
     string? meaningTip = null;
     if (Meaning.On(s))
     {
@@ -232,6 +239,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
             WebLookup.Configured ? "Off" : "Off: no web search set up", lookedUp, classified, tip: Tip("lookup", "Described again from the web with")),
         Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
         Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total),
+        Row(LetterboxdRatings.Key, LetterboxdRatings.Title, s.LetterboxdOn, "Off", LetterboxdRatings.Last is { Reached: true } ? lbRated : null, LetterboxdRatings.Last is { Reached: true } ? total : null,
+            tip: $"From letterboxd-collector at {LetterboxdRatings.Address(s)}" + (LetterboxdRatings.Last is { } lbLast ? $"\n{lbLast.Message}" + (lbLast.WithRating is { } wr ? $"; it has ratings for {wr:N0} films" : "") : "")),
         Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total),
         Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip),
     };
@@ -255,6 +264,47 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
 });
 
 // Embedding models OpenRouter offers, free ones first, for matching by meaning
+// ---------- Letterboxd (letterboxd-collector) ----------
+
+admin.MapPost("/letterboxd/check", async (LetterboxdRatings letterboxd, RefreshService worker, CancellationToken ct) =>
+{
+    var state = await letterboxd.CheckAsync(ct);
+    if (state.Reached) { LetterboxdRatings.ResetPause(); worker.Wake(); }
+    return Results.Ok(new { state.Reached, state.Url, state.Message, state.Schema, state.WithRating, state.InCollector, state.Matched });
+});
+
+// ---------- for the TV app: scores of one film, signed in with the viewer's Jellyfin token ----------
+
+var tvTokens = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
+api.MapGet("/tv/films/{id:guid}", async (Guid id, HttpContext http, JellyfinClient jellyfin, Database database, CancellationToken ct) =>
+{
+    var token = http.Request.Headers["X-Emby-Token"].ToString();
+    if (token.Length == 0) token = http.Request.Headers["X-MediaBrowser-Token"].ToString();
+    if (token.Length == 0 && System.Text.RegularExpressions.Regex.Match(http.Request.Headers.Authorization.ToString(), "Token=\"([^\"]+)\"") is { Success: true } match)
+        token = match.Groups[1].Value;
+    if (token.Length == 0) return Results.Unauthorized();
+    if (!tvTokens.TryGetValue(token, out var until) || until < DateTime.UtcNow)
+    {
+        bool valid;
+        try { valid = await jellyfin.IsValidTokenAsync(token, ct); }
+        catch (Exception) { return Results.Problem("Can't reach Jellyfin", statusCode: 502); }
+        if (!valid) return Results.Unauthorized();
+        if (tvTokens.Count > 1000) tvTokens.Clear();
+        tvTokens[token] = DateTime.UtcNow.AddHours(1);
+    }
+    await using var db = database.Open();
+    var m = await db.Movies.AsNoTracking().FirstOrDefaultAsync(x => x.ItemId == id, ct);
+    if (m is null) return Results.NotFound();
+    return Results.Ok(new
+    {
+        Letterboxd = m.LbRating is null ? null : new { Rating = m.LbRating, Count = m.LbCount, Url = m.LbUrl, Histogram = m.LbHistogramCounts },
+        Reviews = m.LbReviewList.Select(r => new { r.Author, r.Rating, r.Likes, r.Text }),
+        RottenTomatoes = m.RtScore,
+        Metacritic = m.Metascore,
+        Imdb = m.ImdbRating,
+    });
+});
+
 admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, CancellationToken ct) =>
 {
     try
@@ -402,6 +452,8 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A library switched back on may have movies that were never classified
     if (before.OmdbApiKey != settings.OmdbApiKey || before.OmdbPerDay != settings.OmdbPerDay) OmdbScores.ResetPause();
     if (before.TmdbApiKey != settings.TmdbApiKey) TmdbDetails.ResetPause();
+    if (before.LetterboxdOn != settings.LetterboxdOn || before.LetterboxdUrl != settings.LetterboxdUrl || before.LetterboxdToken != settings.LetterboxdToken)
+        LetterboxdRatings.ResetPause();
     if (before.MeaningOn != settings.MeaningOn || before.EmbeddingModelsAuto != settings.EmbeddingModelsAuto
         || !before.EmbeddingModels.SequenceEqual(settings.EmbeddingModels) || before.ApiKey != settings.ApiKey) Meaning.ResetPause();
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
@@ -536,6 +588,10 @@ record SettingsView
     public bool HasOmdbApiKey { get; init; }
     public string? OmdbApiKey { get; init; }
     public int OmdbPerDay { get; init; } = 1000;
+    public bool LetterboxdOn { get; init; } = true;
+    public string LetterboxdUrl { get; init; } = "";
+    public bool HasLetterboxdToken { get; init; }
+    public string? LetterboxdToken { get; init; }
     public int RefreshHours { get; init; }
     public int PicksPerRow { get; init; }
     public int BecauseRows { get; init; }
@@ -599,6 +655,9 @@ record SettingsView
         HasTmdbApiKey = !string.IsNullOrWhiteSpace(s.TmdbApiKey),
         HasOmdbApiKey = !string.IsNullOrWhiteSpace(s.OmdbApiKey),
         OmdbPerDay = s.OmdbPerDay,
+        LetterboxdOn = s.LetterboxdOn,
+        LetterboxdUrl = s.LetterboxdUrl,
+        HasLetterboxdToken = !string.IsNullOrWhiteSpace(s.LetterboxdToken),
         RefreshHours = s.RefreshHours,
         PicksPerRow = s.PicksPerRow,
         BecauseRows = s.BecauseRows,
@@ -664,6 +723,11 @@ record SettingsView
         if (!string.IsNullOrWhiteSpace(TmdbApiKey)) s.TmdbApiKey = TmdbApiKey.Trim();
         if (!string.IsNullOrWhiteSpace(OmdbApiKey)) s.OmdbApiKey = OmdbApiKey.Trim();
         s.OmdbPerDay = Math.Clamp(OmdbPerDay, 1, 1_000_000);
+        s.LetterboxdOn = LetterboxdOn;
+        s.LetterboxdUrl = (LetterboxdUrl ?? "").Trim().TrimEnd('/');
+        // A single "-" clears the token
+        if (LetterboxdToken?.Trim() == "-") s.LetterboxdToken = "";
+        else if (!string.IsNullOrWhiteSpace(LetterboxdToken)) s.LetterboxdToken = LetterboxdToken.Trim();
         if (!string.IsNullOrWhiteSpace(ExaApiKey)) s.ExaApiKey = ExaApiKey.Trim();
         s.WebSearchProvider = WebSearchProvider == "parallel" ? "parallel" : "exa";
         if (!string.IsNullOrWhiteSpace(ParallelApiKey)) s.ParallelApiKey = ParallelApiKey.Trim();

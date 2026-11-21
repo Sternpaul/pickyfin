@@ -52,7 +52,7 @@ public sealed class MovieStore
         var list = movies.ToList();
         var ids = list.Select(m => m.ItemId).ToList();
         var rows = await db.Movies.AsNoTracking().Where(m => ids.Contains(m.ItemId)).Select(m => new { m.ItemId, m.ManuallyEdited, m.RtScore, m.Metascore, m.ImdbRating, m.ScoresFetched, m.Awards, m.OscarWins, m.OscarNominations,
-                m.CollectionId, m.CollectionName, m.TmdbRecs, m.DetailsFetched }).ToListAsync(cancellationToken);
+                m.CollectionId, m.CollectionName, m.TmdbRecs, m.DetailsFetched, m.LbRating, m.LbCount, m.LbUrl, m.LbHistogram, m.LbReviews, m.LbFetched }).ToListAsync(cancellationToken);
         var scores = rows.ToDictionary(r => r.ItemId);
         var existing = rows.Select(r => r.ItemId).ToHashSet();
         // A background job holding an older copy must not overwrite a hand edit made meanwhile
@@ -66,6 +66,7 @@ public sealed class MovieStore
                 (movie.RtScore, movie.Metascore, movie.ImdbRating, movie.ScoresFetched) = (sc.RtScore, sc.Metascore, sc.ImdbRating, sc.ScoresFetched);
                 (movie.Awards, movie.OscarWins, movie.OscarNominations) = (sc.Awards, sc.OscarWins, sc.OscarNominations);
                 (movie.CollectionId, movie.CollectionName, movie.TmdbRecs, movie.DetailsFetched) = (sc.CollectionId, sc.CollectionName, sc.TmdbRecs, sc.DetailsFetched);
+                (movie.LbRating, movie.LbCount, movie.LbUrl, movie.LbHistogram, movie.LbReviews, movie.LbFetched) = (sc.LbRating, sc.LbCount, sc.LbUrl, sc.LbHistogram, sc.LbReviews, sc.LbFetched);
             }
             if (existing.Contains(movie.ItemId)) db.Movies.Update(movie);
             else db.Movies.Add(movie);
