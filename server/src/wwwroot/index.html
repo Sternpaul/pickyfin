@@ -295,23 +295,85 @@
   .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 10px 0; font: 500 14.5px var(--sans); cursor: pointer; white-space: nowrap; }
   .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
   .tabs sup { font-size: 10.5px; color: var(--faint); margin-left: 2px; }
-  .matrix { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: start; }
-  @media (max-width: 860px) { .matrix { grid-template-columns: 1fr; } }
-  #matrix-svg { width: 100%; height: auto; background: var(--raised); border-radius: 10px; display: block; }
-  #matrix-svg circle { cursor: pointer; }
-  #matrix-svg line { stroke: var(--accent); stroke-width: 1.2; opacity: .7; }
-  .matrix-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
-  .matrix-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 6px; }
-  #matrix-find { width: 100%; margin-bottom: 14px; }
   #lb-form .setting > div:first-child { min-width: 0; }
+  /* ---- matrix ---- */
+  body.wide main { max-width: 1640px; }
+  .mx-wrap { position: relative; }
+  .mx { position: relative; height: max(560px, calc(100vh - 250px)); border-radius: 18px; overflow: hidden; border: 1px solid var(--line);
+    background-color: var(--surface); background-image: radial-gradient(circle at 1px 1px, var(--line-strong) 1px, transparent 0);
+    touch-action: none; user-select: none; -webkit-user-select: none; }
+  .mx::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 55%, var(--bg) 140%); }
+  .mx.grabbing { cursor: grabbing; }
+  #mx-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  .mx.grabbing #mx-svg { cursor: grabbing; }
+  #mx-world circle { cursor: pointer; transition: opacity .25s; stroke: var(--surface); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  #mx-world circle.hov, #mx-world circle.me { stroke: var(--text); stroke-width: 2; }
+  #mx-world circle.near { stroke: var(--text); stroke-width: 1.2; }
+  .mx.picked #mx-world circle:not(.near):not(.me) { opacity: .16; }
+  .mx[data-focus] #mx-world circle:not(.in-focus) { opacity: .1; }
+  #mx-links path { fill: none; stroke: var(--accent); stroke-linecap: round; transition: stroke-width .15s, opacity .15s; pointer-events: none; }
+  #mx-links path.hl { opacity: 1 !important; }
+  #mx-links .pill rect { fill: var(--bg); stroke: var(--accent); stroke-width: 1; }
+  #mx-links .pill text { fill: var(--text); font: 600 11px var(--sans); font-variant-numeric: tabular-nums; }
+  #mx-links .pill.hl rect { fill: var(--accent); } #mx-links .pill.hl text { fill: var(--accent-ink); }
+  #mx-links .pill { cursor: pointer; }
+  #mx-labels text { fill: var(--text); font: 500 11.5px var(--sans); paint-order: stroke; stroke: var(--surface); stroke-width: 3.5px; stroke-linejoin: round; pointer-events: none; }
+  #mx-labels text.me { font-weight: 700; font-size: 13px; }
+  .glass { background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  .mx-top { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; gap: 12px; align-items: center; z-index: 2; pointer-events: none; }
+  .mx-top > * { pointer-events: auto; }
+  #matrix-find { width: min(320px, 100%); border-radius: 999px; padding-left: 16px; }
+  .mx-facts { font-size: 12.5px; color: var(--muted); padding: 5px 12px; border-radius: 999px; }
+  .mx-facts:empty { display: none; }
+  .mx-legend { position: absolute; left: 14px; bottom: 14px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; max-width: min(720px, calc(100% - 90px)); }
+  .mx-legend button { font: 500 12px var(--sans); color: var(--text); padding: 4px 10px 4px 8px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .mx-legend button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent); }
+  .mx-legend button.off { opacity: .45; }
+  .mx-zoom { position: absolute; right: 14px; bottom: 14px; z-index: 2; display: flex; flex-direction: column; overflow: hidden; transition: right .3s; }
+  .mx.with-panel .mx-zoom { right: 388px; }
+  .mx-zoom button { width: 36px; height: 34px; border: 0; background: none; color: var(--text); font: 500 18px var(--sans); cursor: pointer; }
+  .mx-zoom button + button { border-top: 1px solid var(--line); }
+  .mx-zoom button:hover, .mx-legend button:hover { background: var(--accent-soft); }
+  .mx-card { position: absolute; z-index: 3; pointer-events: none; display: flex; gap: 12px; padding: 10px; width: 270px; align-items: center; transition: opacity .12s; }
+  .mx-card img, .mx-card .noimg { width: 54px; height: 81px; object-fit: cover; border-radius: 6px; background: var(--raised); flex: none; }
+  .mx-card b { display: block; font-size: 14px; line-height: 1.3; }
+  .mx-card .sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .mx-card .pct { display: inline-block; margin-top: 6px; font: 700 12px var(--sans); color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 1px 8px; }
+  .mx-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 15px; text-align: center; padding: 24px; }
+  .mx-panel { position: absolute; top: 64px; right: 14px; bottom: 64px; width: 360px; z-index: 4; display: flex; flex-direction: column; overflow: hidden; }
+  .mx-head { display: flex; gap: 14px; padding: 14px; border-bottom: 1px solid var(--line); align-items: flex-start; }
+  .mx-head img, .mx-head .noimg { width: 64px; height: 96px; border-radius: 8px; object-fit: cover; background: var(--raised); flex: none; }
+  .mx-head h3 { margin: 0; font-size: 17px; line-height: 1.25; }
+  .mx-head .sub { color: var(--muted); font-size: 12.5px; margin: 3px 0 10px; }
+  .mx-head .x { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 2px; }
+  .mx-list { overflow-y: auto; padding: 6px 8px 10px; flex: 1; overscroll-behavior: contain; }
+  .mx-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 4px 10px; padding: 9px 8px; border-radius: 10px; cursor: pointer; align-items: center; }
+  .mx-row:hover, .mx-row.hl { background: var(--accent-soft); }
+  .mx-row .n { color: var(--faint); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  .mx-row .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mx-row .t span { color: var(--faint); font-weight: 400; margin-left: 4px; }
+  .mx-row .p { font: 700 13px var(--sans); font-variant-numeric: tabular-nums; }
+  .mx-row .bar { grid-column: 2 / -1; height: 4px; border-radius: 4px; background: var(--raised); overflow: hidden; }
+  .mx-row .bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent)); }
+  .mx-row .why { grid-column: 2 / -1; font-size: 11.5px; color: var(--muted); }
+  .mx-tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line-strong); margin-right: 4px; color: var(--text); }
+  .mx-about { max-width: 90ch; margin-top: 14px; }
+  @media (max-width: 760px) {
+    .mx { height: 68vh; min-height: 420px; border-radius: 14px; }
+    .mx-panel { position: static; width: auto; margin-top: 12px; max-height: none; }
+    .mx.with-panel .mx-zoom { right: 14px; }
+    .mx-list { max-height: none; }
+    .mx-facts { display: none; }
+    .mx-legend { max-width: calc(100% - 70px); }
+    .mx-legend button:nth-child(n+5) { display: none; }
+  }
   pre.snippet { background: var(--raised); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; overflow-x: auto; white-space: pre; max-width: 100%; }
   .lb-hist { display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; vertical-align: -3px; margin-left: 8px; }
   .lb-hist i { display: block; width: 5px; background: var(--muted); border-radius: 1px; min-height: 1px; }
   .lb-reviews { margin: 10px 0 0; padding: 0; list-style: none; }
   .lb-reviews li { margin: 0 0 12px; }
   .lb-reviews .who { font-size: 12.5px; color: var(--muted); }
-  #matrix-pick h3 { margin: 0 0 4px; }
-  #matrix-pick a { cursor: pointer; }
   table.list { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
   table.list th { text-align: left; font: 600 12px var(--sans); color: var(--faint); padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line-strong); }
   table.list td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -738,19 +800,22 @@
 
     <!-- MATRIX -->
     <section data-page="matrix" class="hidden">
-      <div class="page-head"><div><h1>Matrix</h1><p>How the films relate to each other. Pick a film, on the map or by name, to see the films closest to it and what links them.</p></div></div>
-      <p class="why" id="matrix-facts" style="max-width:80ch"></p>
-      <div class="matrix">
-        <div>
-          <svg id="matrix-svg" viewBox="0 0 600 600" role="img" aria-label="Map of films by meaning"></svg>
-          <div class="matrix-legend" id="matrix-legend"></div>
+      <div class="page-head"><div><h1>Matrix</h1><p>Every film on one map: the closer two films sit, the more alike they are. Scroll or pinch to zoom, drag to move around, and click a film to see what it's closest to.</p></div></div>
+      <div class="mx-wrap">
+        <div class="mx" id="mx">
+          <svg id="mx-svg" role="img" aria-label="Map of films by meaning"><g id="mx-world"></g><g id="mx-links"></g><g id="mx-labels"></g></svg>
+          <div class="mx-top">
+            <input type="search" id="matrix-find" list="matrix-titles" placeholder="Find a film…" autocomplete="off"><datalist id="matrix-titles"></datalist>
+            <span class="mx-facts" id="matrix-facts"></span>
+          </div>
+          <div class="mx-legend" id="matrix-legend"></div>
+          <div class="mx-zoom glass"><button type="button" data-z="in" title="Zoom in">+</button><button type="button" data-z="out" title="Zoom out">−</button><button type="button" data-z="fit" title="Show all films">⤢</button></div>
+          <div class="mx-card glass hidden" id="mx-card"></div>
+          <div class="mx-empty hidden" id="mx-empty"></div>
         </div>
-        <div>
-          <input type="search" id="matrix-find" list="matrix-titles" placeholder="Find a film" autocomplete="off">
-          <datalist id="matrix-titles"></datalist>
-          <div id="matrix-pick"><p class="note">No film picked yet.</p></div>
-        </div>
+        <aside class="mx-panel hidden" id="matrix-pick"></aside>
       </div>
+      <p class="note mx-about" id="matrix-about"></p>
     </section>
 
     <!-- STATUS -->
@@ -844,6 +909,7 @@ function go(page) {
   for (const [form, timer] of Object.entries(saveTimers)) if (timer) saveNow(form);
   $$('.nav').forEach(n => n.classList.toggle('active', n.dataset.page === page));
   $$('main section').forEach(s => s.classList.toggle('hidden', s.dataset.page !== page));
+  document.body.classList.toggle('wide', page === 'matrix');
   if (page === 'libraries') loadLibraries();
   if (page === 'movies') loadMovies(true);
   if (page === 'issues') loadIssues();
@@ -1152,70 +1218,335 @@ async function checkLetterboxd(loud) {
 }
 $('#lb-check').onclick = () => checkLetterboxd(true);
 
-// ---- matrix: every matched film on a map, and one film's closest films ----
-let matrix = null, matrixPick = null;
-const groupColors = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc948', '#b07aa1', '#ff9da7'];
+// ---- matrix: every matched film on a zoomable map, and one film's closest films ----
+const groupColors = ['#60a5fa', '#f59e0b', '#f472b6', '#34d399', '#a78bfa', '#f87171', '#22d3ee', '#facc15', '#fb923c', '#a3e635', '#e879f9', '#2dd4bf'];
+const mx = {
+  data: null, pts: [], at: {}, top: [], cam: { k: 1, tx: 0, ty: 0 }, fitK: 1, anim: 0, raf: 0,
+  pick: null, films: [], hl: null, hover: null, focus: null, wired: false, moved: false,
+};
+const mxTitle = f => `${f.Title}${f.Year ? ` (${f.Year})` : ''}`;
+const mxImg = (id, cls = '') => `<img src="${posterUrl(id)}" alt="" class="${cls}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'noimg'}))">`;
+
 async function loadMatrix() {
-  try { matrix = await call('GET', '/api/matrix'); }
-  catch { $('#matrix-facts').textContent = 'Couldn\'t load the matrix.'; return; }
-  const model = matrix.Model ? matrix.Model.replace(/^[^/]+\//, '').replace(':free', '') : null;
-  $('#matrix-facts').innerHTML = !matrix.On
-    ? 'Matching by meaning is off (AI page), so films are compared by their tags only.'
-    : `<b>${matrix.Matched.toLocaleString()}</b> of ${matrix.Films.toLocaleString()} described films are matched by meaning${model ? ` with <b>${esc(model)}</b>` : ''}. `
-      + `Each film's meaning is stored once, in the server's database (pickyfin.db, table Embeddings). The closest films are worked out from those whenever you look, `
-      + `mixing tags and meaning as set on Tuning (now ${100 - matrix.Weight}% tags, ${matrix.Weight}% meaning). The map flattens the meanings onto two directions, so treat it as a rough overview; the list of closest films is exact.`;
-  $('#matrix-titles').innerHTML = matrix.All.map(f => `<option value="${esc(f.Title)}${f.Year ? ` (${f.Year})` : ''}">`).join('');
+  wireMatrix();
+  try { mx.data = await call('GET', '/api/matrix'); }
+  catch { showMxEmpty('Couldn\'t load the matrix.'); return; }
+  const d = mx.data;
+  const model = d.Model ? d.Model.replace(/^[^/]+\//, '').replace(':free', '') : null;
+  $('#matrix-facts').textContent = d.On && d.Matched ? `${d.Matched.toLocaleString()} films${model ? ' · ' + model : ''}` : '';
+  $('#matrix-facts').classList.toggle('glass', !!(d.On && d.Matched));
+  $('#matrix-about').innerHTML = !d.On
+    ? 'Matching by meaning is off (AI page), so there is no map; films are compared by their tags only.'
+    : `${d.Matched.toLocaleString()} of ${d.Films.toLocaleString()} described films are matched by meaning${model ? ` with ${esc(model)}` : ''}. Each film's meaning is stored once, in the server's database (pickyfin.db, table Embeddings). `
+      + `The percentages are worked out whenever you look, mixing tags and meaning as set on Tuning (now ${100 - d.Weight}% tags, ${d.Weight}% meaning). `
+      + `The map squeezes the meanings onto two directions, so two films can look close without being alike; the percentages are exact.`;
+  $('#matrix-titles').innerHTML = d.All.map(f => `<option value="${esc(mxTitle(f))}">`).join('');
+
+  // Spread the map's coordinates over a 1000 × 1000 square, same scale both ways so distances stay honest
+  const raw = d.Points || [];
+  const xs = raw.map(p => p.X), ys = raw.map(p => p.Y);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const scale = 1000 / (Math.max(x1 - x0, y1 - y0) || 1);
+  const ox = (1000 - (x1 - x0) * scale) / 2, oy = (1000 - (y1 - y0) * scale) / 2;
+  const counts = {}; raw.forEach(p => { if (p.Group) counts[p.Group] = (counts[p.Group] || 0) + 1; });
+  mx.top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, groupColors.length).map(([g]) => g);
+  mx.pts = raw.map(p => ({ ...p, wx: ox + (p.X - x0) * scale, wy: oy + (y1 - p.Y) * scale, g: mx.top.indexOf(p.Group) }));
+  mx.at = Object.fromEntries(mx.pts.map(p => [p.Id, p]));
+
+  if (!mx.pts.length) { showMxEmpty(d.On ? 'No film is matched by meaning yet. They appear here as the server matches them.' : 'Matching by meaning is off (AI page).'); $('#matrix-legend').innerHTML = ''; return; }
+  showMxEmpty('');
+  const radius = mx.pts.length > 1500 ? 2.4 : mx.pts.length > 400 ? 3.2 : 4.5;
+  mx.radius = radius;
+  $('#mx-world').innerHTML = mx.pts.map((p, i) => `<circle data-i="${i}" cx="${p.wx.toFixed(1)}" cy="${p.wy.toFixed(1)}" fill="${p.g >= 0 ? groupColors[p.g] : 'var(--faint)'}" class="${p.g >= 0 ? 'g' + p.g : ''}"/>`).join('');
+  mx.circles = [...$('#mx-world').children];
+  $('#matrix-legend').innerHTML = mx.top.map((g, i) => `<button type="button" class="glass" data-g="${i}" style="--c:${groupColors[i]}">${esc(g)}</button>`).join('');
+  mx.focus = null; delete $('#mx').dataset.focus;
+  fitMatrix(false);
+  if (mx.pick) pickFilm(mx.pick, false);
+}
+function showMxEmpty(text) { const e = $('#mx-empty'); e.textContent = text; e.classList.toggle('hidden', !text); }
+
+function mxSize() { const b = $('#mx').getBoundingClientRect(); return { w: b.width, h: b.height }; }
+function mxPanelOpen() { return !$('#matrix-pick').classList.contains('hidden') && window.innerWidth > 760; }
+// Show everything: the square fills the stage (left of the panel when it's open)
+function fitMatrix(animate = true) {
+  const { w, h } = mxSize();
+  const room = mxPanelOpen() ? w - 390 : w;
+  const k = Math.min(room, h) * 0.86 / 1000;
+  mx.fitK = Math.min(w, h) * 0.86 / 1000;
+  setCam({ k, tx: (room - 1000 * k) / 2, ty: (h - 1000 * k) / 2 }, animate);
+}
+function setCam(target, animate = true) {
+  cancelAnimationFrame(mx.anim);
+  if (!animate) { mx.cam = target; return drawMx(); }
+  const from = { ...mx.cam }, start = performance.now(), ms = 520;
+  const step = now => {
+    const t = Math.min(1, (now - start) / ms), e = 1 - Math.pow(1 - t, 3);
+    // zoom in log space so it feels even
+    const k = Math.exp(Math.log(from.k) + (Math.log(target.k) - Math.log(from.k)) * e);
+    mx.cam = { k, tx: from.tx + (target.tx - from.tx) * e, ty: from.ty + (target.ty - from.ty) * e };
+    drawMx();
+    if (t < 1) mx.anim = requestAnimationFrame(step);
+  };
+  mx.anim = requestAnimationFrame(step);
+}
+function zoomAt(factor, sx, sy, animate = false) {
+  const { k, tx, ty } = mx.cam;
+  const nk = Math.min(mx.fitK * 60, Math.max(mx.fitK * 0.5, k * factor));
+  const f = nk / k;
+  setCam({ k: nk, tx: sx - (sx - tx) * f, ty: sy - (sy - ty) * f }, animate);
+}
+const toScreen = p => [p.wx * mx.cam.k + mx.cam.tx, p.wy * mx.cam.k + mx.cam.ty];
+
+function drawMx() {
+  cancelAnimationFrame(mx.raf);
+  mx.raf = requestAnimationFrame(() => {
+    const { k, tx, ty } = mx.cam, { w, h } = mxSize();
+    $('#mx-world').setAttribute('transform', `translate(${tx},${ty}) scale(${k})`);
+    // dots grow a little as you zoom in, but stay dots
+    const zoom = k / mx.fitK, base = mx.radius * Math.min(2.4, Math.pow(zoom, 0.35)) / k;
+    const near = new Set(mx.films.map(f => f.ItemId));
+    (mx.circles || []).forEach((c, i) => {
+      const id = mx.pts[i].Id;
+      c.setAttribute('r', (id === mx.pick ? base * 2.3 : near.has(id) ? base * 1.6 : mx.hover === i ? base * 1.8 : base).toFixed(3));
+    });
+    const grid = 26 * Math.pow(2, Math.log2(zoom) % 1);
+    $('#mx').style.backgroundSize = `${grid}px ${grid}px`;
+    $('#mx').style.backgroundPosition = `${tx % grid}px ${ty % grid}px`;
+    drawMxLinks(w, h);
+    placeCard();
+  });
+}
+
+// Lines from the picked film to its closest films, each with its match in percent.
+// Pills and names that would overlap are moved along the line or left out (the list has them all).
+function drawMxLinks(w, h) {
+  const links = $('#mx-links'), labels = $('#mx-labels');
+  const me = mx.pick && mx.at[mx.pick];
+  const taken = [];
+  const panel = mxPanelOpen() ? { x: w - 388, y: 0, w: 388, h } : null;
+  if (panel) taken.push(panel);
+  const free = (x, y, bw, bh) => {
+    if (x < 4 || y < 4 || x + bw > w - 4 || y + bh > h - 4) return false;
+    if (taken.some(t => x < t.x + t.w + 3 && x + bw + 3 > t.x && y < t.y + t.h + 3 && y + bh + 3 > t.y)) return false;
+    taken.push({ x, y, w: bw, h: bh }); return true;
+  };
+  const textW = (t, size = 11.5) => t.length * size * 0.56 + 4;
+  let out = '', pills = '', names = '';
+  if (me) {
+    const [ax, ay] = toScreen(me);
+    const shown = mx.films.filter(f => mx.at[f.ItemId]).sort((x, y) => y.Score - x.Score);
+    const geo = shown.map(f => {
+      const [bx, by] = toScreen(mx.at[f.ItemId]);
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+      const bend = Math.min(60, len * 0.18);
+      return { f, bx, by, len, cx: (ax + bx) / 2 - dy / len * bend, cy: (ay + by) / 2 + dx / len * bend };
+    });
+    // every dot keeps its own spot clear
+    geo.forEach(g => taken.push({ x: g.bx - 5, y: g.by - 5, w: 10, h: 10 }));
+    taken.push({ x: ax - 8, y: ay - 8, w: 16, h: 16 });
+    const meW = textW(me.Title, 13);
+    if (free(ax + 12, ay - 9, meW, 18)) names += `<text class="me" x="${ax + 12}" y="${ay + 4}">${esc(me.Title)}</text>`;
+    out += geo.map(({ f, bx, by, cx, cy }) => {
+      const sc = f.Score / 100, hl = mx.hl === f.ItemId;
+      return `<path d="M${ax.toFixed(1)},${ay.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}" style="stroke-width:${(hl ? 3.5 : 1 + sc * 2.4).toFixed(2)};opacity:${(0.25 + sc * 0.6).toFixed(2)}" class="${hl ? 'hl' : ''}"/>`;
+    }).join('');
+    // highlighted pill first, so it always shows
+    const order = [...geo.filter(g => g.f.ItemId === mx.hl), ...geo.filter(g => g.f.ItemId !== mx.hl)];
+    for (const g of order) {
+      const t = `${g.f.Score}%`, pw = t.length * 7 + 12;
+      if (g.len < 34 && mx.hl !== g.f.ItemId) continue;
+      for (const at of [0.5, 0.62, 0.38, 0.75, 0.25]) {
+        const px = (1 - at) ** 2 * ax + 2 * (1 - at) * at * g.cx + at * at * g.bx, py = (1 - at) ** 2 * ay + 2 * (1 - at) * at * g.cy + at * at * g.by;
+        if (free(px - pw / 2, py - 10, pw, 20)) {
+          pills += `<g class="pill${mx.hl === g.f.ItemId ? ' hl' : ''}" data-id="${g.f.ItemId}" transform="translate(${(px - pw / 2).toFixed(1)},${(py - 10).toFixed(1)})"><rect width="${pw}" height="20" rx="10"/><text x="${pw / 2}" y="14" text-anchor="middle">${t}</text></g>`;
+          break;
+        }
+      }
+    }
+    for (const g of order) {
+      const tw = textW(g.f.Title);
+      // right of the dot, else left
+      if (free(g.bx + 9, g.by - 8, tw, 16)) names += `<text x="${(g.bx + 9).toFixed(1)}" y="${(g.by + 4).toFixed(1)}">${esc(g.f.Title)}</text>`;
+      else if (free(g.bx - 9 - tw, g.by - 8, tw, 16)) names += `<text x="${(g.bx - 9).toFixed(1)}" y="${(g.by + 4).toFixed(1)}" text-anchor="end">${esc(g.f.Title)}</text>`;
+    }
+  } else if (mx.cam.k / mx.fitK > 2.2) {
+    // zoomed in: name the films in view where there's room (up to 80)
+    let n = 0;
+    for (const p of mx.pts) {
+      if (mx.focus != null && p.g !== mx.focus) continue;
+      const [x, y] = toScreen(p), tw = textW(p.Title);
+      if (free(x + 7, y - 8, tw, 16)) { names += `<text x="${(x + 7).toFixed(1)}" y="${(y + 4).toFixed(1)}">${esc(p.Title)}</text>`; if (++n >= 80) break; }
+    }
+  }
+  links.innerHTML = out + pills; labels.innerHTML = names;
+  links.querySelectorAll('.pill').forEach(g => {
+    g.onmouseenter = () => mxHighlight(g.dataset.id);
+    g.onmouseleave = () => mxHighlight(null);
+    g.onclick = e => { e.stopPropagation(); pickFilm(g.dataset.id); };
+  });
+}
+
+// The card that follows the pointer: poster, title, kind, and the match to the picked film
+function showCard(i) {
+  const card = $('#mx-card');
+  if (i == null) {
+    if (mx.hover == null) return;
+    card.classList.add('hidden'); mx.hover = null; mx.circles?.forEach(c => c.classList.remove('hov'));
+    return mxHighlight(null);
+  }
+  if (mx.hover === i && !card.classList.contains('hidden')) return;
+  mx.circles?.forEach(c => c.classList.remove('hov'));
+  mx.hover = i; mx.circles[i].classList.add('hov');
+  const p = mx.pts[i], rel = mx.films.find(f => f.ItemId === p.Id);
+  card.innerHTML = `${mxImg(p.Id)}<div><b>${esc(p.Title)}</b><div class="sub">${[p.Year, p.Group].filter(Boolean).map(esc).join(' · ')}</div>`
+    + (rel ? `<span class="pct">${rel.Score}% match</span>` : p.Id === mx.pick ? '<span class="pct">picked</span>' : '') + '</div>';
+  card.classList.remove('hidden');
+  // a film linked to the picked one: light up its line and its row in the list
+  mxHighlight(rel ? p.Id : null);
+}
+function placeCard() {
+  if (mx.hover == null) return;
+  const card = $('#mx-card'), { w, h } = mxSize();
+  const [x, y] = toScreen(mx.pts[mx.hover]);
+  const cw = card.offsetWidth || 270, ch = card.offsetHeight || 100;
+  let left = x + 16, top = y - ch / 2;
+  if (left + cw > w - 10) left = x - cw - 16;
+  top = Math.max(10, Math.min(h - ch - 10, top));
+  card.style.left = left + 'px'; card.style.top = top + 'px';
+}
+
+function mxHighlight(id) {
+  mx.hl = id;
+  $$('#matrix-pick .mx-row').forEach(r => r.classList.toggle('hl', r.dataset.pick === id));
+  drawMx();
+}
+
+function wireMatrix() {
+  if (mx.wired) return; mx.wired = true;
+  const stage = $('#mx'), svg = $('#mx-svg');
+  const local = e => { const b = stage.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    const [x, y] = local(e);
+    zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0016)), x, y);
+  }, { passive: false });
+  const pointers = new Map();
+  let last = null, pinch = null, downOn = null;
+  svg.addEventListener('pointerdown', e => {
+    // the dot pressed on; once the pointer is captured, later events point at the svg
+    downOn = e.target.dataset?.i ?? null;
+    svg.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, local(e));
+    mx.moved = false; last = local(e);
+    if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) }; }
+    cancelAnimationFrame(mx.anim);
+  });
+  svg.addEventListener('pointermove', e => {
+    const pos = local(e);
+    if (!pointers.has(e.pointerId)) {
+      const i = e.target.dataset?.i; showCard(i != null ? Number(i) : null); return;
+    }
+    pointers.set(e.pointerId, pos);
+    if (pointers.size === 2 && pinch) {
+      const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      zoomAt(d / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2); pinch.d = d; mx.moved = true; return;
+    }
+    const dx = pos[0] - last[0], dy = pos[1] - last[1];
+    if (Math.abs(dx) + Math.abs(dy) > 3 || mx.moved) {
+      if (!mx.moved) { stage.classList.add('grabbing'); showCard(null); }
+      mx.moved = true;
+      mx.cam = { ...mx.cam, tx: mx.cam.tx + dx, ty: mx.cam.ty + dy }; last = pos; drawMx();
+    }
+  });
+  const up = e => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    stage.classList.remove('grabbing');
+    if (!mx.moved && pointers.size === 0 && downOn != null) pickFilm(mx.pts[Number(downOn)].Id);
+    if (pointers.size === 0) downOn = null;
+  };
+  svg.addEventListener('pointerup', up);
+  svg.addEventListener('pointercancel', up);
+  svg.addEventListener('pointerleave', () => { if (!pointers.size) showCard(null); });
+  svg.addEventListener('dblclick', e => { const [x, y] = local(e); zoomAt(2.2, x, y, true); });
+  $$('.mx-zoom button').forEach(b => b.onclick = () => {
+    const { w, h } = mxSize();
+    if (b.dataset.z === 'fit') fitMatrix(); else zoomAt(b.dataset.z === 'in' ? 1.8 : 1 / 1.8, w / 2, h / 2, true);
+  });
+  $('#matrix-legend').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const g = Number(b.dataset.g);
+    mx.focus = mx.focus === g ? null : g;
+    if (mx.focus == null) delete stage.dataset.focus; else stage.dataset.focus = g;
+    mx.circles.forEach(c => c.classList.toggle('in-focus', mx.focus != null && c.classList.contains('g' + mx.focus)));
+    $$('#matrix-legend button').forEach(x => x.classList.toggle('off', mx.focus != null && Number(x.dataset.g) !== mx.focus));
+    drawMx();
+  });
   $('#matrix-find').onchange = e => {
     const v = e.target.value.trim().toLowerCase();
-    if (!v) return;
-    const hit = matrix.All.find(f => `${f.Title}${f.Year ? ` (${f.Year})` : ''}`.toLowerCase() === v) || matrix.All.find(f => f.Title.toLowerCase() === v)
-      || matrix.All.find(f => f.Title.toLowerCase().includes(v));
-    if (hit) { e.target.value = ''; pickFilm(hit.Id); }
+    if (!v || !mx.data) return;
+    const all = mx.data.All;
+    const hit = all.find(f => mxTitle(f).toLowerCase() === v) || all.find(f => f.Title.toLowerCase() === v) || all.find(f => f.Title.toLowerCase().includes(v));
+    if (hit) { e.target.value = ''; e.target.blur(); pickFilm(hit.Id); }
   };
-  drawMap();
-  if (matrixPick) pickFilm(matrixPick);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && mx.pick && $('#drawer').classList.contains('hidden') && document.body.classList.contains('wide')) closePick(); });
+  new ResizeObserver(() => { if (mx.pts.length) drawMx(); }).observe(stage);
 }
-function drawMap(pick) {
-  const svg = $('#matrix-svg'), pts = matrix?.Points || [];
-  if (!pts.length) {
-    svg.innerHTML = `<text x="300" y="300" text-anchor="middle" fill="currentColor" style="font-size:15px;opacity:.6">${matrix?.On ? 'No film is matched by meaning yet' : 'Matching by meaning is off'}</text>`;
-    $('#matrix-legend').innerHTML = ''; return;
-  }
-  const xs = pts.map(p => p.X), ys = pts.map(p => p.Y);
-  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  const sx = x => 16 + (x - x0) / ((x1 - x0) || 1) * 568, sy = y => 584 - (y - y0) / ((y1 - y0) || 1) * 568;
-  const counts = {}; pts.forEach(p => { if (p.Group) counts[p.Group] = (counts[p.Group] || 0) + 1; });
-  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, groupColors.length).map(([g]) => g);
-  const color = g => top.includes(g) ? groupColors[top.indexOf(g)] : 'var(--faint)';
-  const at = Object.fromEntries(pts.map(p => [p.Id, p]));
-  const near = new Set(pick?.related || []);
-  const lines = pick && at[pick.id] ? pick.related.filter(id => at[id]).map(id => `<line x1="${sx(at[pick.id].X)}" y1="${sy(at[pick.id].Y)}" x2="${sx(at[id].X)}" y2="${sy(at[id].Y)}"/>`).join('') : '';
-  const dot = p => {
-    const chosen = pick?.id === p.Id, close = near.has(p.Id);
-    const dim = pick && !chosen && !close ? ' opacity=".35"' : '';
-    return `<circle cx="${sx(p.X).toFixed(1)}" cy="${sy(p.Y).toFixed(1)}" r="${chosen ? 7 : close ? 5 : 3.2}" fill="${color(p.Group)}"${chosen || close ? ' stroke="var(--text)" stroke-width="1.5"' : ''}${dim} data-id="${p.Id}"><title>${esc(p.Title)}${p.Year ? ` (${p.Year})` : ''}${p.Group ? ' · ' + esc(p.Group) : ''}</title></circle>`;
-  };
-  // the picked film and its closest go on top
-  const order = [...pts.filter(p => p.Id !== pick?.id && !near.has(p.Id)), ...pts.filter(p => near.has(p.Id)), ...pts.filter(p => p.Id === pick?.id)];
-  svg.innerHTML = lines + order.map(dot).join('');
-  svg.querySelectorAll('circle').forEach(c => c.onclick = () => pickFilm(c.dataset.id));
-  $('#matrix-legend').innerHTML = top.map((g, i) => `<span style="--c:${groupColors[i]}">${esc(g)}</span>`).join('') + (Object.keys(counts).length > top.length ? '<span style="--c:var(--faint)">other</span>' : '');
+
+function closePick() {
+  mx.pick = null; mx.films = []; mx.hl = null;
+  $('#matrix-pick').classList.add('hidden');
+  $('#mx').classList.remove('picked', 'with-panel');
+  mx.circles?.forEach(c => c.classList.remove('me', 'near'));
+  fitMatrix();
 }
-async function pickFilm(id) {
-  matrixPick = id;
-  const film = matrix?.All.find(f => f.Id === id);
+
+async function pickFilm(id, move = true) {
+  mx.pick = id; mx.hl = null;
+  const film = mx.data?.All.find(f => f.Id === id) || mx.at[id] || {};
+  const point = mx.at[id];
   const box = $('#matrix-pick');
-  box.innerHTML = '<p class="note">Loading…</p>';
-  let r; try { r = await call('GET', `/api/movies/${id}/related`); } catch { box.innerHTML = '<p class="note">Couldn\'t load its closest films.</p>'; return; }
-  const links = f => [f.Series ? 'same series' : '', f.Crowd ? 'TMDB viewers liked both' : ''].filter(Boolean).join(', ');
-  box.innerHTML = `<div class="inline" style="align-items:center;justify-content:space-between"><h3>${esc(film?.Title || '')}${film?.Year ? ` <span class="note">${film.Year}</span>` : ''}</h3><button type="button" class="btn quiet" id="matrix-open">Open film</button></div>
-    ${r.Meaning ? '' : '<p class="note">This film isn\'t matched by meaning yet, so it\'s compared by tags only.</p>'}
-    ${r.Films.length ? `<table class="list"><thead><tr><th>Closest films</th><th title="Tags and meaning together, as set on Tuning">Match</th><th title="How close in meaning, 100 = closest in the library">Meaning</th><th title="How many tags they share">Tags</th></tr></thead><tbody>
-      ${r.Films.map(f => `<tr><td><a data-pick="${f.ItemId}">${esc(f.Title)}</a> <span class="y">${f.ReleaseYear || ''}</span>${links(f) ? `<div class="note">${links(f)}</div>` : ''}</td><td>${f.Score}</td><td>${f.Meaning ?? '–'}</td><td>${f.Tags}</td></tr>`).join('')}
-      </tbody></table><p class="note">Click a film to see its own closest films.</p>` : '<p class="note">None yet: the film needs its tags first.</p>'}`;
-  box.querySelectorAll('[data-pick]').forEach(a => a.onclick = () => pickFilm(a.dataset.pick));
+  box.classList.remove('hidden');
+  box.classList.add('glass');
+  $('#mx').classList.add('with-panel');
+  box.innerHTML = `<div class="mx-head">${mxImg(id)}<div style="min-width:0"><h3>${esc(film.Title || '')}</h3><div class="sub">${[film.Year, point?.Group].filter(Boolean).map(esc).join(' · ')}</div>
+    <button type="button" class="btn quiet" id="matrix-open">Open film</button></div><button type="button" class="x" id="matrix-close" title="Close">×</button></div>
+    <div class="mx-list"><p class="note" style="padding:8px">Loading…</p></div>`;
   $('#matrix-open').onclick = () => openMovie(id);
-  drawMap({ id, related: r.Films.map(f => f.ItemId) });
+  $('#matrix-close').onclick = closePick;
+  let r;
+  try { r = await call('GET', `/api/movies/${id}/related`); } catch { $('.mx-list', box).innerHTML = '<p class="note" style="padding:8px">Couldn\'t load its closest films.</p>'; return; }
+  if (mx.pick !== id) return;
+  mx.films = r.Films;
+  const near = new Set(r.Films.map(f => f.ItemId));
+  mx.circles?.forEach((c, i) => { const pid = mx.pts[i].Id; c.classList.toggle('me', pid === id); c.classList.toggle('near', near.has(pid)); });
+  $('#mx').classList.toggle('picked', !!point);
+  // the picked film and its closest films are drawn last, so they sit on top (mx.circles keeps the original order)
+  mx.circles?.filter(c => c.classList.contains('near') || c.classList.contains('me')).forEach(c => c.parentNode.appendChild(c));
+  const why = f => [f.Series ? '<span class="mx-tag">same series</span>' : '', f.Crowd ? '<span class="mx-tag">TMDB viewers liked both</span>' : ''].join('')
+    + `meaning ${f.Meaning ?? '–'} · tags ${f.Tags}`;
+  $('.mx-list', box).innerHTML = (r.Meaning ? '' : '<p class="note" style="padding:4px 8px">Not matched by meaning yet, so compared by tags only.</p>')
+    + (r.Films.length ? r.Films.map((f, i) => `<div class="mx-row" data-pick="${f.ItemId}"><span class="n">${i + 1}</span><span class="t">${esc(f.Title)}<span>${f.ReleaseYear || ''}</span></span><span class="p">${f.Score}%</span>
+        <span class="bar"><i style="width:${Math.max(2, f.Score)}%"></i></span><span class="why">${why(f)}</span></div>`).join('')
+      : '<p class="note" style="padding:8px">None yet: the film needs its tags first.</p>');
+  $$('.mx-row', box).forEach(row => {
+    row.onclick = () => pickFilm(row.dataset.pick);
+    row.onmouseenter = () => mxHighlight(row.dataset.pick);
+    row.onmouseleave = () => mxHighlight(null);
+  });
+  if (move && point) focusPick(); else drawMx();
+}
+// Fly to the picked film and its closest films, beside the panel
+function focusPick() {
+  const ids = [mx.pick, ...mx.films.map(f => f.ItemId)].filter(id => mx.at[id]);
+  const xs = ids.map(id => mx.at[id].wx), ys = ids.map(id => mx.at[id].wy);
+  const { w, h } = mxSize();
+  const room = mxPanelOpen() ? w - 390 : w;
+  const bw = Math.max(60, Math.max(...xs) - Math.min(...xs)), bh = Math.max(60, Math.max(...ys) - Math.min(...ys));
+  const k = Math.max(mx.fitK, Math.min(mx.fitK * 14, Math.min(room * 0.7 / bw, h * 0.62 / bh)));
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+  setCam({ k, tx: room / 2 - cx * k, ty: h / 2 - cy * k });
 }
 
 // The films closest to this one: tags and meaning together, with what links them
