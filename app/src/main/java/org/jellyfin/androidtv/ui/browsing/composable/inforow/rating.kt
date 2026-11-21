@@ -78,8 +78,12 @@ fun PickyfinInfoRowScores(item: BaseItemDto) {
 	val found = ratings[item.id]
 
 	found?.letterboxd?.let { rating ->
-		InfoRowItem(contentDescription = stringResource(R.string.pickyfin_letterboxd_rating)) {
-			Text(stringResource(R.string.pickyfin_letterboxd_value, String.format("%.1f", rating)))
+		InfoRowItem(
+			icon = ImageVector.vectorResource(R.drawable.ic_letterboxd),
+			iconTint = Color.Unspecified,
+			contentDescription = stringResource(R.string.pickyfin_letterboxd_rating),
+		) {
+			Text(String.format("%.1f", rating))
 		}
 	}
 	if (item.criticRating == null) found?.rottenTomatoes?.let { InfoRowCriticRating(it / 100f) }
