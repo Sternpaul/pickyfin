@@ -198,7 +198,33 @@ public sealed class Meaning
         lock (Resting) return Resting.TryGetValue(model, out var r) && r.Until > DateTime.UtcNow ? r.Why : null;
     }
 
-    private enum Outcome { Done, Gone, Paused }
+    private enum Outcome { Done, Gone, Paused, Refused }
+
+    /// <summary>
+    /// Texts a model refused on their own (HTTP 400), per model and text hash: skipped until
+    /// their description changes or the server restarts, so one odd text can't block the rest.
+    /// </summary>
+    private static readonly Dictionary<string, HashSet<string>> RefusedTexts = new();
+    public static int RefusedCount(string model)
+    {
+        lock (RefusedTexts) return RefusedTexts.TryGetValue(model, out var set) ? set.Count : 0;
+    }
+    private static bool IsRefused(string model, string hash)
+    {
+        lock (RefusedTexts) return RefusedTexts.TryGetValue(model, out var set) && set.Contains(hash);
+    }
+
+    /// <summary>
+    /// What is sent: the document without web addresses (some servers read a link to a picture
+    /// as an image to fetch, and links carry no meaning anyway), cut shorter for models with a
+    /// small window. The hash stays on the full document, so this doesn't match films again.
+    /// </summary>
+    public static string Sendable(string text, int maxChars = MaxChars)
+    {
+        var clean = System.Text.RegularExpressions.Regex.Replace(text, @"(https?://|www\.)\S+|data:\S+", "");
+        clean = System.Text.RegularExpressions.Regex.Replace(clean, @"[ \t]{2,}", " ").Trim();
+        return clean.Length > maxChars ? clean[..maxChars] : clean;
+    }
 
     /// <summary>Per model, what it still has to embed: descriptions first, then films it never had, then changed ones.</summary>
     private async Task<Dictionary<string, List<(Guid Id, string Kind, string Text, string Hash)>>> TodoAsync(ServerSettings s, List<string> models, CancellationToken cancellationToken)
@@ -215,7 +241,7 @@ public sealed class Meaning
             .Select(x => (x.Id, x.Kind, Text: x.Text!)).ToList();
         return models.ToDictionary(model => model, model => briefs.Concat(films)
             .Select(x => (x.Id, x.Kind, x.Text, Hash: Hash(model, x.Text)))
-            .Where(x => !stored.TryGetValue((x.Id, model), out var h) || h != x.Hash)
+            .Where(x => (!stored.TryGetValue((x.Id, model), out var h) || h != x.Hash) && !IsRefused(model, x.Hash))
             .OrderBy(x => x.Kind == "brief" ? 0 : stored.ContainsKey((x.Id, model)) ? 2 : 1)
             .ToList());
     }
@@ -227,16 +253,34 @@ public sealed class Meaning
         foreach (var chunk in round.Chunk(PerRequest))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var (vectors, outcome) = await EmbedWithTriesAsync(s, model, chunk.Select(c => c.Text).ToList(), cancellationToken);
+            var (vectors, outcome, error) = await EmbedWithTriesAsync(s, model, chunk.Select(c => Sendable(c.Text)).ToList(), cancellationToken);
             if (outcome == Outcome.Gone) return (done, Outcome.Gone);
+            var items = chunk.ToList();
+            if (outcome == Outcome.Refused)
+            {
+                // One text may be the problem: send them one by one, keep what works, set the rest aside
+                var (kept, keptVectors, refused) = await OneByOneAsync(s, model, items, cancellationToken);
+                if (kept.Count == 0)
+                {
+                    var until = DateTime.UtcNow.AddHours(6);
+                    lock (Resting) Resting[model] = (until, $"refuses every request ({error}); tried again at {until.ToLocalTime():HH:mm}");
+                    _logger.LogWarning("Meaning: {Model} refuses every text, even one at a time ({Error}); the other models carry on, it's tried again in 6 hours", model, error);
+                    return (done, Outcome.Paused);
+                }
+                if (refused.Count > 0)
+                    _logger.LogWarning("Meaning: {Model} refused {Count} text(s) ({Error}), set aside: {Which}", model, refused.Count, error,
+                        string.Join("; ", refused.Select(t => t.Text.Split('\n')[0]).Select(t => t.Length > 60 ? t[..60] + "…" : t)));
+                items = kept;
+                vectors = keptVectors;
+            }
             if (vectors is null) return (done, Outcome.Paused);
             await using (var db = _database.Open())
             {
-                var ids = chunk.Select(c => c.Id).ToList();
+                var ids = items.Select(c => c.Id).ToList();
                 var rows = await db.Embeddings.Where(e => e.Model == model && ids.Contains(e.ItemId)).ToDictionaryAsync(e => e.ItemId, cancellationToken);
-                for (var i = 0; i < chunk.Length; i++)
+                for (var i = 0; i < items.Count; i++)
                 {
-                    var (id, kind, _, hash) = chunk[i];
+                    var (id, kind, _, hash) = items[i];
                     if (!rows.TryGetValue(id, out var row)) db.Embeddings.Add(row = new Embedding { ItemId = id, Model = model });
                     row.Kind = kind;
                     row.Hash = hash;
@@ -245,47 +289,80 @@ public sealed class Meaning
                 }
                 await db.SaveChangesAsync(cancellationToken);
             }
-            done += chunk.Length;
+            done += items.Count;
             Interlocked.Increment(ref _version);
         }
         if (done > 0) _logger.LogInformation("Meaning: {Done} embedded with {Model}, {Left} to go", done, model, todo.Count - done);
         return (done, Outcome.Done);
     }
 
+    /// <summary>After a refused batch: each text alone, and a shorter version of any the model still refuses.</summary>
+    private async Task<(List<(Guid Id, string Kind, string Text, string Hash)> Kept, List<float[]> Vectors, List<(Guid Id, string Kind, string Text, string Hash)> Refused)> OneByOneAsync(
+        ServerSettings s, string model, List<(Guid Id, string Kind, string Text, string Hash)> items, CancellationToken cancellationToken)
+    {
+        var kept = new List<(Guid Id, string Kind, string Text, string Hash)>();
+        var vectors = new List<float[]>();
+        var refused = new List<(Guid Id, string Kind, string Text, string Hash)>();
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            float[]? vector = null;
+            // full text, then a shorter one (the model's window may be small)
+            foreach (var limit in new[] { MaxChars, 2000 })
+            {
+                using (Activity.Begin($"Matching by meaning: {model}, one text at a time"))
+                {
+                    var one = await EmbedAsync(s, model, new List<string> { Sendable(item.Text, limit) }, cancellationToken);
+                    if (one.Vectors is { Count: 1 }) { vector = one.Vectors[0]; break; }
+                    if (one.Code is not 400) break; // busy or down: leave it for the next round
+                }
+            }
+            if (vector is not null) { kept.Add(item); vectors.Add(vector); }
+            else
+            {
+                refused.Add(item);
+                lock (RefusedTexts)
+                {
+                    if (!RefusedTexts.TryGetValue(model, out var set)) RefusedTexts[model] = set = new();
+                    set.Add(item.Hash);
+                }
+            }
+        }
+        // nothing worked at all: don't set the texts aside, the model itself is the problem
+        if (kept.Count == 0)
+            lock (RefusedTexts)
+                if (RefusedTexts.TryGetValue(model, out var set)) foreach (var t in refused) set.Remove(t.Hash);
+        return (kept, vectors, refused);
+    }
+
     public static string Short(string model) => model.Contains('/') ? model[(model.IndexOf('/') + 1)..].Replace(":free", "") : model;
 
     /// <summary>Three tries on the same model when it's busy or slow; a model that's gone hands over to the next.</summary>
-    private async Task<(List<float[]>? Vectors, Outcome Outcome)> EmbedWithTriesAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
+    private async Task<(List<float[]>? Vectors, Outcome Outcome, string? Error)> EmbedWithTriesAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
             (List<float[]>? Vectors, int Code, string? Error) result;
             using (Activity.Begin($"Matching by meaning: waiting for {model}" + (attempt > 1 ? $" (try {attempt} of 3)" : "")))
                 result = await EmbedAsync(s, model, texts, cancellationToken);
-            if (result.Vectors is not null) { OpenRouterModels.Record(model, null); return (result.Vectors, Outcome.Done); }
+            if (result.Vectors is not null) { OpenRouterModels.Record(model, null); return (result.Vectors, Outcome.Done, null); }
             OpenRouterModels.Record(model, result.Error);
             OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
             if (result.Code is 404 || (result.Code is 400 && (result.Error ?? "").Contains("model", StringComparison.OrdinalIgnoreCase)))
-                return (null, Outcome.Gone);
-            // Any other 400: the model refuses this kind of request; trying again soon won't help
-            if (result.Code is 400)
-            {
-                var until = DateTime.UtcNow.AddHours(6);
-                lock (Resting) Resting[model] = (until, $"refuses the requests ({result.Error}); tried again at {until.ToLocalTime():HH:mm}");
-                _logger.LogWarning("Meaning: {Model} refuses the requests ({Error}); the other models carry on, it's tried again in 6 hours", model, result.Error);
-                return (null, Outcome.Paused);
-            }
+                return (null, Outcome.Gone, result.Error);
+            // Any other 400: something in this request is refused; trying the same again won't help
+            if (result.Code is 400) return (null, Outcome.Refused, result.Error);
             if (result.Code is 401 or 402 or 403)
             {
                 Pause(TimeSpan.FromHours(1), $"Paused: OpenRouter answered HTTP {result.Code}", $"Meaning: {result.Error}");
-                return (null, Outcome.Paused);
+                return (null, Outcome.Paused, result.Error);
             }
             if (attempt >= 3)
             {
                 // skipped this round only; the other models carry on, and it's asked again next round
                 lock (Resting) Resting[model] = (DateTime.UtcNow.AddMinutes(4), result.Code is 429 or 503 ? "busy at OpenRouter" : "didn't answer");
                 _logger.LogWarning("Meaning: {Model} failed 3 times ({Error}); the other models carry on", model, result.Error);
-                return (null, Outcome.Paused);
+                return (null, Outcome.Paused, result.Error);
             }
             await Task.Delay(TimeSpan.FromSeconds(attempt == 1 ? 10 : 30), cancellationToken);
         }

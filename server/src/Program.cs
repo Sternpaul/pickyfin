@@ -182,7 +182,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
             var films = byModel.FirstOrDefault(b => string.Equals(b.Model, m, StringComparison.OrdinalIgnoreCase))?.Films ?? 0;
             var state = OpenRouterModels.IsGone(m) ? "gone from OpenRouter" : !order.Contains(m, StringComparer.OrdinalIgnoreCase) ? "not in the order, not used"
                 : Meaning.RestingWhy(m) is { } why ? (why.Contains("tried again") ? why : $"{why}, tried again next round") : Meaning.Left.TryGetValue(m, out var left) && left > 0 ? $"{left:N0} to match" : "up to date";
-            return $"  {Meaning.Short(m)}: {films:N0} film{(films == 1 ? "" : "s")} · {state}";
+            var refused = Meaning.RefusedCount(m);
+            return $"  {Meaning.Short(m)}: {films:N0} film{(films == 1 ? "" : "s")} · {state}" + (refused > 0 ? $" · {refused} text{(refused == 1 ? "" : "s")} it refused, set aside (see the log)" : "");
         })));
         var failed = OpenRouterModels.StepFailures.Where(f => f.Key.StartsWith("meaning|")).OrderByDescending(f => f.Value).ToList();
         if (failed.Count > 0) lines.Add("Failed since the server started:\n" + string.Join("\n", failed.Take(6).Select(f => $"  {f.Key[8..]}: {f.Value}×")));
