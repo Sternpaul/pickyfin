@@ -181,7 +181,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         {
             var films = byModel.FirstOrDefault(b => string.Equals(b.Model, m, StringComparison.OrdinalIgnoreCase))?.Films ?? 0;
             var state = OpenRouterModels.IsGone(m) ? "gone from OpenRouter" : !order.Contains(m, StringComparer.OrdinalIgnoreCase) ? "not in the order, not used"
-                : Meaning.RestingWhy(m) is { } why ? $"{why}, tried again next round" : Meaning.Left.TryGetValue(m, out var left) && left > 0 ? $"{left:N0} to go" : "up to date";
+                : Meaning.RestingWhy(m) is { } why ? (why.Contains("tried again") ? why : $"{why}, tried again next round") : Meaning.Left.TryGetValue(m, out var left) && left > 0 ? $"{left:N0} to match" : "up to date";
             return $"  {Meaning.Short(m)}: {films:N0} film{(films == 1 ? "" : "s")} · {state}";
         })));
         var failed = OpenRouterModels.StepFailures.Where(f => f.Key.StartsWith("meaning|")).OrderByDescending(f => f.Value).ToList();
@@ -221,15 +221,40 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     }
 
     // One row per job, in the order a round runs them
-    object Row(string key, string title, bool on, string off, int? done = null, int? of = null, int queued = 0, string? tip = null)
+    // rest: what the films not done are, when the step has done all it can (e.g. "not found on TMDB")
+    object Row(string key, string title, bool on, string off, int? done = null, int? of = null, int queued = 0, string? tip = null, string? rest = null)
     {
         var j = Jobs.Get(key);
         var state = !on ? "off" : j is { Running: true } ? "running" : j is { Error: true } ? "paused"
             : queued > 0 || (of is { } o && done < o) ? "waiting" : "idle";
+        var text = !on ? off : j?.Now ?? "";
+        // Instead of a bare "Waiting": say why the films not done yet aren't done
+        string? badge = null;
+        if (state == "waiting")
+        {
+            var left = queued > 0 ? queued : (of ?? 0) - (done ?? 0);
+            if (text.StartsWith("Today's", StringComparison.Ordinal))
+            {
+                badge = "Today's done";
+                text += $" · {left:N0} left for the next days";
+            }
+            else if (rest is not null && !text.Contains("to go") && !text.Contains("to match"))
+            {
+                state = "idle";
+                badge = "Done";
+                text = rest;
+            }
+            else
+            {
+                badge = "Next round";
+                // a round stops when the library sync fails, so the steps after it wait for that
+                if (text.Length == 0) text = Jobs.Get("library") is { Error: true } ? "Waits until the library sync works again" : "Starts in the next round";
+            }
+        }
         return new
         {
-            Key = key, Title = title, State = state,
-            Text = !on ? off : j?.Now ?? "",
+            Key = key, Title = title, State = state, Badge = badge,
+            Text = text,
             Next = on && state != "running" ? j?.Next : null,
             RunningFor = j is { Running: true } ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0,
             Done = done, Of = of, Queued = queued, Tip = tip, At = j?.Since,
@@ -249,8 +274,10 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
         Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total),
         Row(LetterboxdRatings.Key, LetterboxdRatings.Title, s.LetterboxdOn, "Off", LetterboxdRatings.Last is { Reached: true } ? lbRated : null, LetterboxdRatings.Last is { Reached: true } ? total : null,
-            tip: $"From letterboxd-collector at {LetterboxdRatings.Address(s)}" + (LetterboxdRatings.Last is { } lbLast ? $"\n{lbLast.Message}" + (lbLast.WithRating is { } wr ? $"; it has ratings for {wr:N0} films" : "") : "")),
-        Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total),
+            tip: $"From letterboxd-collector at {LetterboxdRatings.Address(s)}" + (LetterboxdRatings.Last is { } lbLast ? $"\n{lbLast.Message}" + (lbLast.WithRating is { } wr ? $"; it has ratings for {wr:N0} films" : "") : ""),
+            rest: $"Up to date · {total - lbRated:N0} film{(total - lbRated == 1 ? " has" : "s have")} no Letterboxd rating in the collector (yet)"),
+        Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total,
+            rest: $"Up to date · {total - detailed:N0} film{(total - detailed == 1 ? "" : "s")} without a TMDB or IMDb id in Jellyfin"),
         Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip),
     };
 

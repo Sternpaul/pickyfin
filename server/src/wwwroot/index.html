@@ -2294,7 +2294,7 @@ async function loadStatus() {
         : q.State === 'paused' && q.Next ? `retry ${clock(q.Next)}`
         : q.Next && q.State !== 'off' ? `next ${clock(q.Next)} (${inMin(q.Next)})` : '';
       return `<div class="q-row ${q.State}"${q.Tip ? ` title="${esc(q.Tip)}"` : ''}><span class="dot ${q.State === 'paused' ? 'err' : q.State === 'running' ? 'busy' : q.State === 'off' ? '' : 'ok'}"></span>
-        <b${q.Tip ? ' style="cursor:help;text-decoration:underline dotted var(--faint);text-underline-offset:3px"' : ''}>${esc(q.Title)}</b>${count}<span class="badge ${q.State}">${label[q.State] || (q.Of != null ? 'Done' : 'Idle')}</span>
+        <b${q.Tip ? ' style="cursor:help;text-decoration:underline dotted var(--faint);text-underline-offset:3px"' : ''}>${esc(q.Title)}</b>${count}<span class="badge ${q.State}">${esc(q.Badge || label[q.State] || (q.Of != null ? 'Done' : 'Idle'))}</span>
         <span class="text">${esc(text)}</span><span class="when">${when}</span></div>`;
     }).join('');
     // Log times come in UTC; show them in this browser's time zone

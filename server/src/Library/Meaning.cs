@@ -166,7 +166,7 @@ public sealed class Meaning
             lock (Resting)
                 if (Resting.TryGetValue(model, out var rest) && rest.Until > DateTime.UtcNow) continue;
             ActiveModel = model;
-            Jobs.Running(Key, Title, $"{Short(model)}: {todo[model].Count:N0} to go");
+            Jobs.Running(Key, Title, $"{Short(model)}: {todo[model].Count:N0} to match");
             var (count, outcome) = await RunWithAsync(s, model, todo[model], cancellationToken);
             done += count;
             Left[model] = todo[model].Count - count;
@@ -183,7 +183,7 @@ public sealed class Meaning
         var left = Left.Values.Sum();
         var working = models.Count(m => !OpenRouterModels.IsGone(m) && !IsResting(m));
         Jobs.Idle(Key, Title,
-            left > 0 ? $"{left:N0} to go · {working} of {models.Count} models working" : $"Up to date · {models.Count} models",
+            left > 0 ? $"{left:N0} to match (new films, or descriptions that changed) · {working} of {models.Count} models working right now" : $"Up to date · {models.Count} models",
             left > 0 ? DateTime.UtcNow.AddMinutes(5) : null, error: working == 0);
     }
 
@@ -267,6 +267,14 @@ public sealed class Meaning
             OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
             if (result.Code is 404 || (result.Code is 400 && (result.Error ?? "").Contains("model", StringComparison.OrdinalIgnoreCase)))
                 return (null, Outcome.Gone);
+            // Any other 400: the model refuses this kind of request; trying again soon won't help
+            if (result.Code is 400)
+            {
+                var until = DateTime.UtcNow.AddHours(6);
+                lock (Resting) Resting[model] = (until, $"refuses the requests ({result.Error}); tried again at {until.ToLocalTime():HH:mm}");
+                _logger.LogWarning("Meaning: {Model} refuses the requests ({Error}); the other models carry on, it's tried again in 6 hours", model, result.Error);
+                return (null, Outcome.Paused);
+            }
             if (result.Code is 401 or 402 or 403)
             {
                 Pause(TimeSpan.FromHours(1), $"Paused: OpenRouter answered HTTP {result.Code}", $"Meaning: {result.Error}");
@@ -275,7 +283,7 @@ public sealed class Meaning
             if (attempt >= 3)
             {
                 // skipped this round only; the other models carry on, and it's asked again next round
-                lock (Resting) Resting[model] = (DateTime.UtcNow.AddMinutes(4), result.Code == 429 ? "busy" : "didn't answer");
+                lock (Resting) Resting[model] = (DateTime.UtcNow.AddMinutes(4), result.Code is 429 or 503 ? "busy at OpenRouter" : "didn't answer");
                 _logger.LogWarning("Meaning: {Model} failed 3 times ({Error}); the other models carry on", model, result.Error);
                 return (null, Outcome.Paused);
             }
@@ -300,7 +308,11 @@ public sealed class Meaning
             using var response = await client.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             var code = (int)response.StatusCode;
-            if (!response.IsSuccessStatusCode) return (null, code, $"HTTP {code}: {ErrorText(body) ?? "no details"}");
+            if (!response.IsSuccessStatusCode)
+            {
+                var why = System.Text.RegularExpressions.Regex.Replace(ErrorText(body) ?? "no details", @"^HTTP \d+:\s*", "");
+                return (null, code, $"HTTP {code}: {why}");
+            }
             var vectors = Parse(body, texts.Count);
             // OpenRouter sometimes answers 200 with an error inside
             if (vectors is null) return (null, ErrorCode(body) ?? 0, $"odd answer: {(body.Length > 200 ? body[..200] : body)}");
