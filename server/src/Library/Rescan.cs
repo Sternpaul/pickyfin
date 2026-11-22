@@ -108,7 +108,7 @@ public sealed class Rescan
         }
 
         var batch = due.Take(Math.Min(PerRound, perDay - doneToday)).ToList();
-        Jobs.Running(Key, Title, $"{batch.Count} films");
+        Jobs.Running(Key, Title, Titles.Count(batch));
         var before = batch.ToDictionary(m => m.ItemId, Tags);
 
         if (lookUp)
@@ -135,7 +135,7 @@ public sealed class Rescan
         var provider = _ai.GetProvider();
         try
         {
-            using (Activity.Begin($"Re-check: describing {batch.Count} films again: waiting for {provider.Name}"))
+            using (Activity.Begin($"Re-check: describing {Titles.Count(batch)} again: waiting for {provider.Name}"))
                 await _classifier.DescribeAgainAsync(provider, batch, cancellationToken);
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -146,8 +146,8 @@ public sealed class Rescan
         }
 
         var changed = batch.Where(m => before.TryGetValue(m.ItemId, out var was) && was != Tags(m)).Select(m => m.Title).ToList();
-        _logger.LogInformation("Re-check: {Count} films described again, {Changed} changed{Names}; {Left} to go in this pass",
-            batch.Count, changed.Count, changed.Count > 0 ? ": " + string.Join(", ", changed.Take(8)) + (changed.Count > 8 ? ", …" : "") : "", due.Count - batch.Count);
+        _logger.LogInformation("Re-check: {What} described again, {Changed} changed{Names}; {Left} to go in this pass",
+            Titles.Count(batch), changed.Count, changed.Count > 0 ? ": " + string.Join(", ", changed.Take(8)) + (changed.Count > 8 ? ", …" : "") : "", due.Count - batch.Count);
         Jobs.Idle(Key, Title, $"Last round changed {changed.Count} of {batch.Count}", DateTime.UtcNow.AddMinutes(5));
     }
 

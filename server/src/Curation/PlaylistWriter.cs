@@ -11,6 +11,9 @@ namespace Pickyfin.Server.Curation;
 /// Jellyfin lets an API key create playlists for any user but not edit them, so a
 /// changed row gets a new playlist, and the old one is deleted after the new one
 /// exists (no moment without a row). Unchanged rows are left alone.
+///
+/// Series rows are only kept here, not written to Jellyfin: a series added to a playlist turns
+/// into all its episodes. The admin page shows them; the TV app will read them from this server.
 /// </summary>
 public sealed class PlaylistWriter
 {
@@ -37,7 +40,7 @@ public sealed class PlaylistWriter
         // Rows that aren't needed any more (e.g. fewer "Because You Watched" rows)
         foreach (var stale in existing.Where(p => rows.All(r => r.Slot != p.Slot)))
         {
-            await _jellyfin.DeleteItemAsync(stale.PlaylistId, cancellationToken);
+            if (stale.PlaylistId != Guid.Empty) await _jellyfin.DeleteItemAsync(stale.PlaylistId, cancellationToken);
             db.Playlists.Remove(stale);
             await db.SaveChangesAsync(cancellationToken);
             written++;
@@ -60,7 +63,7 @@ public sealed class PlaylistWriter
         // Emptied: the row goes away until the next refresh fills it
         var current = existing.FirstOrDefault(p => p.Slot == row.Slot);
         if (current is null) return;
-        await _jellyfin.DeleteItemAsync(current.PlaylistId, cancellationToken);
+        if (current.PlaylistId != Guid.Empty) await _jellyfin.DeleteItemAsync(current.PlaylistId, cancellationToken);
         db.Playlists.Remove(current);
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -71,10 +74,11 @@ public sealed class PlaylistWriter
         var current = existing.FirstOrDefault(p => p.Slot == row.Slot);
         if (current is not null && current.Name == row.Name && current.Items == items) return false;
 
-        var playlistId = await _jellyfin.CreatePlaylistAsync(userId, row.Name, row.Items, cancellationToken);
+        // A series row is only kept (no playlist: Guid.Empty)
+        var playlistId = Curator.IsSeriesSlot(row.Slot) ? Guid.Empty : await _jellyfin.CreatePlaylistAsync(userId, row.Name, row.Items, cancellationToken);
         if (current is not null)
         {
-            await _jellyfin.DeleteItemAsync(current.PlaylistId, cancellationToken);
+            if (current.PlaylistId != Guid.Empty) await _jellyfin.DeleteItemAsync(current.PlaylistId, cancellationToken);
             current.PlaylistId = playlistId;
             current.Name = row.Name;
             current.Items = items;

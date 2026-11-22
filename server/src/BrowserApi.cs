@@ -16,7 +16,9 @@ public static class BrowserApi
 {
     public sealed record MovieEdit(
         List<string>? Subcategories, List<string>? Moods, List<string>? Themes,
-        string? NarrativeStyle, string? Accessibility, string? Intensity, int CriticalAcclaimScore);
+        string? NarrativeStyle, string? Accessibility, string? Intensity, int CriticalAcclaimScore,
+        // Series only
+        List<string>? SeriesKinds = null, string? Format = null);
 
     public sealed record LetterboxdSettings(bool Use, string? Username);
 
@@ -145,6 +147,7 @@ public static class BrowserApi
         m.Status,
         m.Network,
         m.Format,
+        SeriesKinds = Tags(m.SeriesKindSet),
         m.LastWatched,
     };
 
@@ -167,6 +170,8 @@ public static class BrowserApi
             ClassificationVocabulary.NarrativeStyles,
             ClassificationVocabulary.Accessibility,
             ClassificationVocabulary.Intensity,
+            ClassificationVocabulary.SeriesKinds,
+            ClassificationVocabulary.Formats,
         }));
 
         // ---------- movies ----------
@@ -318,6 +323,11 @@ public static class BrowserApi
             movie.Accessibility = ClassificationVocabulary.CanonicalAccessibility(edit.Accessibility);
             movie.Intensity = ClassificationVocabulary.CanonicalIntensity(edit.Intensity);
             movie.CriticalAcclaimScore = Math.Clamp(edit.CriticalAcclaimScore, 0, 10);
+            if (movie.IsSeries)
+            {
+                movie.SeriesKinds = Json(Canon(edit.SeriesKinds, ClassificationVocabulary.CanonicalSeriesKind));
+                movie.Format = ClassificationVocabulary.CanonicalFormat(edit.Format);
+            }
             movie.IsClassified = subcategories.Count > 0;
             movie.VocabularyVersion = ClassificationVocabulary.Version;
             movie.ManuallyEdited = true;
@@ -454,7 +464,7 @@ public static class BrowserApi
                     var open = (await store.GetAllTitlesAsync(ct))
                         .Where(m => m.Issue is not null && !ServerSettings.Current.IsLibraryExcluded(m.Libraries))
                         .OrderBy(m => m.IsSeries).ToList(); // films first
-                    log.LogInformation("Look up all: {Count} flagged movie(s), {Batch} per AI call", open.Count, MovieClassifier.BatchSize);
+                    log.LogInformation("Look up all: {What} flagged, {Batch} per AI call", Titles.Count(open), MovieClassifier.BatchSize);
                     lock (LookupGate) { _lookupWaiting = open.Select(m => m.ItemId).ToHashSet(); _lookupWorking = new(); _lookupDone = 0; _lookupTotal = open.Count; }
                     // Look up 20, then describe those 20 in one AI call: no flood of requests to the provider
                     var done = 0;
@@ -469,14 +479,14 @@ public static class BrowserApi
                             var batch = open.Skip(i).Take(size).ToList();
                             TaggingEta.BatchStarted(open.Count - i);
                             lock (LookupGate) { _lookupWorking = batch.Select(m => m.ItemId).ToHashSet(); _lookupWaiting.ExceptWith(_lookupWorking); }
-                            Activity.Background = $"Look up all: movies {i + 1}–{i + batch.Count} of {open.Count}";
-                            Jobs.Running("lookupall", "Look up all flagged films", $"Films {i + 1}–{i + batch.Count} of {open.Count}");
-                            log.LogInformation("Look up all: movies {Start}–{End} of {Total}", i + 1, i + batch.Count, open.Count);
+                            Activity.Background = $"Look up all: titles {i + 1}–{i + batch.Count} of {open.Count}";
+                            Jobs.Running("lookupall", "Look up all flagged titles", $"Titles {i + 1}–{i + batch.Count} of {open.Count} ({Titles.Count(batch)})");
+                            log.LogInformation("Look up all: titles {Start}–{End} of {Total}", i + 1, i + batch.Count, open.Count);
                             var before = done;
                             try { done += await classifier.LookUpAndTagManyAsync(provider, batch, ct); }
                             catch (Exception error) when (error is not OperationCanceledException)
                             {
-                                log.LogWarning("Look up all: movies {Start}–{End} failed: {Error}", i + 1, i + batch.Count, error.Message);
+                                log.LogWarning("Look up all: titles {Start}–{End} failed: {Error}", i + 1, i + batch.Count, error.Message);
                             }
                             lock (LookupGate) { _lookupWorking = new(); _lookupDone = i + batch.Count; }
                             if (done - before < batch.Count && web.Blocked() is null)
@@ -492,7 +502,7 @@ public static class BrowserApi
                     }
                     var left = (await store.GetAllTitlesAsync(ct)).Count(m => m.Issue is not null);
                     log.LogInformation("Look up all finished: {Done} looked up and described again; {Left} issue(s) left", done, left);
-                    Jobs.Idle("lookupall", "Look up all flagged films", "Done");
+                    Jobs.Idle("lookupall", "Look up all flagged titles", "Done");
                 }
                 catch (OperationCanceledException) { }
                 finally { Interlocked.Exchange(ref _lookupAllRunning, 0); }
@@ -528,8 +538,8 @@ public static class BrowserApi
                 playlists = await db.Playlists.AsNoTracking().Where(p => p.UserId == id).OrderBy(p => p.Slot).ToListAsync(ct);
             }
             if (user is null) return Results.NotFound();
-            var library = (await store.GetAllMoviesAsync(ct)).ToDictionary(m => m.ItemId);
-            string Name(Guid? itemId) => itemId is { } i && library.TryGetValue(i, out var m) ? $"{m.Title} ({m.ReleaseYear})" : "";
+            var library = (await store.GetAllTitlesAsync(ct)).ToDictionary(m => m.ItemId);
+            string Name(Guid? itemId) => itemId is { } i && library.TryGetValue(i, out var m) ? $"{m.Title} ({(m.IsSeries ? Ai.ClassificationPrompt.Aired(m) : m.ReleaseYear)})" : "";
 
             List<JellyfinItem> items;
             try { items = await jellyfin.GetMoviesAsync(id, withDetails: false, ct); }
@@ -598,6 +608,7 @@ public static class BrowserApi
                     {
                         p.Slot,
                         p.Name,
+                        Kind = Curator.IsSeriesSlot(p.Slot) ? MovieMetadata.SeriesKind : MovieMetadata.MovieKind,
                         Movies = Ids.Parse(p.Items).Select(g => new { Id = g, Title = Name(g), Added = added.Contains(g) }),
                     };
                 }),
@@ -610,7 +621,8 @@ public static class BrowserApi
         admin.MapPut("/users/{id:guid}/rows/{slot}", async (Guid id, string slot, RowEdit edit, Database database, MovieStore store, PlaylistWriter writer, CancellationToken ct) =>
         {
             if (!Curator.Slots.Contains(slot)) return Results.NotFound();
-            var library = (await store.GetAllMoviesAsync(ct)).ToDictionary(m => m.ItemId);
+            // A film row holds films, a series row series
+            var library = (await store.GetAllTitlesAsync(ct)).Where(m => m.IsSeries == Curator.IsSeriesSlot(slot)).ToDictionary(m => m.ItemId);
             var items = edit.Items.Where(library.ContainsKey).Distinct().ToList();
             var added = (edit.Added ?? new()).Where(items.Contains).ToList();
             string name;
@@ -619,7 +631,7 @@ public static class BrowserApi
                 var user = await db.Users.FindAsync(new object[] { id }, ct);
                 if (user is null) return Results.NotFound();
                 var playlist = await db.Playlists.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == id && p.Slot == slot, ct);
-                name = playlist?.Name ?? (slot == "recommended" ? Curator.RecommendedName : "");
+                name = playlist?.Name ?? (slot == "recommended" ? Curator.RecommendedName : slot == "series-recommended" ? Curator.SeriesRecommendedName : "");
                 if (name == "") return Results.Problem("This row doesn't exist right now.", statusCode: 409);
 
                 // Taken out = never recommended to this person again; added = stays in this row

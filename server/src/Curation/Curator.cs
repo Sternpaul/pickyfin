@@ -23,7 +23,9 @@ public sealed record CurationResult(List<PickRow> Rows, string Summary);
 ///    shortlist, reading the brief and the history
 /// 4. "Because You Watched …" rows for the two most recent counted watches, ranked
 ///    by similarity to that movie, nudged by the brief
-/// Series someone watched join the counted history as taste (see SeriesTaste); only films are picked.
+/// Series someone watched join the counted history as taste (see SeriesTaste).
+/// Series get the same steps in rows of their own ("Series for you", "Because You Watched" a
+/// series), from series they haven't started; films they watched count as taste there too.
 /// </summary>
 public sealed class Curator
 {
@@ -31,7 +33,10 @@ public sealed class Curator
     public const string BecausePrefix = "Because You Watched ";
     /// <summary>The TV app shows this playlist as its own row after the recommendations.</summary>
     public const string WatchlistName = "Letterboxd Watchlist";
-    public static readonly string[] Slots = { "recommended", "because-1", "because-2" };
+    public const string SeriesRecommendedName = "Series for you";
+    public static readonly string[] Slots = { "recommended", "because-1", "because-2", "series-recommended", "series-because-1", "series-because-2" };
+    /// <summary>Series rows: kept by this server, not written to Jellyfin as playlists.</summary>
+    public static bool IsSeriesSlot(string slot) => slot.StartsWith("series-", StringComparison.Ordinal);
 
     private readonly JellyfinClient _jellyfin;
     private readonly MovieStore _store;
@@ -120,8 +125,8 @@ public sealed class Curator
         candidates = candidates.Where(m => !pinnedIds.Contains(Identity(m))).ToList();
         List<Guid> Pins(string key) => pinned.GetValueOrDefault(key) ?? new();
 
-        if (candidates.Count == 0 && pinnedCount == 0)
-            return new CurationResult(new(), "Nothing left to recommend: this user has seen everything they can access.");
+        // Nothing left among the films: their rows stay empty, series still get theirs
+        var noFilmsLeft = candidates.Count == 0 && pinnedCount == 0;
 
         // What they were shown last time, so rows change between refreshes
         var shownBefore = await LastPicksAsync(user.UserId, cancellationToken);
@@ -136,10 +141,15 @@ public sealed class Curator
 
         // 2. Shortlist
         var recentHistory = history.Take(30).ToList();
-        // Series they watched: taste in films too (weighed by Tuning), never picked themselves
-        var seriesWatched = await SeriesWatchedAsync(user, cancellationToken);
+        // Series they watched (all of them, with whether each counts): taste in films (weighed by
+        // Tuning), and what series rows build on
+        var seriesData = await LoadSeriesAsync(user, cancellationToken);
+        var seriesAll = seriesData is { } sd ? SeriesTaste.Read(sd.Episodes, sd.Series, user.CountHistoryFrom, all: true) : new();
+        var seriesCounting = seriesAll.Where(w => w.Counts).ToList();
+        var seriesWatched = Settings.SeriesWeight > 0 ? seriesCounting : new();
         // Taste: recent watches here plus films they rated well on Letterboxd, plus their series
-        var taste = recentHistory.Concat(lb.Liked.Take(20)).DistinctBy(Identity).Select(m => (Title: m, Weight: 1.0))
+        var filmTaste = recentHistory.Concat(lb.Liked.Take(20)).DistinctBy(Identity).ToList();
+        var taste = filmTaste.Select(m => (Title: m, Weight: 1.0))
             .Concat(SeriesTaste.ForTaste(seriesWatched, Settings.SeriesWeight))
             .ToList();
         var scored = candidates
@@ -156,11 +166,11 @@ public sealed class Curator
         if (wanted == 0 || shortlist.Count == 0)
         {
             recommended = new();
-            how = "main row filled by you";
+            how = noFilmsLeft ? "no films left to recommend" : "main row filled by you";
         }
         else try
         {
-            recommended = await AskAiAsync(user, brief, recentHistory, Settings.SeriesWeight > 0 ? seriesWatched : new(), lb, shortlist, wanted, cancellationToken);
+            recommended = await AskAiAsync(user, brief, recentHistory, seriesWatched, lb, shortlist, wanted, forSeries: false, cancellationToken);
             how = "AI picked from a shortlist of " + shortlist.Count;
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -204,9 +214,112 @@ public sealed class Curator
 
         var lbText = lb.Any ? $"; Letterboxd {lb.Watched.Count} watched, {lb.Watchlist.Count} on watchlist in library" : "";
         var pinText = pinnedCount > 0 ? $"; {pinnedCount} added by you" : "";
-        var seriesText = seriesWatched.Count > 0 && Settings.SeriesWeight > 0 ? $", {seriesWatched.Count} series ({seriesWatched.Count(w => w.Finished)} finished)" : "";
-        var summary = $"{rows.Count} row(s){pinText}; {history.Count} counted watch(es){seriesText}; brief {(brief is null || brief.IsEmpty ? "not set" : "used")}{lbText}; {how}.";
+        var seriesText = seriesWatched.Count > 0 ? $", {seriesWatched.Count} series ({seriesWatched.Count(w => w.Finished)} finished)" : "";
+        var filmRows = rows.Count;
+
+        // 5. Series rows, the same steps from the series they haven't started
+        var seriesSummary = "series rows off";
+        if (Settings.SeriesRecommendations && seriesData is { } data)
+        {
+            var (seriesRows, text) = await CurateSeriesAsync(user, brief, filmTaste, seriesCounting, data, shownBefore, Similar, BriefFit, perRow, cancellationToken);
+            rows.AddRange(seriesRows);
+            seriesSummary = text;
+        }
+
+        var summary = $"Films: {filmRows} row(s){pinText}; {history.Count} counted watch(es){seriesText}; brief {(brief is null || brief.IsEmpty ? "not set" : "used")}{lbText}; {how}. Series: {seriesSummary}.";
         return new CurationResult(rows, summary);
+    }
+
+    /// <summary>
+    /// "Series for you" and "Because You Watched" a series: the same steps as for films. Candidates are
+    /// series this person may see and hasn't started (started ones are Jellyfin's "Next Up"). Taste is
+    /// the series they watched, and their films (weighed by Tuning).
+    /// </summary>
+    private async Task<(List<PickRow> Rows, string Summary)> CurateSeriesAsync(UserProfile user, BriefProfile? brief, List<MovieMetadata> filmTaste,
+        List<SeriesWatch> watched, (List<JellyfinItem> Episodes, Dictionary<Guid, MovieMetadata> Series) data, HashSet<Guid> shownBefore,
+        Func<MovieMetadata, MovieMetadata, double> similar, Func<MovieMetadata, double> briefFit, int perRow, CancellationToken cancellationToken)
+    {
+        var library = data.Series;
+        var visible = await _jellyfin.GetSeriesAsync(user.UserId, withDetails: false, cancellationToken);
+        // Started: any episode played (at any time), or Jellyfin says part of it was played
+        var started = data.Episodes.Where(e => e.SeriesId is not null).Select(e => e.SeriesId!.Value)
+            .Concat(visible.Where(i => i.UserData is { Played: true } || (i.UserData?.PlayedPercentage ?? 0) > 0).Select(i => i.Id))
+            .Where(library.ContainsKey).Select(i => Identity(library[i])).ToHashSet();
+        var hidden = user.HiddenIds().Where(library.ContainsKey).Select(i => Identity(library[i])).ToHashSet();
+
+        Dictionary<string, List<Guid>> pinned;
+        await using (var db = _database.Open())
+            pinned = (await db.Pins.AsNoTracking().Where(p => p.UserId == user.UserId && p.Slot.StartsWith("series-")).ToListAsync(cancellationToken))
+                .ToDictionary(p => p.Slot, p => Ids.Parse(p.Items).Where(i => library.ContainsKey(i) && !started.Contains(Identity(library[i]))).ToList());
+        List<Guid> Pins(string key) => pinned.GetValueOrDefault(key) ?? new();
+        var pinnedIds = pinned.Values.SelectMany(v => v).Select(i => Identity(library[i])).ToHashSet();
+
+        var candidates = visible
+            .Select(i => library.GetValueOrDefault(i.Id))
+            .Where(m => m is not null && !Settings.IsLibraryExcluded(m.Libraries))
+            .Select(m => m!)
+            .Where(m => !started.Contains(Identity(m)) && !hidden.Contains(Identity(m)) && !pinnedIds.Contains(Identity(m)))
+            .Where(m => brief is null || !IsAvoided(m, brief))
+            .GroupBy(Identity)
+            .Select(g => g.OrderByDescending(m => m.IsClassified).First())
+            .ToList();
+        if (Settings.MinRating > 0)
+            candidates = candidates.Where(m => m.RealRating is not { } rating || rating >= Settings.MinRating).ToList();
+        if (candidates.Count == 0 && pinnedIds.Count == 0) return (new(), "none left to recommend");
+
+        // Taste: the series they watched (their own kind counts fully), and their films (Tuning)
+        var filmWeight = Math.Min(1.0, 0.7 * Math.Clamp(Settings.FilmsForSeriesWeight, 0, 100) / 50.0);
+        var taste = SeriesTaste.ForTaste(watched, 50)
+            .Concat(filmWeight > 0 ? filmTaste.Select(m => (Title: m, Weight: filmWeight)) : Enumerable.Empty<(MovieMetadata, double)>())
+            .ToList();
+        var scored = candidates
+            .Select(m => (Movie: m, Score: Score(m, brief, taste, similar, briefFit) + TuningNudge(m, shownBefore)))
+            .OrderByDescending(x => x.Score)
+            .ToList();
+        var shortlist = Diversify(scored.Select(x => x.Movie), Math.Min(Settings.ShortlistSize, 100));
+
+        var wanted = Math.Max(0, perRow - Pins("series-recommended").Count);
+        List<Guid> recommended = new();
+        string how;
+        if (wanted == 0 || shortlist.Count == 0) how = "main row filled by you";
+        else try
+        {
+            recommended = await AskAiAsync(user, brief, filmTaste.Take(25).ToList(), watched, LetterboxdTaste.None, shortlist, wanted, forSeries: true, cancellationToken);
+            how = "AI picked from a shortlist of " + shortlist.Count;
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning("AI pick of series failed for {User}, using the shortlist order instead: {Error}", user.Name, error.Message);
+            how = "shortlist order (AI unavailable: " + error.Message + ")";
+        }
+        foreach (var show in shortlist)
+        {
+            if (recommended.Count >= wanted) break;
+            if (!recommended.Contains(show.ItemId)) recommended.Add(show.ItemId);
+        }
+        recommended = Pins("series-recommended").Concat(recommended.Take(wanted)).ToList();
+
+        var rows = new List<PickRow>();
+        if (recommended.Count > 0) rows.Add(new("series-recommended", SeriesRecommendedName, recommended));
+
+        // Because You Watched a series: the most recent series that count, with tags
+        var used = new HashSet<Guid>(recommended);
+        var countryShares = BecauseRow.CountryShares(library.Values);
+        var slot = 1;
+        foreach (var seed in watched.Select(w => w.Series).Where(m => m.IsClassified).DistinctBy(Identity).Take(Math.Clamp(Settings.BecauseRows, 0, 2)))
+        {
+            var mine = Pins($"series-because-{slot}");
+            var seedScores = candidates.Where(m => !used.Contains(m.ItemId))
+                .Select(m => (Movie: m, Score: similar(seed, m) * 0.75 + briefFit(m) * 0.25));
+            var picked = BecauseRow.Pick(seed, seedScores, countryShares, Math.Max(0, perRow - mine.Count), BecauseRow.Strengths.FromSettings(Settings));
+            var similarIds = picked.Select(p => p.Movie.ItemId).ToList();
+            if (similarIds.Count + mine.Count < 5) continue;
+            similarIds = mine.Concat(similarIds).ToList();
+            used.UnionWith(similarIds);
+            rows.Add(new($"series-because-{slot++}", BecausePrefix + seed.Title, similarIds));
+        }
+        var pins = pinned.Values.Sum(v => v.Count);
+        return (rows, $"{rows.Count} row(s){(pins > 0 ? $", {pins} added by you" : "")}, from {candidates.Count} not started; {how}");
     }
 
     /// <summary>
@@ -216,18 +329,24 @@ public sealed class Curator
     /// <param name="all">Also series that don't count (sampled, reality…), and even when series are switched off: for the admin page.</param>
     public async Task<List<SeriesWatch>> SeriesWatchedAsync(UserProfile user, CancellationToken cancellationToken, bool all = false)
     {
-        if (Settings.SeriesWeight <= 0 && !all) return new();
+        if (Settings.SeriesWeight <= 0 && !Settings.SeriesRecommendations && !all) return new();
+        return await LoadSeriesAsync(user, cancellationToken) is { } data ? SeriesTaste.Read(data.Episodes, data.Series, user.CountHistoryFrom, all) : new();
+    }
+
+    /// <summary>The series in the library and every episode this person finished; null when there are none or Jellyfin can't be read.</summary>
+    private async Task<(List<JellyfinItem> Episodes, Dictionary<Guid, MovieMetadata> Series)?> LoadSeriesAsync(UserProfile user, CancellationToken cancellationToken)
+    {
         try
         {
             var series = (await _store.GetAllSeriesAsync(cancellationToken)).ToDictionary(m => m.ItemId);
-            if (series.Count == 0) return new();
+            if (series.Count == 0) return null;
             var episodes = await _jellyfin.GetWatchedEpisodesAsync(user.UserId, cancellationToken);
-            return SeriesTaste.Read(episodes, series, user.CountHistoryFrom, all);
+            return (episodes, series);
         }
         catch (Exception error) when (error is JellyfinException or HttpRequestException)
         {
             _logger.LogWarning("Couldn't read the series {User} watched: {Error}", user.Name, error.Message);
-            return new();
+            return null;
         }
     }
 
@@ -279,12 +398,14 @@ public sealed class Curator
 
     // ---------- scoring ----------
 
-    private static bool IsAvoided(MovieMetadata movie, BriefProfile brief) =>
+    internal static bool IsAvoided(MovieMetadata movie, BriefProfile brief) =>
         movie.SubcategorySet.Items.Any(s => brief.AvoidSubcategories.Contains(s, StringComparer.OrdinalIgnoreCase))
+        || (movie.IsSeries && brief.AvoidSeriesKinds is { Count: > 0 } avoidKinds && movie.SeriesKindSet.Items.Any(k => avoidKinds.Contains(k, StringComparer.OrdinalIgnoreCase)))
         || movie.MoodSet.Items.Any(s => brief.AvoidMoods.Contains(s, StringComparer.OrdinalIgnoreCase))
         || movie.ContentNoteList.Any(c => brief.AvoidContent.Contains(c, StringComparer.OrdinalIgnoreCase))
         || (movie.Ending is { } ending && brief.AvoidEndings.Contains(ending, StringComparer.OrdinalIgnoreCase))
-        || (brief.MaxMinutes is { } max && movie.Minutes is { } minutes && minutes > max + 5);
+        // A series' running time is one episode's: the limit is for films
+        || (!movie.IsSeries && brief.MaxMinutes is { } max && movie.Minutes is { } minutes && minutes > max + 5);
 
     /// <summary>How well a movie fits the brief, 0..1.</summary>
     internal static double BriefScore(MovieMetadata movie, BriefProfile brief)
@@ -314,6 +435,8 @@ public sealed class Curator
         if (movie.Pacing is { } pace && brief.Pacing.Contains(pace, StringComparer.OrdinalIgnoreCase)) extra += 0.05;
         if (brief.Occasions.Count > 0 && movie.OccasionList.Any(o => brief.Occasions.Contains(o, StringComparer.OrdinalIgnoreCase))) extra += 0.05;
         if (brief.Awarded) extra += movie.OscarWins > 0 ? 0.08 : movie.OscarNominations > 0 ? 0.04 : 0;
+        // A series of a kind they asked for (sitcoms, procedurals…)
+        if (movie.IsSeries && brief.SeriesKinds is { Count: > 0 } kinds && movie.SeriesKindSet.Items.Any(k => kinds.Contains(k, StringComparer.OrdinalIgnoreCase))) extra += 0.15;
 
         return Math.Min(1.0, subcategory * 0.5 + mood * 0.25 + theme * 0.15 + keyword * 0.10 + extra);
     }
@@ -409,12 +532,13 @@ public sealed class Curator
     // ---------- AI choice ----------
 
     private async Task<List<Guid>> AskAiAsync(
-        UserProfile user, BriefProfile? brief, List<MovieMetadata> history, List<SeriesWatch> series, LetterboxdTaste lb, List<MovieMetadata> shortlist, int count, CancellationToken cancellationToken)
+        UserProfile user, BriefProfile? brief, List<MovieMetadata> history, List<SeriesWatch> series, LetterboxdTaste lb, List<MovieMetadata> shortlist, int count, bool forSeries, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Settings.ApiKey)) throw new InvalidOperationException("no AI key set");
 
         var prompt = new StringBuilder();
-        prompt.AppendLine($"Pick {count} movies for one viewer from the numbered list below, best first.");
+        var noun = forSeries ? "TV series" : "movies";
+        prompt.AppendLine($"Pick {count} {noun} for one viewer from the numbered list below, best first.");
         prompt.AppendLine();
         prompt.AppendLine("About the viewer (written by the person who runs the media server; the most important signal):");
         prompt.AppendLine(string.IsNullOrWhiteSpace(user.Brief) ? "(nothing written)" : user.Brief.Trim());
@@ -426,7 +550,9 @@ public sealed class Curator
         if (series.Count > 0)
         {
             prompt.AppendLine();
-            prompt.AppendLine("TV series they watched, newest first (\"finished\" = all or most of it; otherwise how many episodes). They say what they enjoy; only films are picked:");
+            prompt.AppendLine(forSeries
+                ? "TV series they watched, newest first (\"finished\" = all or most of it; otherwise how many episodes):"
+                : "TV series they watched, newest first (\"finished\" = all or most of it; otherwise how many episodes). They say what they enjoy; only films are picked:");
             foreach (var watch in series.Take(15)) prompt.AppendLine("- " + SeriesTaste.Line(watch));
         }
         if (lb.RatedTitles.Count > 0)
@@ -436,31 +562,33 @@ public sealed class Curator
             foreach (var line in lb.RatedTitles.Take(30)) prompt.AppendLine("- " + line);
         }
         prompt.AppendLine();
-        prompt.AppendLine("Candidates (★ = on their Letterboxd watchlist, a strong hint they want to see it):");
+        prompt.AppendLine(forSeries
+            ? "Candidates (series they haven't started):"
+            : "Candidates (★ = on their Letterboxd watchlist, a strong hint they want to see it):");
         for (var i = 0; i < shortlist.Count; i++) prompt.AppendLine($"{i + 1}. {(lb.WatchlistIds.Contains(shortlist[i].ItemId) ? "★ " : "")}{Line(shortlist[i])}");
         prompt.AppendLine();
         var lean = Settings.Discovery switch
         {
-            < 34 => "lean towards well-known, highly regarded films",
+            < 34 => $"lean towards well-known, highly regarded {noun}",
             > 66 => "lean towards lesser-known gems they probably haven't heard of",
-            _ => "mix well-known and lesser-known films",
+            _ => $"mix well-known and lesser-known {noun}",
         };
         var variety = Settings.Variety switch
         {
             "low" => "staying close to what they love is fine",
-            "high" => "spread the picks over many different kinds of film",
+            "high" => $"spread the picks over many different kinds of {(forSeries ? "series" : "film")}",
             _ => "avoid near-duplicates (several films of one franchise or the same niche)",
         };
         var first = Settings.BriefWeight >= 50 ? "follow the description first" : "follow what they actually watched first, the description second";
         prompt.AppendLine($"Rules: {first}; {lean}; {variety}; never invent numbers.");
         prompt.AppendLine($@"Answer with ONLY a JSON object: {{""picks"": [numbers from the list, {count} of them, best first]}}");
 
-        var system = "You are a thoughtful film curator choosing for one specific person. Output only JSON.";
+        var system = $"You are a thoughtful {(forSeries ? "TV" : "film")} curator choosing for one specific person. Output only JSON.";
         string response;
         var started = DateTime.UtcNow;
         using (Activity.Begin($"Picking for {user.Name}: waiting for the AI"))
             response = await _ai.GetProvider().ChatAsync(prompt.ToString(), system, cancellationToken);
-        _logger.LogInformation("AI picked for {User} in {Seconds}s", user.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
+        _logger.LogInformation("AI picked {Kind} for {User} in {Seconds}s", forSeries ? "series" : "films", user.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
         var json = BriefInterpreter.ExtractJson(response) ?? throw new InvalidOperationException("no JSON in the AI answer");
 
         using var document = JsonDocument.Parse(json);
@@ -479,8 +607,22 @@ public sealed class Curator
         return picks;
     }
 
+    private static string SeriesLine(MovieMetadata m)
+    {
+        var tags = string.Join(", ", m.SeriesKindSet.Items.Take(2).Concat(m.SubcategorySet.Items).Concat(m.MoodSet.Items).Take(5));
+        var plot = (m.Plot ?? "").Replace('\n', ' ');
+        if (plot.Length > 140) plot = plot[..140] + "…";
+        var facts = new List<string>();
+        if (m.Seasons is { } n) facts.Add($"{n} season{(n == 1 ? "" : "s")}");
+        if (m.Format is { } format) facts.Add(format);
+        if (string.Equals(m.Status, "Continuing", StringComparison.OrdinalIgnoreCase)) facts.Add("still running");
+        if (m.ImdbRating is { } imdb) facts.Add($"IMDb {imdb:0.0}");
+        return $"{m.Title} ({Ai.ClassificationPrompt.Aired(m)}) [{tags}]{(facts.Count > 0 ? " (" + string.Join(", ", facts) + ")" : "")} {plot}";
+    }
+
     private static string Line(MovieMetadata m)
     {
+        if (m.IsSeries) return SeriesLine(m);
         var tags = string.Join(", ", m.SubcategorySet.Items.Concat(m.MoodSet.Items).Take(5));
         var plot = (m.Plot ?? "").Replace('\n', ' ');
         if (plot.Length > 140) plot = plot[..140] + "…";

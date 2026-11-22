@@ -40,7 +40,7 @@ namespace Pickyfin.Server.Ai
             Plot = Cut(m.Plot, plotChars),
             FromTheWeb = string.IsNullOrWhiteSpace(m.WebNotes) ? null : Cut(m.WebNotes, 10000),
             // Described again (flagged, or looked up on the web): the first opinion and what the review said
-            EarlierTags = withReview && Reviewed(m) ? new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items } : null,
+            EarlierTags = withReview && Reviewed(m) ? new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items, SeriesKinds = m.IsSeries && m.SeriesKindSet.Count > 0 ? m.SeriesKindSet.Items : null } : null,
             Review = withReview && Reviewed(m) ? ReviewLines(m) : null,
             Recheck = withReview && m.Recheck ? "yes" : null,
         };
@@ -92,7 +92,8 @@ Return a JSON object with a ""movies"" array, one entry per input movie, with th
 - ""Pacing"": exactly one of {Quoted(ClassificationVocabulary.Pacing)}.
 - ""Ending"": how the ending leaves the viewer, exactly one of {Quoted(ClassificationVocabulary.Endings)}.
 - ""Occasions"": 1 or 2 situations it suits best, ONLY from: {Quoted(ClassificationVocabulary.Occasions)} (""alone"" = needs full attention or is too dark to share).
-- ""Format"": ONLY for TV series, exactly one of {Quoted(ClassificationVocabulary.Formats)} (the most specific that fits: a crime series solving a case per episode is ""procedural"", a closed story in one or two seasons ""miniseries"", a story told over many seasons ""ongoing""); leave it out for films. For a series, ""Ending"" is how the series ends so far (""open"" if it's still running), and ""BasedOn"" is what the series is based on.
+- ""Format"": ONLY for TV series, exactly one of {Quoted(ClassificationVocabulary.Formats)} (""miniseries"": one closed story; ""ongoing"": a story or setting continued over seasons, also case-of-the-week shows and sitcoms; ""anthology"": a new story each season or episode); leave it out for films.
+- ""SeriesKinds"": ONLY for TV series, 1 to 3 kinds of TV, most defining first, ONLY from: {Quoted(ClassificationVocabulary.SeriesKinds)}. These are on top of ""Subcategories"" (which still describe the series in film terms: a police procedural is also ""Crime Drama"" or ""Detective Mystery""); leave it out for films. For a series, ""Ending"" is how the series ends so far (""open"" if it's still running), and ""BasedOn"" is what the series is based on.
 
 Example output:
 {{""movies"": [{{""Ref"": ""m1"", ""Known"": ""yes"", ""Subcategories"": [""Cyberpunk"", ""AI & Robots""], ""Moods"": [""cerebral"", ""thrilling""], ""Themes"": [""simulated reality"", ""rebellion"", ""identity""], ""NarrativeStyle"": ""hero-journey"", ""Accessibility"": ""mainstream"", ""Intensity"": ""high"", ""CriticalAcclaimScore"": 8, ""CriticsScore"": 83, ""AudienceScore"": 85, ""ScoreSource"": ""Rotten Tomatoes"", ""ContentNotes"": [""graphic violence""], ""BasedOn"": ""original"", ""SettingEra"": ""2199"", ""SettingPlace"": ""simulated city"", ""Pacing"": ""fast"", ""Ending"": ""open"", ""Occasions"": [""with friends"", ""date night""]}}]}}

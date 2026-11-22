@@ -427,20 +427,20 @@ admin.MapPost("/steps/{step}/again", async (string step, Database database, Refr
             count = await db.Movies.Where(m => ids.Contains(m.ItemId)).ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, true), ct);
             var redo = ServerSettings.Current.Clone(); redo.RedoDescribeTotal = count; ServerSettings.Save(redo);
             MovieClassifier.RetryNow();
-            log.LogInformation("Step 1 runs again: {Count} films queued to be described again, 8 calls per round", count);
+            log.LogInformation("Step 1 runs again: {Count} titles queued to be described again, 8 calls per round", count);
             break;
         case "check":
             // Looked-up films are past the second opinion; the web text is the stronger evidence
             count = await db.Movies.Where(m => ids.Contains(m.ItemId) && (m.WebNotes == null || m.WebNotes == "")).ExecuteUpdateAsync(u => u.SetProperty(m => m.Checked, false), ct);
             SecondOpinion.ResetPause();
-            log.LogInformation("Step 2 runs again: {Count} films to be checked again", count);
+            log.LogInformation("Step 2 runs again: {Count} titles to be checked again", count);
             break;
         case "lookup":
             var settings = ServerSettings.Current.Clone();
             settings.RescanPassStarted = DateTime.UtcNow;
             ServerSettings.Save(settings);
             count = ids.Count;
-            log.LogInformation("Steps 3 and 4 run again: a re-check pass over {Count} films starts now", count);
+            log.LogInformation("Steps 3 and 4 run again: a re-check pass over {Count} titles starts now", count);
             break;
         default:
             return Results.NotFound();
@@ -456,7 +456,7 @@ admin.MapPost("/steps/{step}/stop", async (string step, Database database, ILogg
     {
         await using var db = database.Open();
         var count = await db.Movies.Where(m => m.RedoDescribe).ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, false), ct);
-        log.LogInformation("Step 1: stopped describing again; {Count} films taken out of the queue", count);
+        log.LogInformation("Step 1: stopped describing again; {Count} titles taken out of the queue", count);
         return Results.Ok(new { Count = count });
     }
     if (step == "lookup")
@@ -478,7 +478,7 @@ admin.MapPost("/library/gone/remove", async (GoneRemoval request, MovieStore sto
 {
     var removed = await store.DeleteGoneAsync(request.Ids, ct);
     if (removed.Count > 0)
-        logs.CreateLogger("Library").LogInformation("Library: removed {Count} film(s) Jellyfin no longer has, as confirmed: {Titles}", removed.Count, string.Join(", ", removed.Take(20)) + (removed.Count > 20 ? ", …" : ""));
+        logs.CreateLogger("Library").LogInformation("Library: removed {Count} title(s) Jellyfin no longer has, as confirmed: {Titles}", removed.Count, string.Join(", ", removed.Take(20)) + (removed.Count > 20 ? ", …" : ""));
     return Results.Ok(new { Removed = removed.Count });
 });
 
@@ -502,7 +502,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // Anything that changes what gets picked: everyone gets fresh picks
     var picksChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g))
         || before.BecauseRows != settings.BecauseRows || before.PicksPerRow != settings.PicksPerRow
-        || before.BriefWeight != settings.BriefWeight || before.MeaningWeight != settings.MeaningWeight || before.Discovery != settings.Discovery || before.SeriesWeight != settings.SeriesWeight || before.Variety != settings.Variety
+        || before.BriefWeight != settings.BriefWeight || before.MeaningWeight != settings.MeaningWeight || before.Discovery != settings.Discovery || before.SeriesWeight != settings.SeriesWeight || before.SeriesRecommendations != settings.SeriesRecommendations || before.FilmsForSeriesWeight != settings.FilmsForSeriesWeight || before.Variety != settings.Variety
         || before.BecausePeople != settings.BecausePeople || before.BecauseCountry != settings.BecauseCountry || before.BecauseEra != settings.BecauseEra
         || before.NewArrivals != settings.NewArrivals || before.Rotation != settings.Rotation || before.MinRating != settings.MinRating;
     if (picksChanged)
@@ -620,7 +620,7 @@ admin.MapGet("/users/{id:guid}/rows", async (Guid id, Database database, MovieSt
 {
     await using var db = database.Open();
     var playlists = await db.Playlists.AsNoTracking().Where(p => p.UserId == id).OrderBy(p => p.Slot).ToListAsync(ct);
-    var movies = (await store.GetAllMoviesAsync(ct)).ToDictionary(m => m.ItemId);
+    var movies = (await store.GetAllTitlesAsync(ct)).ToDictionary(m => m.ItemId);
     return Results.Ok(playlists.Select(p => new
     {
         p.Name,
@@ -680,6 +680,8 @@ record SettingsView
     public int MeaningWeight { get; init; } = 50;
     public int Discovery { get; init; }
     public int SeriesWeight { get; init; } = 50;
+    public bool SeriesRecommendations { get; init; } = true;
+    public int FilmsForSeriesWeight { get; init; } = 50;
     public string Variety { get; init; } = "medium";
     public string NewArrivals { get; init; } = "some";
     public string Rotation { get; init; } = "medium";
@@ -748,6 +750,8 @@ record SettingsView
         MeaningWeight = s.MeaningWeight,
         Discovery = s.Discovery,
         SeriesWeight = s.SeriesWeight,
+        SeriesRecommendations = s.SeriesRecommendations,
+        FilmsForSeriesWeight = s.FilmsForSeriesWeight,
         Variety = s.Variety,
         NewArrivals = s.NewArrivals,
         Rotation = s.Rotation,
@@ -853,6 +857,8 @@ record SettingsView
         s.MeaningWeight = Math.Clamp(MeaningWeight, 0, 100);
         s.Discovery = Math.Clamp(Discovery, 0, 100);
         s.SeriesWeight = Math.Clamp(SeriesWeight, 0, 100);
+        s.SeriesRecommendations = SeriesRecommendations;
+        s.FilmsForSeriesWeight = Math.Clamp(FilmsForSeriesWeight, 0, 100);
         s.Variety = Variety is "low" or "medium" or "high" ? Variety : "medium";
         s.NewArrivals = NewArrivals is "off" or "some" or "lots" ? NewArrivals : "some";
         s.Rotation = Rotation is "low" or "medium" or "high" ? Rotation : "medium";

@@ -36,14 +36,22 @@ watched films and the watchlist). Films they've
 watched there are never recommended, good ratings shape their taste, films close
 to ones they disliked move down, and watchlist films move up.
 
-**Series** count toward taste in films, but aren't recommended (yet). They go through
-the same steps as films (described with the same tags, TMDB, OMDb, web lookup, matching
-by meaning), always after the films, so a TV library never holds up anyone's picks.
-What someone watched as series joins their watch history: 3 or more episodes count, a
-finished series (most of its episodes, or 3+ seasons) counts most; series tried for an
-episode or two, and reality, talk and game shows, don't count. *How much series count*
-is on the Tuning page; each person's page lists their series and what counts. Films
-and series have separate meaning matrices, so series never shift how films compare.
+**Series** go through the same steps as films (described with the same tags plus
+kinds of TV films don't have, like *Sitcom* or *Police Procedural*; TMDB, OMDb, web
+lookup, matching by meaning), always after the films, so a TV library never holds up
+anyone's picks. They have their own page in the admin's top bar.
+
+- **Rows of their own** (Tuning, on by default): "Series for you" and "Because You
+  Watched" a series, from series the person hasn't started. They're made the same way
+  as the film rows and shown on each person's page; the TV app doesn't show them yet
+  (a series can't go into a Jellyfin playlist: it turns into its episodes).
+- **Taste both ways**: 3 or more episodes count, a finished series (most of its
+  episodes, or 3+ seasons) counts most; series tried for an episode or two, and reality,
+  talk and game shows, don't count. *How much series count for films* and *How much
+  films count for series* are on the Tuning page; each person's page lists their series
+  and what counts.
+- Films and series have separate meaning matrices, so series never shift how films
+  compare; the Matrix page shows films, series or both.
 
 **Tuning page**: six plain settings for everyone: description or watch history,
 safe picks or discoveries, variety, new arrivals, how much rows change between

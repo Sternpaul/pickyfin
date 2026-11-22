@@ -27,6 +27,11 @@ namespace Pickyfin.Server.Data.Models
         public string? Status { get; set; }
         public string? Network { get; set; }
         public string? Format { get; set; }
+        /// <summary>Series only: kinds of TV films don't have (sitcom, procedural…), JSON array. Compared between series only.</summary>
+        public string? SeriesKinds { get => _seriesKinds; set { _seriesKinds = value; _seriesKindSet = null; } }
+        private string? _seriesKinds;
+        private TagSet? _seriesKindSet;
+        [NotMapped] public TagSet SeriesKindSet => _seriesKindSet ??= TagSet.Parse(_seriesKinds);
         /// <summary>Series only: when someone switched on last finished an episode (watched series are described first).</summary>
         public DateTime? LastWatched { get; set; }
 

@@ -47,6 +47,11 @@ namespace Pickyfin.Server.Library
             // 10. Crowd: TMDB's viewers liked these together (either direction)
             if (CrowdLinked(source, target)) score += 0.12;
 
+            // 10b. Two series: their kinds of TV (sitcom, procedural…). Never between a series and a film,
+            // so film-to-film and series-to-film scores are unchanged by them.
+            if (source.IsSeries && target.IsSeries)
+                score += source.SeriesKindSet.Jaccard(target.SeriesKindSet) * 0.15;
+
             // 11. v1.5.14: TMDB keyword overlap — objective precision signal.
             if (KeywordWeight > 0)
                 score += source.KeywordSet.Jaccard(target.KeywordSet) * KeywordWeight;

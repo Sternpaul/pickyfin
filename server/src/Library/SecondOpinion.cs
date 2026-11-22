@@ -79,8 +79,8 @@ public sealed class SecondOpinion
         }
 
         var thisRound = pending.Take(BatchSize * BatchesPerRound).ToList();
-        _logger.LogInformation("Second opinion: {Count} movies to check with {Model}; {Round} this round, {Batch} per call",
-            pending.Count, settings.CheckModel, thisRound.Count, BatchSize);
+        _logger.LogInformation("Second opinion: {What} to check with {Model}; {Round} this round, {Batch} per call",
+            Titles.Count(pending), settings.CheckModel, thisRound.Count, BatchSize);
         var provider = _ai.GetProvider();
         var flaggedTotal = 0;
         var failed = false;
@@ -92,11 +92,11 @@ public sealed class SecondOpinion
                 if (cancellationToken.IsCancellationRequested) break;
                 var batch = thisRound.Skip(i).Take(BatchSize).ToList();
                 TaggingEta.BatchStarted(pending.Count - i);
-                Jobs.Running(Key, Title, $"Films {i + 1}–{i + batch.Count} of {pending.Count}");
+                Jobs.Running(Key, Title, $"Titles {i + 1}–{i + batch.Count} of {pending.Count} ({Titles.Count(batch)})");
                 string answer;
                 try
                 {
-                    using (Activity.Begin($"Second opinion on movies {i + 1}–{i + batch.Count} of {pending.Count}: waiting for {provider.Name}"))
+                    using (Activity.Begin($"Second opinion on titles {i + 1}–{i + batch.Count} of {pending.Count}: waiting for {provider.Name}"))
                         answer = await provider.CompleteJsonAsync(ClassificationPrompt.BuildCheck(batch), settings.CheckModel, cancellationToken);
                     _errorsInARow = 0;
                     foreach (var m in batch) FailedTimes.Remove(m.ItemId);
@@ -114,7 +114,7 @@ public sealed class SecondOpinion
                     }
                     _logger.LogError("Second opinion paused: {Error}. Trying again at {When}.", ex.Message, Jobs.When(_retryAt));
                     if (aside.Count > 0)
-                        _logger.LogWarning("Second opinion: this batch failed 3 times; its {Count} films are set aside until tomorrow and the rest carries on", aside.Count);
+                        _logger.LogWarning("Second opinion: this batch failed 3 times; its {Count} titles are set aside until tomorrow and the rest carries on", aside.Count);
                     Jobs.Idle(Key, Title, $"Paused: {Jobs.Short(ex.Message)}", _retryAt, error: true);
                     break;
                 }
@@ -122,7 +122,7 @@ public sealed class SecondOpinion
                 var problems = Parse(answer, batch);
                 if (problems is null)
                 {
-                    _logger.LogWarning("Second opinion: couldn't read the answer for movies {Start}–{End}; they're checked again next time", i + 1, i + batch.Count);
+                    _logger.LogWarning("Second opinion: couldn't read the answer for titles {Start}–{End}; they're checked again next time", i + 1, i + batch.Count);
                     TaggingEta.BatchDone();
                     continue;
                 }
@@ -136,7 +136,7 @@ public sealed class SecondOpinion
                 await _history.AddAsync(batch.Select(m => MovieHistory.Entry(m, "check", checkModel, null,
                     problems.TryGetValue(m, out var said) ? said : "Found nothing wrong")), cancellationToken);
                 await _store.SaveMoviesAsync(batch, cancellationToken);
-                _logger.LogInformation("Second opinion on movies {Start}–{End}: {Count} look wrong", i + 1, i + batch.Count, problems.Count);
+                _logger.LogInformation("Second opinion on titles {Start}–{End}: {Count} look wrong", i + 1, i + batch.Count, problems.Count);
 
                 await _classifier.LookUpFlaggedAsync(provider, problems.Keys.ToList(), cancellationToken);
                 TaggingEta.BatchDone();
@@ -145,8 +145,8 @@ public sealed class SecondOpinion
         finally { TaggingEta.Stop(); }
         if (failed) return;
         var left = pending.Count - thisRound.Count;
-        _logger.LogInformation("Second opinion: round done, {Count} movie(s) flagged; {Left} to go", flaggedTotal, left);
-        Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} films to go{asideText}" : $"Up to date{asideText}", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
+        _logger.LogInformation("Second opinion: round done, {Count} title(s) flagged; {Left} to go", flaggedTotal, left);
+        Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} titles to go{asideText}" : $"Up to date{asideText}", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
     }
 
     private static string Short(string message) => message.Length <= 160 ? message : message[..160] + "…";

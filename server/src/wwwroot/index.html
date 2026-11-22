@@ -516,6 +516,7 @@
       <nav class="primary">
         <button class="nav active" data-page="users">People<sup id="count-users"></sup></button>
         <button class="nav" data-page="movies">Movies</button>
+        <button class="nav" data-page="series">Series</button>
         <button class="nav" data-page="issues">Issues<sup id="count-issues"></sup></button>
         <button class="nav" data-page="libraries">Libraries</button>
         <button class="nav" data-page="ai">AI</button>
@@ -546,10 +547,9 @@
     <section data-page="movies" class="hidden">
       <div class="page-head"><div>
         <h1>Movies</h1>
-        <p>Every movie in the library and how the AI described it. Open one to correct it; movies you edit are never re-tagged. Series are described the same way: they aren't recommended (yet), but what people watch as series tells more about their taste in films.</p>
+        <p>Every movie in the library and how the AI described it. Open one to correct it; movies you edit are never re-tagged.</p>
       </div></div>
       <div class="filters">
-        <div class="seg" id="m-kind"><button type="button" data-v="movie">Films</button><button type="button" data-v="series">Series</button><button type="button" data-v="all">Both</button></div>
         <input type="search" id="m-q" placeholder="Title, director or year">
         <div class="seg" id="m-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited</button><button type="button" data-v="issues">Issues</button></div>
         <select id="m-tag"><option value="">Any tag</option></select>
@@ -560,6 +560,25 @@
       </div>
       <div class="shelf" id="movies"></div>
       <div class="more"><button class="btn hidden" id="m-more">Show more</button></div>
+    </section>
+
+    <!-- SERIES -->
+    <section data-page="series" class="hidden">
+      <div class="page-head"><div>
+        <h1>Series</h1>
+        <p>Every series in the library and how the AI described it: the same tags as films, plus kinds of TV films don't have (sitcom, procedural…) and how it's built. Open one to correct it; series you edit are never re-tagged. Series get rows of their own (Tuning), and what people watch as series counts toward their taste in films.</p>
+      </div></div>
+      <div class="filters">
+        <input type="search" id="s-q" placeholder="Title, creator or year">
+        <div class="seg" id="s-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited</button><button type="button" data-v="issues">Issues</button></div>
+        <select id="s-tag"><option value="">Any tag</option></select>
+        <select id="s-lib"><option value="">All libraries</option></select>
+        <select id="s-trust"><option value="">Any source</option><option value="you">Checked by you</option><option value="web">Looked up on the web</option><option value="second">Second opinion agrees</option><option value="ai">AI only</option></select>
+        <select id="s-sort"><option value="title">A–Z</option><option value="added">Recently added</option><option value="acclaim">Highest rated</option><option value="year">Newest first</option></select>
+        <span class="count" id="s-count"></span>
+      </div>
+      <div class="shelf" id="series"></div>
+      <div class="more"><button class="btn hidden" id="s-more">Show more</button></div>
     </section>
 
     <!-- ISSUES -->
@@ -577,7 +596,7 @@
     <section data-page="libraries" class="hidden">
       <div class="page-head"><div>
         <h1>Libraries</h1>
-        <p>Which libraries recommendations may come from. Movies in a switched-off library are never recommended and never sent to the AI. Watch history from every library still counts toward taste. Series aren't recommended (yet); they're described like films so what people watch as series can tell more about their taste. Switch a TV library off to skip that.</p>
+        <p>Which libraries recommendations may come from. Titles in a switched-off library are never recommended and never sent to the AI. Watch history from every library still counts toward taste. Series are described like titles, get rows of their own (Tuning) and count toward taste. Switch a TV library off to leave its series out entirely.</p>
       </div></div>
       <div class="settings" id="libraries"><div class="empty">Loading…</div></div>
     </section>
@@ -610,7 +629,7 @@
 
         <h2 class="group-title">1 · Describe</h2>
         <div class="setting" id="describe-single">
-          <div><h3>Model for describing</h3><p class="why">Runs once per film, 20 films per call; a fast, cheap model is fine.</p></div>
+          <div><h3>Model for describing</h3><p class="why">Runs once per title, 20 titles per call; a fast, cheap model is fine.</p></div>
           <div class="control"><input type="text" id="ClassificationModel" list="models"></div>
         </div>
         <div class="setting openrouter-only">
@@ -624,7 +643,7 @@
       <h2 class="group-title">2 · Check</h2>
       <form id="check-form" class="settings">
         <div class="setting">
-          <div><h3>Second opinion</h3><p class="why">A different model reviews every film's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged films show up under Issues.</p></div>
+          <div><h3>Second opinion</h3><p class="why">A different model reviews every title's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged titles show up under Issues.</p></div>
           <div class="control">
             <label class="switch"><input type="checkbox" id="CheckEnabled"><span></span></label>
             <div id="check-single"><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="models"></div>
@@ -654,11 +673,11 @@
           <div class="control"><div><div class="seg" id="SearchPerLookup"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button></div></div></div>
         </div>
         <div class="setting">
-          <div><h3>Look up flagged films right away</h3><p class="why">When the AI doesn't know a film, or something looks off, look it up and describe it again at once. Each film is looked up once.</p></div>
+          <div><h3>Look up flagged titles right away</h3><p class="why">When the AI doesn't know a title, or something looks off, look it up and describe it again at once. Each title is looked up once.</p></div>
           <div class="control"><label class="switch"><input type="checkbox" id="WebLookupAuto"><span></span></label></div>
         </div>
         <div class="setting">
-          <div><h3>Look up the whole library</h3><p class="why">Slowly works through every film, a few every few minutes: flagged films first, then lesser-known ones. With the second opinion on, a film waits until it has been checked, so all three steps happen in order. <span id="sweep-estimate"></span></p></div>
+          <div><h3>Look up the whole library</h3><p class="why">Slowly works through every title, a few every few minutes: flagged titles first, then lesser-known ones. With the second opinion on, a title waits until it has been checked, so all three steps happen in order. <span id="sweep-estimate"></span></p></div>
           <div class="control"><div class="inline" style="align-items:center"><input type="number" id="WebLookupsPerDay" min="0" step="5" style="width:110px"><span class="note">films a day (0 = off)</span></div></div>
         </div>
         <div class="setting openrouter-only">
@@ -689,7 +708,7 @@
           <div class="control"><input type="password" id="OmdbApiKey" placeholder="Paste a key" autocomplete="off"></div>
         </div>
         <div class="setting">
-          <div><h3>OMDb requests per day</h3><p class="why">One request per film. Films are fetched again after six months, new films after a month.</p></div>
+          <div><h3>OMDb requests per day</h3><p class="why">One request per title. Titles are fetched again after six months, new titles after a month.</p></div>
           <div class="control"><input type="number" id="OmdbPerDay" min="1" step="100" style="width:7em"></div>
         </div>
         <div class="setting-foot"><span class="note" id="tmdb-note"></span></div>
@@ -737,11 +756,11 @@
       <h2 class="group-title">Matching by meaning</h2>
       <form id="meaning-form" class="settings">
         <div class="setting">
-          <div><h3>Match films by meaning</h3><p class="why">Turns each film's whole description (plot, tags, what the web says) and each person's description into a "meaning". Films that mean similar things are related even without shared tags. Runs on your OpenRouter key; free models cost nothing. Explore the result on the Matrix page.</p></div>
+          <div><h3>Match titles by meaning</h3><p class="why">Turns each title's whole description (plot, tags, what the web says) and each person's description into a "meaning". Titles that mean similar things are related even without shared tags. Runs on your OpenRouter key; free models cost nothing. Explore the result on the Matrix page.</p></div>
           <div class="control"><label class="switch"><input type="checkbox" id="MeaningOn"><span></span></label></div>
         </div>
         <div class="setting">
-          <div><h3>Model order</h3><p class="why">Every model in the order matches all films and builds its own matrix (meanings from different models can't be mixed, so each keeps its own). How close two films are is the average over the models that know both, which is steadier than any one model. A busy model is tried three times, then skipped for that round while the others carry on; a model OpenRouter no longer offers drops out. More models means more requests, so the first ones fill up first. <span id="meaning-models-note"></span></p></div>
+          <div><h3>Model order</h3><p class="why">Every model in the order matches all titles and builds its own matrix (meanings from different models can't be mixed, so each keeps its own). How close two titles are is the average over the models that know both, which is steadier than any one model. A busy model is tried three times, then skipped for that round while the others carry on; a model OpenRouter no longer offers drops out. More models means more requests, so the first ones fill up first. <span id="meaning-models-note"></span></p></div>
           <div class="control"><div class="chain" id="embed-chain"></div><datalist id="embed-all"></datalist></div>
         </div>
         <div class="setting-foot"><span class="note" id="meaning-note"></span></div>
@@ -762,31 +781,39 @@
             <div class="control"><div class="ends"><span>Watch history</span><span>Description</span></div><input type="range" id="BriefWeight" min="0" max="100" step="5"></div>
           </div>
           <div class="setting">
-            <div><h3>Tags or meaning</h3><p class="why">How films are compared with each other and with a description: by their tags (subcategories, moods, themes…), or by what their whole description means. Only matters once films are matched by meaning (AI page).</p></div>
+            <div><h3>Tags or meaning</h3><p class="why">How titles are compared with each other and with a description: by their tags (subcategories, moods, themes…), or by what their whole description means. Only matters once titles are matched by meaning (AI page).</p></div>
             <div class="control"><div class="ends"><span>Tags</span><span>Meaning</span></div><input type="range" id="MeaningWeight" min="0" max="100" step="10"></div>
           </div>
           <div class="setting">
-            <div><h3>Safe picks or discoveries</h3><p class="why">Well-known, highly rated films, or lesser-known ones they probably haven't heard of. Discoveries still need decent ratings.</p></div>
+            <div><h3>Safe picks or discoveries</h3><p class="why">Well-known, highly rated titles, or lesser-known ones they probably haven't heard of. Discoveries still need decent ratings.</p></div>
             <div class="control"><div class="ends"><span>Safe picks</span><span>Discoveries</span></div><input type="range" id="Discovery" min="0" max="100" step="5"></div>
           </div>
           <div class="setting">
-            <div><h3>How much series count</h3><p class="why">What someone watches as series tells about their taste in films too: a person who finished three seasons of a slow Nordic crime show likely enjoys such films. Series they gave up on after an episode or two don't count, nor do reality and talk shows. Series aren't recommended themselves (yet).</p></div>
+            <div><h3>Recommend series</h3><p class="why">Series get rows of their own: "Series for you" and "Because You Watched" a series, from series the person hasn't started (started ones are Jellyfin's "Next Up"). The rows are made and shown on each person's page; the TV app doesn't show them yet. Off: series only count toward taste.</p></div>
+            <div class="control"><label class="switch"><input type="checkbox" id="SeriesRecommendations"><span></span></label></div>
+          </div>
+          <div class="setting">
+            <div><h3>How much series count for films</h3><p class="why">What someone watches as series tells about their taste in films too: a person who finished three seasons of a slow Nordic crime show likely enjoys such films. Series they gave up on after an episode or two don't count, nor do reality, talk and game shows.</p></div>
             <div class="control"><div class="ends"><span>Not at all</span><span>Like films</span></div><input type="range" id="SeriesWeight" min="0" max="100" step="10"></div>
           </div>
           <div class="setting">
-            <div><h3>Variety</h3><p class="why">How many films of the same kind may appear together. "Little" stays close to what they love.</p></div>
+            <div><h3>How much films count for series</h3><p class="why">The other way round: the films someone watched shape which series they're recommended. Their own series always count fully there.</p></div>
+            <div class="control"><div class="ends"><span>Not at all</span><span>Like series</span></div><input type="range" id="FilmsForSeriesWeight" min="0" max="100" step="10"></div>
+          </div>
+          <div class="setting">
+            <div><h3>Variety</h3><p class="why">How many titles of the same kind may appear together. "Little" stays close to what they love.</p></div>
             <div class="control"><div><div class="seg" id="Variety"><button type="button" data-v="low">Little</button><button type="button" data-v="medium">Some</button><button type="button" data-v="high">Lots</button></div></div></div>
           </div>
           <div class="setting">
-            <div><h3>New arrivals</h3><p class="why">Push films added in the last 30 days, so new additions get noticed.</p></div>
+            <div><h3>New arrivals</h3><p class="why">Push titles added in the last 30 days, so new additions get noticed.</p></div>
             <div class="control"><div><div class="seg" id="NewArrivals"><button type="button" data-v="off">Off</button><button type="button" data-v="some">A little</button><button type="button" data-v="lots">A lot</button></div></div></div>
           </div>
           <div class="setting">
-            <div><h3>Change between refreshes</h3><p class="why">How strongly last time's picks move down, so rows don't show the same films day after day.</p></div>
+            <div><h3>Change between refreshes</h3><p class="why">How strongly last time's picks move down, so rows don't show the same titles day after day.</p></div>
             <div class="control"><div><div class="seg" id="Rotation"><button type="button" data-v="low">Little</button><button type="button" data-v="medium">Some</button><button type="button" data-v="high">Lots</button></div></div></div>
           </div>
           <div class="setting">
-            <div><h3>Skip weakly rated films</h3><p class="why">Leave out films with a low rating from real scores (OMDb, the web, Jellyfin). Films without one are kept.</p></div>
+            <div><h3>Skip weakly rated titles</h3><p class="why">Leave out titles with a low rating from real scores (OMDb, the web, Jellyfin). Titles without one are kept.</p></div>
             <div class="control"><select id="MinRating" style="width:auto"><option value="0">Off</option><option value="5">Below 5</option><option value="6">Below 6</option><option value="6.5">Below 6.5</option><option value="7">Below 7</option></select></div>
           </div>
         </div>
@@ -794,7 +821,7 @@
         <h2 class="group-title">Rows</h2>
         <div class="settings">
           <div class="setting">
-            <div><h3>"Because You Watched …"</h3><p class="why">Rows built around the latest films the person finished. "Recommended for you" is always there.</p></div>
+            <div><h3>"Because You Watched …"</h3><p class="why">Rows built around the latest films the person finished (and, with series rows on, the latest series they watched, for series rows). "Recommended for you" is always there.</p></div>
             <div class="control"><div><div class="seg" id="because-seg"><button type="button" data-v="0">None</button><button type="button" data-v="1">One</button><button type="button" data-v="2">Two</button></div></div></div>
           </div>
           <div class="setting">
@@ -828,7 +855,7 @@
 
     <!-- MATRIX -->
     <section data-page="matrix" class="hidden">
-      <div class="page-head"><div><h1>Matrix</h1><p>Every film on one map: the closer two films sit, the more alike they are. Scroll or pinch to zoom, drag to move around, and click a film to see what it's closest to. Series have their own matrix (switch at the top of the map): films are only ranked against films and series against series, so series never shift a film's scores. "Both" puts films (dots) and series (rings) on one map, and a picked title shows its closest films and series.</p></div></div>
+      <div class="page-head"><div><h1>Matrix</h1><p>Every title on one map: the closer two titles sit, the more alike they are. Scroll or pinch to zoom, drag to move around, and click a title to see what it's closest to. Series have their own matrix (switch at the top of the map): titles are only ranked against titles and series against series, so series never shift a title's scores. "Both" puts titles (dots) and series (rings) on one map, and a picked title shows its closest titles and series.</p></div></div>
       <div class="mx-wrap">
         <div class="mx" id="mx">
           <svg id="mx-svg" role="img" aria-label="Map of films by meaning"><g id="mx-world"></g><g id="mx-links"></g><g id="mx-labels"></g></svg>
@@ -952,6 +979,7 @@ function go(page) {
   document.body.classList.toggle('wide', page === 'matrix');
   if (page === 'libraries') loadLibraries();
   if (page === 'movies') loadMovies(true);
+  if (page === 'series') loadSeries(true);
   if (page === 'issues') loadIssues();
   if (page === 'ai') { loadExaUsage(); loadModelInfo(); loadAgain(); }
   if (page === 'status') loadStatus();
@@ -1072,6 +1100,7 @@ async function loadSettings() {
   $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
   $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery; $('#SeriesWeight').value = settings.SeriesWeight ?? 50;
+  $('#FilmsForSeriesWeight').value = settings.FilmsForSeriesWeight ?? 50; $('#SeriesRecommendations').checked = settings.SeriesRecommendations !== false;
   seg($('#Variety'), settings.Variety); seg($('#NewArrivals'), settings.NewArrivals); seg($('#Rotation'), settings.Rotation);
   const mr = $('#MinRating'); mr.value = [...mr.options].some(o => Number(o.value) === settings.MinRating) ? String(settings.MinRating) : '0';
   for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).value = settings[k] ?? 50;
@@ -1092,6 +1121,7 @@ const sliderText = {
   BriefWeight: v => v == 50 ? 'Half and half' : v > 50 ? `${v}% description · ${100 - v}% history` : `${100 - v}% history · ${v}% description`,
   Discovery: v => `${v} of 100${v == 40 ? ' · default' : ''}`,
   SeriesWeight: v => v == 0 ? 'Off: only films count' : `${v} of 100${v == 50 ? ' · default' : v == 100 ? ' · every series they watched counts like a film' : ''}`,
+  FilmsForSeriesWeight: v => v == 0 ? 'Off: only series count' : `${v} of 100${v == 50 ? ' · default' : v == 100 ? ' · every film they watched counts like a series' : ''}`,
   MeaningWeight: v => v == 50 ? 'Half and half · default' : v > 50 ? `${v}% meaning · ${100 - v}% tags` : `${100 - v}% tags · ${v}% meaning`,
   BecausePeople: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
   BecauseCountry: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
@@ -1185,12 +1215,12 @@ window.addEventListener('beforeunload', e => { if (savePending()) { e.preventDef
 const tuningValues = () => ({
   BecauseRows: Number(segValue($('#because-seg'))),
   BecausePeople: Number($('#BecausePeople').value), BecauseCountry: Number($('#BecauseCountry').value), BecauseEra: Number($('#BecauseEra').value), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
-  BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value), MeaningWeight: Number($('#MeaningWeight').value), SeriesWeight: Number($('#SeriesWeight').value),
+  BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value), MeaningWeight: Number($('#MeaningWeight').value), SeriesWeight: Number($('#SeriesWeight').value), FilmsForSeriesWeight: Number($('#FilmsForSeriesWeight').value), SeriesRecommendations: $('#SeriesRecommendations').checked,
   Variety: segValue($('#Variety')), NewArrivals: segValue($('#NewArrivals')), Rotation: segValue($('#Rotation')), MinRating: Number($('#MinRating').value),
 });
 $('#tuning-defaults').addEventListener('click', async () => {
   if (!confirm('Set all tuning back to the defaults?')) return;
-  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, MeaningWeight: 50, Discovery: 40, SeriesWeight: 50, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
+  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, MeaningWeight: 50, Discovery: 40, SeriesWeight: 50, FilmsForSeriesWeight: 50, SeriesRecommendations: true, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
 });
 $('#test-ai').addEventListener('click', async e => {
   const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';
@@ -1690,21 +1720,28 @@ function checkPosters(root) {
 const starText = r => r == null ? '' : '★'.repeat(Math.floor(r)) + (r % 1 ? '½' : '');
 
 // ---------- movies ----------
-let vocab = null, moviePage = 0, movieTimer = null;
+let vocab = null;
 const PAGE = 60;
 async function ensureVocab() {
   if (vocab) return vocab;
   vocab = await call('GET', '/api/vocabulary');
-  $('#m-tag').innerHTML = '<option value="">Any tag</option>'
-    + `<optgroup label="Subcategories">${vocab.Subcategories.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>`
+  const groups = `<optgroup label="Subcategories">${vocab.Subcategories.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>`
     + `<optgroup label="Moods">${vocab.Moods.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>`;
+  $('#m-tag').innerHTML = '<option value="">Any tag</option>' + groups;
+  $('#s-tag').innerHTML = '<option value="">Any tag</option>'
+    + `<optgroup label="Kinds of TV">${vocab.SeriesKinds.map(v => `<option>${esc(v)}</option>`).join('')}</optgroup>` + groups;
   return vocab;
 }
-async function fillLibraryFilter() {
+// Movies and Series are the same page for their own kind: p = the prefix of its filters
+const shelves = {
+  movie: { p: 'm', kind: 'movie', box: '#movies', page: 0, timer: null, noun: ['movie', 'movies'] },
+  series: { p: 's', kind: 'series', box: '#series', page: 0, timer: null, noun: ['series', 'series'] },
+};
+async function fillLibraryFilter(sh) {
   try {
     const libs = await call('GET', '/api/libraries');
-    const sel = $('#m-lib'), keep = sel.value;
-    sel.innerHTML = '<option value="">All libraries</option>' + libs.filter(l => (segValue($('#m-kind')) || 'movie') !== 'movie' || l.HoldsMovies).map(l => `<option value="${l.Id}">${esc(l.Name)}${l.Enabled ? '' : ' (off)'}</option>`).join('');
+    const sel = $(`#${sh.p}-lib`), keep = sel.value;
+    sel.innerHTML = '<option value="">All libraries</option>' + libs.filter(l => sh.kind === 'series' ? l.HoldsSeries : l.HoldsMovies).map(l => `<option value="${l.Id}">${esc(l.Name)}${l.Enabled ? '' : ' (off)'}</option>`).join('');
     sel.value = keep;
   } catch {}
 }
@@ -1723,26 +1760,29 @@ function filmCard(m) {
   el.addEventListener('click', () => openMovie(m.Id));
   return el;
 }
-async function loadMovies(reset) {
-  await ensureVocab(); if (reset) { moviePage = 0; fillLibraryFilter(); }
-  const kind = segValue($('#m-kind')) || 'movie';
-  const params = new URLSearchParams({ kind, q: $('#m-q').value, state: segValue($('#m-state')) || 'all', tag: $('#m-tag').value, trust: $('#m-trust').value, sort: $('#m-sort').value, skip: moviePage * PAGE, take: PAGE });
-  if ($('#m-lib').value) params.set('library', $('#m-lib').value);
+async function loadShelf(sh, reset) {
+  await ensureVocab(); if (reset) { sh.page = 0; fillLibraryFilter(sh); }
+  const f = id => $(`#${sh.p}-${id}`);
+  const params = new URLSearchParams({ kind: sh.kind, q: f('q').value, state: segValue(f('state')) || 'all', tag: f('tag').value, trust: f('trust').value, sort: f('sort').value, skip: sh.page * PAGE, take: PAGE });
+  if (f('lib').value) params.set('library', f('lib').value);
   const r = await call('GET', '/api/movies?' + params);
-  const box = $('#movies'); if (reset) box.innerHTML = '';
+  const box = $(sh.box); if (reset) box.innerHTML = '';
   const before = box.children.length;
   r.Items.forEach(m => box.appendChild(filmCard(m)));
-  checkPosters({ querySelectorAll: s => [...box.children].slice(before).flatMap(c => [...c.querySelectorAll(s)]) });
-  const noun = { movie: ['movie', 'movies'], series: ['series', 'series'], all: ['title', 'titles'] }[kind];
-  $('#m-count').textContent = `${r.Total.toLocaleString()} ${r.Total === 1 ? noun[0] : noun[1]}`;
+  checkPosters({ querySelectorAll: q => [...box.children].slice(before).flatMap(c => [...c.querySelectorAll(q)]) });
+  f('count').textContent = `${r.Total.toLocaleString()} ${r.Total === 1 ? sh.noun[0] : sh.noun[1]}`;
   if (!r.Total) box.innerHTML = '<div class="empty" style="grid-column:1/-1">Nothing matches.</div>';
-  $('#m-more').classList.toggle('hidden', (moviePage + 1) * PAGE >= r.Total);
+  f('more').classList.toggle('hidden', (sh.page + 1) * PAGE >= r.Total);
 }
-seg($('#m-state'), 'all', () => loadMovies(true));
-seg($('#m-kind'), 'movie', () => loadMovies(true));
-$('#m-q').addEventListener('input', () => { clearTimeout(movieTimer); movieTimer = setTimeout(() => loadMovies(true), 250); });
-for (const id of ['#m-tag', '#m-lib', '#m-trust', '#m-sort']) $(id).addEventListener('change', () => loadMovies(true));
-$('#m-more').addEventListener('click', () => { moviePage++; loadMovies(false); });
+const loadMovies = reset => loadShelf(shelves.movie, reset);
+const loadSeries = reset => loadShelf(shelves.series, reset);
+for (const sh of Object.values(shelves)) {
+  const f = id => $(`#${sh.p}-${id}`);
+  seg(f('state'), 'all', () => loadShelf(sh, true));
+  f('q').addEventListener('input', () => { clearTimeout(sh.timer); sh.timer = setTimeout(() => loadShelf(sh, true), 250); });
+  for (const id of ['tag', 'lib', 'trust', 'sort']) f(id).addEventListener('change', () => loadShelf(sh, true));
+  f('more').addEventListener('click', () => { sh.page++; loadShelf(sh, false); });
+}
 
 function tagEditor(selected, options, label) {
   const box = document.createElement('div');
@@ -1765,7 +1805,7 @@ async function openMovie(id) {
   const series = m.Kind === 'series';
   const when = series ? m.Aired : m.Year;
   $('#d-title').textContent = `${m.Title}${when ? ' (' + when + ')' : ''}${series ? ' · series' : ''}`;
-  const subs = [...m.Subcategories], moods = [...m.Moods];
+  const subs = [...m.Subcategories], moods = [...m.Moods], kinds = [...(d.SeriesKinds || [])];
   const who = !m.Tagged ? 'Not described yet'
     : m.Edited ? '✓ Described by you; the AI leaves it alone'
     : m.Trust === 'you' ? '✓ Checked by you'
@@ -1799,6 +1839,8 @@ async function openMovie(id) {
     </div>
     <div class="edit-row"><label class="field-label">Subcategories</label><div id="e-subs"></div><div class="sub">The first one counts most.</div></div>
     <div class="edit-row"><label class="field-label">Moods</label><div id="e-moods"></div></div>
+    ${series ? `<div class="edit-row"><label class="field-label">Kinds of TV</label><div id="e-kinds"></div><div class="sub">Series only: compared with other series, never with films.</div></div>
+      <div class="edit-row"><label class="field-label" for="e-format">Built as</label><select id="e-format">${options(vocab.Formats, d.Format)}</select></div>` : ''}
     <div class="edit-row"><label class="field-label">TMDB keywords</label>${d.Keywords.length
       ? `<div class="tags">${d.Keywords.map(k => `<span class="tag">${esc(k)}</span>`).join('')}</div>`
       : `<div class="note">${d.KeywordsFetched ? 'TMDB has no keywords for this movie.' : 'Not fetched yet. They are fetched at the next library sync, if a TMDB key is set.'}</div>`}</div>
@@ -1813,7 +1855,7 @@ async function openMovie(id) {
     </div>
 `;
   checkPosters($('#d-body'));
-  const editorState = () => JSON.stringify([subs, moods, $('#e-themes').value, $('#e-narr').value, $('#e-acc').value, $('#e-int').value, $('#e-score').value]);
+  const editorState = () => JSON.stringify([subs, moods, kinds, $('#e-format')?.value, $('#e-themes').value, $('#e-narr').value, $('#e-acc').value, $('#e-int').value, $('#e-score').value]);
   const loaded = editorState();
   drawerDirty = () => !!$('#e-themes') && editorState() !== loaded;
   // Its closest titles of its own kind, and of the other kind: a series' closest films are what it adds
@@ -1826,6 +1868,7 @@ async function openMovie(id) {
   loadHistory(id);
   $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
   $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));
+  if (series) $('#e-kinds').appendChild(tagEditor(kinds, vocab.SeriesKinds, 'kind of TV'));
   $('#d-foot').innerHTML = `<button class="btn primary" id="e-save">Save</button><button class="btn" id="e-retag">Describe again with AI</button>${webReady() ? '<button class="btn" id="e-look">Look up on the web, then describe</button>' : ''}${m.Tagged && m.Trust !== 'you' ? '<button class="btn quiet" id="e-ok">Mark as checked</button>' : ''}<span class="note" id="e-note"></span>`;
   if ($('#e-ok')) $('#e-ok').onclick = async () => { await call('POST', `/api/movies/${id}/fine`); toast('Marked as checked'); openMovie(id); afterIssueChange(); };
   if ($('#e-look')) $('#e-look').onclick = async e => {
@@ -1840,6 +1883,7 @@ async function openMovie(id) {
         Themes: $('#e-themes').value.split(',').map(t => t.trim()).filter(Boolean),
         NarrativeStyle: $('#e-narr').value, Accessibility: $('#e-acc').value, Intensity: $('#e-int').value,
         CriticalAcclaimScore: Number($('#e-score').value) || 0,
+        ...(series ? { SeriesKinds: kinds, Format: $('#e-format').value } : {}),
       });
       drawerDirty = null; toast('Saved. The AI will leave it alone.'); openMovie(id); afterIssueChange();
     } catch (err) { $('#e-note').textContent = err.message; $('#e-note').className = 'note err'; }
@@ -2033,7 +2077,10 @@ async function loadExaUsage() {
 }
 $('#WebLookupsPerDay').addEventListener('input', sweepEstimate);
 
-function refreshMovieList() { if (!$('section[data-page="movies"]').classList.contains('hidden')) loadMovies(true); }
+function refreshMovieList() {
+  if (!$('section[data-page="movies"]').classList.contains('hidden')) loadMovies(true);
+  if (!$('section[data-page="series"]').classList.contains('hidden')) loadSeries(true);
+}
 
 // ---------- one person: Letterboxd, history, rows ----------
 async function openUser(id, name, tab = 'letterboxd') {
@@ -2117,6 +2164,7 @@ function rowsEditor(d, userId) {
   const box = $('#rows-edit');
   const watched = new Set([...d.History.map(h => h.Id), ...d.Letterboxd.Watched.filter(f => f.ItemId).map(f => f.ItemId)]);
   const rows = d.Rows.map(r => ({ ...r, Movies: [...r.Movies] }));
+  const isSeriesRow = r => r.Kind === 'series';
   let hidden = [...(d.Hidden || [])];
 
   const save = async (row, removed = []) => {
@@ -2128,12 +2176,12 @@ function rowsEditor(d, userId) {
 
   const draw = () => {
     if (!rows.length) { box.innerHTML = '<p class="empty">No rows yet. They appear after the first picks; switch the person on and press "Pick again now".</p>'; return; }
-    box.innerHTML = `<p class="note" style="margin-top:0">These are the rows on the TV. Take out what doesn't fit, add what you want them to see. Movies you add stay at the front until watched; the AI fills the rest. Movies you take out are never recommended to this person again.</p>`
+    box.innerHTML = `<p class="note" style="margin-top:0">These are the rows on the TV. Take out what doesn't fit, add what you want them to see. What you add stays at the front until watched (a series: until started); the AI fills the rest. What you take out is never recommended to this person again. Series rows are made and kept here, but the TV app doesn't show them yet.</p>`
       + rows.map((r, ri) => {
         const mine = r.Movies.filter(m => m.Added).length;
         const readonly = r.Slot === 'watchlist';
         return `<div class="row-edit${readonly ? ' readonly' : ''}" data-r="${ri}">
-          <div class="head"><div class="row-name">${esc(r.Name)}</div><span class="note">${r.Movies.length} movies${readonly ? ' · follows their Letterboxd watchlist, newest first' : mine ? ` · ${mine} added by you` : ''}</span><button class="btn add-btn">Add a movie</button></div>
+          <div class="head"><div class="row-name">${esc(r.Name)}${isSeriesRow(r) ? ' <span class="note">· series, not on the TV yet</span>' : ''}</div><span class="note">${r.Movies.length} ${isSeriesRow(r) ? 'series' : 'movies'}${readonly ? ' · follows their Letterboxd watchlist, newest first' : mine ? ` · ${mine} added by you` : ''}</span><button class="btn add-btn">Add a ${isSeriesRow(r) ? 'series' : 'movie'}</button></div>
           <div class="picker hidden"><input type="search" placeholder="Search by title, year, director or actor" autocomplete="off" spellcheck="false"><div class="results"></div></div>
           <div class="strip">${r.Movies.map((m, mi) => `<div class="tile" data-m="${mi}">
             ${poster(m.Id, m.Title, m.Added ? '<div class="flag">Added by you</div>' : '')}
@@ -2202,7 +2250,7 @@ function rowsEditor(d, userId) {
       const q = input.value.trim();
       if (!q) { found = []; paint(); return; }
       timer = setTimeout(async () => {
-        const r = await call('GET', '/api/movies?' + new URLSearchParams({ q, take: 12 }));
+        const r = await call('GET', '/api/movies?' + new URLSearchParams({ q, take: 12, kind: isSeriesRow(row) ? 'series' : 'movie' }));
         if (input.value.trim() !== q) return;
         found = r.Items; sel = found.findIndex(m => !row.Movies.some(x => x.Id === m.Id)); paint();
         if (!found.length) results.innerHTML = '<div class="note" style="padding:10px 12px">Nothing in the library matches.</div>';
@@ -2235,7 +2283,7 @@ async function loadLibraries() {
     if (!libs.length) { box.innerHTML = '<div class="empty">No movie or TV libraries in Jellyfin.</div>'; return; }
     const counts = l => [l.Movies ? l.Movies.toLocaleString() + ' movies' : '', l.Series ? l.Series.toLocaleString() + ' series' : ''].filter(Boolean).join(', ');
     // A TV library only feeds taste; anything holding movies is recommended from
-    const on = l => l.Movies || (l.HoldsMovies && !l.Series) ? 'Recommended from' : 'Used for taste';
+    const on = l => l.Movies || (l.HoldsMovies && !l.Series) || settings?.SeriesRecommendations !== false ? 'Recommended from' : 'Used for taste';
     box.innerHTML = libs.map(l => `
       <div class="lib">
         <div class="grow"><div class="lib-name">${esc(l.Name)}</div><div class="note">${counts(l) || 'Counted after the next library sync'}</div></div>
@@ -2416,7 +2464,7 @@ async function loadStatus() {
     const label = { running: 'Running', waiting: 'Waiting', paused: 'Paused', off: 'Off' };
     $('#queue').innerHTML = (s.Queue || []).map(q => {
       // Series go through the same steps (they only help with taste); their share is shown under the count
-      const ofSeries = q.SeriesOf != null ? `<div class="note" title="Series aren't recommended; they tell more about taste">incl. ${n(q.SeriesDone)} / ${n(q.SeriesOf)} series</div>` : '';
+      const ofSeries = q.SeriesOf != null ? `<div class="note">films ${n(q.Done - q.SeriesDone)} / ${n(q.Of - q.SeriesOf)} · series ${n(q.SeriesDone)} / ${n(q.SeriesOf)}</div>` : '';
       const count = q.Of != null ? `<div class="count">${n(q.Done)} / ${n(q.Of)}<div class="meter"><div style="width:${q.Of ? Math.min(100, 100 * q.Done / q.Of) : 0}%"></div></div>${ofSeries}</div>` : '<div class="count"></div>';
       const text = q.Queued ? `${n(q.Queued)} queued to describe again${q.State === 'running' && q.Text ? ' · now ' + q.Text.toLowerCase() : ''}`
         : q.Text === 'Done' && q.At ? `Done at ${clock(q.At)}` : q.Text;

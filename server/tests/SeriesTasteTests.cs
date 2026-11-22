@@ -7,8 +7,8 @@ using Xunit;
 /// <summary>What the series someone watches add to their taste in films, and the separate series matrix.</summary>
 public class SeriesTasteTests
 {
-    private static MovieMetadata Show(string title, int episodes, string? format = null) =>
-        new() { ItemId = Guid.NewGuid(), Title = title, Kind = MovieMetadata.SeriesKind, Episodes = episodes, Format = format, IsClassified = true, ReleaseYear = 2010 };
+    private static MovieMetadata Show(string title, int episodes, string? kind = null) =>
+        new() { ItemId = Guid.NewGuid(), Title = title, Kind = MovieMetadata.SeriesKind, Episodes = episodes, SeriesKinds = kind is null ? null : $"[\"{kind}\"]", IsClassified = true, ReleaseYear = 2010 };
 
     private static IEnumerable<JellyfinItem> Watched(MovieMetadata show, int count, int seasons = 1, DateTime? at = null) =>
         Enumerable.Range(0, count).Select(i => new JellyfinItem
@@ -24,7 +24,7 @@ public class SeriesTasteTests
         var watched = Show("Watched", 40);
         var finished = Show("Finished", 10);
         var long_ = Show("Three Seasons", 100);
-        var reality = Show("Love Island", 50, "reality");
+        var reality = Show("Love Island", 50, "Reality Competition");
         var library = new[] { sampled, watched, finished, long_, reality }.ToDictionary(m => m.ItemId);
         var episodes = Watched(sampled, 2).Concat(Watched(watched, 5)).Concat(Watched(finished, 9))
             .Concat(Watched(long_, 12, seasons: 3)).Concat(Watched(reality, 30)).ToList();

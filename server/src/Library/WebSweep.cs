@@ -47,7 +47,7 @@ public sealed class WebSweep
         var todo = (await _store.GetAllTitlesAsync(cancellationToken)).Where(Wanted).ToList();
         if (todo.Count == 0) { Jobs.Idle(key, title, "Up to date"); return; }
         var ready = todo.Where(Ready).ToList();
-        if (ready.Count == 0) { Jobs.Idle(key, title, "Waiting for step 2 to check films", DateTime.UtcNow.AddMinutes(5)); return; }
+        if (ready.Count == 0) { Jobs.Idle(key, title, "Waiting for step 2 to check them", DateTime.UtcNow.AddMinutes(5)); return; }
         Jobs.Running(key, title, $"{Math.Min(PerRound, left)} titles");
         var batch = ready
             .OrderBy(m => m.IsSeries) // films first

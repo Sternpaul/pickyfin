@@ -74,7 +74,7 @@ public sealed class MovieHistory
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
-            _logger.LogWarning("Couldn't write film history: {Error}", error.Message);
+            _logger.LogWarning("Couldn't write a title's history: {Error}", error.Message);
         }
     }
 

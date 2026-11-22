@@ -76,18 +76,40 @@ namespace Pickyfin.Server.Library
         public static readonly IReadOnlyList<string> Occasions = new[] { "date night", "family", "with friends", "alone" };
 
         /// <summary>
-        /// What form a series takes. Series only, and not part of the tag set (Version): adding it
-        /// didn't send every film to be described again.
+        /// How a series is built: one closed story, a story over many seasons, or a new story each
+        /// season. Series only, and not part of the tag set (Version).
         /// </summary>
-        public static readonly IReadOnlyList<string> Formats = new[]
-        {
-            "miniseries", "ongoing", "anthology", "sitcom", "procedural", "docuseries", "animated",
-            // Say nothing about taste in films: never counted (SeriesTaste)
-            "reality", "talk show", "game show",
-        };
+        public static readonly IReadOnlyList<string> Formats = new[] { "miniseries", "ongoing", "anthology" };
 
         public static string? CanonicalFormat(string? raw) =>
             raw is null ? null : Formats.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Kinds of TV that films don't have. Series only, on top of the shared subcategories: they
+        /// compare series with series, and never count when a series is compared with a film. Not
+        /// part of the tag set (Version), so adding or changing them never re-describes the films.
+        /// </summary>
+        public static readonly IReadOnlyList<string> SeriesKinds = new[]
+        {
+            // Comedy
+            "Sitcom", "Workplace Comedy", "Family Sitcom", "Animated Sitcom", "Sketch Comedy", "Dramedy",
+            // Cases
+            "Police Procedural", "Medical Drama Series", "Legal Drama Series", "Case-of-the-Week Mystery",
+            // Drama
+            "Prestige Drama", "Serialized Thriller", "Teen Drama", "Soap Opera", "Telenovela", "Period Drama Series",
+            // Animation and family
+            "Kids Animation", "Adult Animated Series", "Anime Series",
+            // Factual
+            "Docuseries", "True Crime Docuseries", "Nature Docuseries",
+            // Entertainment: say nothing about taste in films (SeriesTaste never counts them)
+            "Reality Competition", "Reality Show", "Dating Show", "Talk Show", "Game Show", "Cooking Show",
+        };
+
+        /// <summary>Series kinds that are entertainment, not stories: never part of someone's taste in films.</summary>
+        public static readonly IReadOnlyList<string> NotTasteKinds = new[] { "Reality Competition", "Reality Show", "Dating Show", "Talk Show", "Game Show", "Cooking Show" };
+
+        public static string? CanonicalSeriesKind(string? raw) =>
+            raw is null ? null : SeriesKinds.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
 
         public static string? CanonicalPacing(string? raw) =>
             raw is null ? null : Pacing.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));

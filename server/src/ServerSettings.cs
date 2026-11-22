@@ -143,6 +143,10 @@ public sealed class ServerSettings
     public int Discovery { get; set; } = 40;
     /// <summary>How much the series someone watches count toward their taste in films: 0 = not at all, 50 = default, 100 = like films.</summary>
     public int SeriesWeight { get; set; } = 50;
+    /// <summary>Series get rows of their own ("Series for you", "Because You Watched" a series). Off = series only count as taste.</summary>
+    public bool SeriesRecommendations { get; set; } = true;
+    /// <summary>How much the films someone watches count toward their taste in series: 0 = not at all, 50 = default, 100 = like series.</summary>
+    public int FilmsForSeriesWeight { get; set; } = 50;
     /// <summary>"low", "medium" or "high": how mixed the genres are.</summary>
     public string Variety { get; set; } = "medium";
     /// <summary>"off", "some" or "lots": push movies added in the last 30 days.</summary>

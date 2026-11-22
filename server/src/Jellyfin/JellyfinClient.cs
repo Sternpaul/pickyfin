@@ -58,6 +58,8 @@ public sealed class JellyfinUserData
     public bool IsFavorite { get; set; }
     public DateTime? LastPlayedDate { get; set; }
     public long PlaybackPositionTicks { get; set; }
+    /// <summary>For a series: how much of it was played, 0–100.</summary>
+    public double? PlayedPercentage { get; set; }
 }
 
 public sealed class JellyfinException(string message) : Exception(message);

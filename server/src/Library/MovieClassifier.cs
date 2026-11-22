@@ -45,7 +45,7 @@ namespace Pickyfin.Server.Library
         public async Task<bool> TagNowAsync(List<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
             var provider = _aiProviderFactory.GetProvider();
-            using (Activity.Begin($"Tagging {movies.Count} movie(s): waiting for {provider.Name}"))
+            using (Activity.Begin($"Describing {Titles.Count(movies)}: waiting for {provider.Name}"))
                 await TagBatchAsync(provider, movies, cancellationToken);
             return movies.All(m => m.IsClassified);
         }
@@ -85,14 +85,14 @@ namespace Pickyfin.Server.Library
             if (onlyNew) unclassified = unclassified.Where(m => !m.IsSeries).ToList();
             if (!unclassified.Any())
             {
-                _logger.LogInformation("All movies are tagged");
-                if (!onlyNew) Jobs.Idle("tagging", "Describing films", "Up to date");
+                _logger.LogInformation("All films and series are described");
+                if (!onlyNew) Jobs.Idle("tagging", "Describing films and series", "Up to date");
                 return;
             }
 
             var total = unclassified.Count;
             if (maxBatches is { } max) unclassified = unclassified.Take(max * BatchSize).ToList();
-            _logger.LogInformation("Tagging {Count} movies, {Batch} per AI call{Rest}", unclassified.Count, BatchSize,
+            _logger.LogInformation("Describing {What}, {Batch} per AI call{Rest}", Titles.Count(unclassified), BatchSize,
                 total > unclassified.Count ? $" ({total - unclassified.Count} more in later rounds)" : "");
             var provider = _aiProviderFactory.GetProvider();
             TaggingEta.Start(unclassified.Count, BatchSize);
@@ -102,13 +102,13 @@ namespace Pickyfin.Server.Library
                 {
                     if (cancellationToken.IsCancellationRequested) break;
                     var batch = unclassified.Skip(i).Take(BatchSize).ToList();
-                    _logger.LogInformation("Tagging movies {Start}–{End} of {Total} ({Model})", i + 1, i + batch.Count, unclassified.Count, ServerSettings.Current.ClassificationModel);
+                    _logger.LogInformation("Describing titles {Start}–{End} of {Total}: {What} ({Model})", i + 1, i + batch.Count, unclassified.Count, Titles.Count(batch), ServerSettings.Current.ClassificationModel);
                     try
                     {
                         var started = DateTime.UtcNow;
                         TaggingEta.BatchStarted(unclassified.Count - i);
-                        Jobs.Running("tagging", "Describing films", $"Films {i + 1}–{i + batch.Count} of {unclassified.Count}");
-                        using (Activity.Begin($"Tagging movies {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
+                        Jobs.Running("tagging", "Describing films and series", $"Titles {i + 1}–{i + batch.Count} of {unclassified.Count} ({Titles.Count(batch)})");
+                        using (Activity.Begin($"Describing titles {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
                             await TagBatchAsync(provider, batch, cancellationToken);
                         _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
                         await LookUpFlaggedAsync(provider, batch, cancellationToken);
@@ -120,7 +120,7 @@ namespace Pickyfin.Server.Library
                         _errorsInARow++;
                         RetryAt = DateTime.UtcNow.AddMinutes(Math.Min(60, 10 * Math.Pow(2, _errorsInARow - 1)));
                         _logger.LogError("Tagging paused: {Error}. Trying again at {When}.", ex.Message, Jobs.When(RetryAt.Value));
-                        Jobs.Idle("tagging", "Describing films", $"Paused: {Jobs.Short(ex.Message)}", RetryAt, error: true);
+                        Jobs.Idle("tagging", "Describing films and series", $"Paused: {Jobs.Short(ex.Message)}", RetryAt, error: true);
                         break;
                     }
                 }
@@ -130,12 +130,12 @@ namespace Pickyfin.Server.Library
             var left = total - unclassified.Count;
             if (left > 0)
             {
-                _logger.LogInformation("Tagging: round done, {Left} films still queued", left);
-                Jobs.Idle("tagging", "Describing films", $"{left:N0} films queued", DateTime.UtcNow.AddMinutes(5));
+                _logger.LogInformation("Describing: round done, {Left} titles still queued", left);
+                Jobs.Idle("tagging", "Describing films and series", $"{left:N0} titles queued", DateTime.UtcNow.AddMinutes(5));
                 return;
             }
-            _logger.LogInformation("Tagging finished");
-            Jobs.Idle("tagging", "Describing films", "Up to date");
+            _logger.LogInformation("Describing finished");
+            Jobs.Idle("tagging", "Describing films and series", "Up to date");
         }
 
         /// <summary>
@@ -173,8 +173,8 @@ namespace Pickyfin.Server.Library
                 else await _movieStore.SaveMoviesAsync(new[] { movie }, cancellationToken);
             }
             if (withNotes.Count == 0) return looked;
-            _logger.LogInformation("Tagging {Count} looked-up movie(s) again", withNotes.Count);
-            using (Activity.Begin($"Tagging {withNotes.Count} looked-up movie(s) again: waiting for {provider.Name}"))
+            _logger.LogInformation("Describing {What} again from the web lookup", Titles.Count(withNotes));
+            using (Activity.Begin($"Describing {Titles.Count(withNotes)} again from the web lookup: waiting for {provider.Name}"))
                 await TagBatchAsync(provider, withNotes, cancellationToken, lookedUp: true);
             return looked;
         }
@@ -204,7 +204,7 @@ namespace Pickyfin.Server.Library
                 model, before[m.ItemId],
                 $"Knew the film: {known[m]}" + (m.Issue is null ? "" : "\nStill flagged: " + m.Issue.Replace("\n", "; ")))), cancellationToken);
             var missing = batch.Count(m => !known.ContainsKey(m));
-            if (missing > 0) _logger.LogWarning("The AI left out {Count} of {Total} movie(s); they're tried again next time", missing, batch.Count);
+            if (missing > 0) _logger.LogWarning("The AI left out {Count} of {Total} title(s); they're tried again next time", missing, batch.Count);
             await _movieStore.SaveMoviesAsync(batch.Where(known.ContainsKey), cancellationToken);
         }
 
@@ -238,7 +238,7 @@ namespace Pickyfin.Server.Library
             else if (TryGetPropertyIgnoreCase(document.RootElement, "movies", out var prop) && prop.ValueKind == JsonValueKind.Array) moviesArray = prop;
             else
             {
-                _logger.LogWarning("Could not find the movies list in the AI's answer");
+                _logger.LogWarning("Could not find the list of titles in the AI's answer");
                 return answered;
             }
 
@@ -287,7 +287,15 @@ namespace Pickyfin.Server.Library
                     if (o.ValueKind == JsonValueKind.String && ClassificationVocabulary.CanonicalOccasion(o.GetString()) is { } occasion && !occasions.Contains(occasion)) occasions.Add(occasion);
             movie.Occasions = JsonSerializer.Serialize(occasions.Take(2));
             movie.SettingPlace = Text("SettingPlace", 40);
-            if (movie.IsSeries) movie.Format = ClassificationVocabulary.CanonicalFormat(Text("Format", 20));
+            if (movie.IsSeries)
+            {
+                movie.Format = ClassificationVocabulary.CanonicalFormat(Text("Format", 20));
+                var kinds = new List<string>();
+                if (TryGetPropertyIgnoreCase(element, "SeriesKinds", out var sk) && sk.ValueKind == JsonValueKind.Array)
+                    foreach (var k in sk.EnumerateArray())
+                        if (k.ValueKind == JsonValueKind.String && ClassificationVocabulary.CanonicalSeriesKind(k.GetString()) is { } kind && !kinds.Contains(kind)) kinds.Add(kind);
+                movie.SeriesKinds = JsonSerializer.Serialize(kinds.Take(3));
+            }
         }
 
         internal static string ExtractJson(string text)

@@ -23,6 +23,9 @@ public sealed class BriefProfile
     public List<string> AvoidEndings { get; set; } = new();
     /// <summary>They like award winners (Oscars).</summary>
     public bool Awarded { get; set; }
+    /// <summary>Kinds of TV they like and dislike (sitcoms, procedurals…); null = read before series existed, read again.</summary>
+    public List<string>? SeriesKinds { get; set; }
+    public List<string>? AvoidSeriesKinds { get; set; }
     /// <summary>What they want to watch, in one or two plain sentences, positives only (for matching by meaning).</summary>
     public string? LookingFor { get; set; }
 
@@ -54,7 +57,7 @@ public sealed class BriefInterpreter
 
     public async Task<BriefProfile> InterpretAsync(string brief, CancellationToken cancellationToken)
     {
-        var system = "You translate a short description of a person's movie taste into tags for a recommendation engine. Output only JSON.";
+        var system = "You translate a short description of a person's taste in films and TV series into tags for a recommendation engine. Output only JSON.";
         var prompt = $@"Description of the viewer, written by the person who runs the media server:
 """"""
 {brief}
@@ -72,8 +75,10 @@ Return a JSON object with:
 - ""pacing"": pacing they prefer (may be empty), ONLY from: {Quoted(ClassificationVocabulary.Pacing)}
 - ""occasions"": who they watch with (may be empty), ONLY from: {Quoted(ClassificationVocabulary.Occasions)}
 - ""avoidEndings"": endings they don't want (may be empty), ONLY from: {Quoted(ClassificationVocabulary.Endings)}
+- ""seriesKinds"": kinds of TV series they would enjoy (may be empty), ONLY from: {Quoted(ClassificationVocabulary.SeriesKinds)}
+- ""avoidSeriesKinds"": kinds of TV series they clearly dislike (may be empty), from the same list
 - ""awarded"": true if they like award winners or Oscar films, else false
-- ""lookingFor"": one or two plain sentences describing the films they would love, only what they DO want (no negatives)
+- ""lookingFor"": one or two plain sentences describing the films and series they would love, only what they DO want (no negatives)
 Places, eras and sources they like (""films set in Japan"", ""1970s"", ""based on true stories"") go into ""keywords"" as short lowercase words (""japan"", ""1970s"", ""true story"").
 
 Output ONLY the JSON object.";
@@ -99,6 +104,8 @@ Output ONLY the JSON object.";
             Occasions = Canonical(Strings(root, "occasions"), ClassificationVocabulary.CanonicalOccasion),
             AvoidEndings = Canonical(Strings(root, "avoidEndings"), ClassificationVocabulary.CanonicalEnding),
             Awarded = Value(root, "awarded") is { ValueKind: JsonValueKind.True },
+            SeriesKinds = Canonical(Strings(root, "seriesKinds"), ClassificationVocabulary.CanonicalSeriesKind),
+            AvoidSeriesKinds = Canonical(Strings(root, "avoidSeriesKinds"), ClassificationVocabulary.CanonicalSeriesKind),
             LookingFor = Value(root, "lookingFor") is { ValueKind: JsonValueKind.String } lf && lf.GetString()?.Trim() is { Length: > 0 } text ? (text.Length > 600 ? text[..600] : text) : "",
         };
         _logger.LogInformation("Brief understood as: {Subcategories} / moods {Moods}", string.Join(", ", profile.Subcategories), string.Join(", ", profile.Moods));

@@ -79,7 +79,7 @@ public sealed class LibrarySync
         if (hidden > 0) _logger.LogWarning("Library: {Count} title(s) are no longer in Jellyfin; hidden, and kept until you confirm their removal on the admin page", hidden);
         if (back > 0) _logger.LogInformation("Library: {Count} title(s) are back in Jellyfin, with their tags as before", back);
         var orphans = await _store.DeleteOrphanedEmbeddingsAsync(cancellationToken);
-        if (orphans > 0) _logger.LogInformation("Library: cleared {Count} stored meanings of films that no longer exist", orphans);
+        if (orphans > 0) _logger.LogInformation("Library: cleared {Count} stored meanings of titles that no longer exist", orphans);
         var changedSeries = changed.Count(m => m.IsSeries);
         _logger.LogInformation("Library: {Movies} movies and {Series} series, {Changed} new or changed ({ChangedSeries} of them series), {Hidden} no longer in Jellyfin",
             movies.Count, series.Count, changed.Count, changedSeries, hidden);
@@ -97,7 +97,7 @@ public sealed class LibrarySync
             await GenreSweepAsync(cancellationToken);
         }
         else
-            _logger.LogWarning("No AI key set: movies are not classified, recommendations fall back to ratings");
+            _logger.LogWarning("No AI key set: films and series aren't described, recommendations fall back to ratings");
 
 
         LastSync = DateTime.UtcNow;
@@ -124,7 +124,7 @@ public sealed class LibrarySync
         if (cleared.Count > 0)
         {
             await _store.SaveMoviesAsync(cleared, cancellationToken);
-            _logger.LogInformation("Genre check: cleared {Count} looked-up movie(s)", cleared.Count);
+            _logger.LogInformation("Genre check: cleared {Count} looked-up title(s)", cleared.Count);
         }
 
         var flagged = movies
@@ -136,7 +136,7 @@ public sealed class LibrarySync
         foreach (var (movie, problems) in flagged) movie.Issue = string.Join("\n", problems);
         await _store.SaveMoviesAsync(flagged.Select(x => x.Movie), cancellationToken);
         await _history.AddAsync(flagged.Select(x => MovieHistory.Entry(x.Movie, "genre", null, null, string.Join("\n", x.Problems))), cancellationToken);
-        _logger.LogInformation("Genre check: {Count} movie(s) look off, see Issues", flagged.Count);
+        _logger.LogInformation("Genre check: {What} look off, see Issues", Titles.Count(flagged.Select(x => x.Movie)));
     }
 
     /// <summary>

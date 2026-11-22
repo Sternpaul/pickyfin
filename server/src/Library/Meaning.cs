@@ -117,6 +117,7 @@ public sealed class Meaning
         if (m.GenreList.Count > 0) b.Append($" Genres: {string.Join(", ", m.GenreList)}.");
         if (!string.IsNullOrWhiteSpace(m.Countries)) b.Append($" From {m.Countries}.");
         if (m.SubcategorySet.Items.Count > 0) b.Append($" Kind: {string.Join(", ", m.SubcategorySet.Items)}.");
+        if (m.IsSeries && m.SeriesKindSet.Count > 0) b.Append($" TV: {string.Join(", ", m.SeriesKindSet.Items)}.");
         if (m.MoodSet.Items.Count > 0) b.Append($" Mood: {string.Join(", ", m.MoodSet.Items)}.");
         if (m.ThemeSet.Items.Count > 0) b.Append($" Themes: {string.Join(", ", m.ThemeSet.Items)}.");
         if (m.KeywordSet.Items.Count > 0) b.Append($" Keywords: {string.Join(", ", m.KeywordSet.Items.Take(15))}.");

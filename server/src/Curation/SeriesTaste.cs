@@ -1,5 +1,6 @@
 using Pickyfin.Server.Data.Models;
 using Pickyfin.Server.Jellyfin;
+using Pickyfin.Server.Library;
 
 namespace Pickyfin.Server.Curation;
 
@@ -28,7 +29,6 @@ public static class SeriesTaste
     public const int MinEpisodes = 3;
     /// <summary>At most this many series join someone's taste, the most recently watched, so a binge doesn't drown the films.</summary>
     public const int MaxInTaste = 10;
-    private static readonly string[] NotTaste = { "reality", "talk show", "game show" };
 
     /// <param name="all">Also the series that don't count (sampled, reality…), for the admin page.</param>
     public static List<SeriesWatch> Read(IEnumerable<JellyfinItem> episodes, IReadOnlyDictionary<Guid, MovieMetadata> series, DateTime? countFrom, bool all = false)
@@ -43,7 +43,7 @@ public static class SeriesTaste
             var count = group.Count();
             var seasons = group.Select(e => e.ParentIndexNumber).Where(n => n is > 0).Distinct().Count();
             var share = show.Episodes is > 0 and var total ? count / (double)total : 0;
-            var level = show.Format is { } format && NotTaste.Contains(format, StringComparer.OrdinalIgnoreCase) ? NotTasteLevel
+            var level = show.SeriesKindSet.Items.Any(k => ClassificationVocabulary.NotTasteKinds.Contains(k, StringComparer.OrdinalIgnoreCase)) ? NotTasteLevel
                 : count < MinEpisodes ? Sampled
                 : share >= 0.8 || seasons >= 3 ? Finished : Watched;
             if (!all && level is Sampled or NotTasteLevel) continue;
@@ -69,7 +69,10 @@ public static class SeriesTaste
             .Where(x => x.Item2 > 0)
             .ToList();
 
-    /// <summary>What the levels are now, to notice a series moving up (a new one watched, or one finished).</summary>
+    /// <summary>
+    /// What the levels are now (from Read with all: true), to notice a series started, or moving up
+    /// (now counts, or finished). Another episode alone doesn't change it.
+    /// </summary>
     public static string Signature(IEnumerable<SeriesWatch> watched) =>
         string.Join(",", watched.OrderBy(w => w.Series.ItemId).Select(w => $"{w.Series.ItemId:N}:{w.Level[0]}"));
 

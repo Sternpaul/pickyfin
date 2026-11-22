@@ -199,7 +199,7 @@ public sealed class OmdbScores
         }
 
         if (done > 0)
-            _logger.LogInformation("OMDb scores: {Done} films fetched ({Found} with scores), {Today} requests today, {Left} films to go",
+            _logger.LogInformation("OMDb scores: {Done} titles fetched ({Found} with scores), {Today} requests today, {Left} titles to go",
                 done, found, RequestsToday, todo.Count - done);
         if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
         var today = RequestsToday;

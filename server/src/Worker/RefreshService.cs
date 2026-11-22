@@ -76,7 +76,7 @@ public sealed class RefreshService : BackgroundService
         await LogStartupAsync(stoppingToken);
         const string turn = "";
         Jobs.Ensure("library", "Library sync", turn);
-        Jobs.Ensure("tagging", "Describing films", turn);
+        Jobs.Ensure("tagging", "Describing films and series", turn);
         Jobs.Ensure("second", "Second opinion", turn);
         Jobs.Ensure("sweep", "Looking up the whole library", turn);
         Jobs.Ensure("picks", "Rows for each person", turn);
@@ -207,7 +207,7 @@ public sealed class RefreshService : BackgroundService
             var queued = await _store.CountRedoAsync(cancellationToken) + await _store.CountUntaggedSeriesAsync(cancellationToken);
             if (MovieClassifier.RetryAt is not null || queued > 0)
             {
-                State = "Describing films";
+                State = "Describing films and series";
                 await _classifier.ClassifyPendingMoviesAsync(cancellationToken, maxBatches: queued > 0 ? 8 : null);
             }
         }
@@ -265,8 +265,11 @@ public sealed class RefreshService : BackgroundService
             ? "AI: no key set yet (Settings → AI)"
             : $"AI: {s.AIProvider}, picking with {s.ChatModel}, tagging with {(s.ClassificationModelsAuto ? "the most used free models this week" : string.Join(" → ", ServerSettings.Chain(s.ClassificationModels, s.ClassificationModel)))}");
         _logger.LogInformation("TMDB keywords: {State}", string.IsNullOrWhiteSpace(s.TmdbApiKey) ? "off (no key)" : "on");
-        _logger.LogInformation("Rows: Recommended for you + {Because} Because You Watched, {Picks} movies each, fresh at least every {Hours} h; {Excluded} librar{Plural} switched off",
+        _logger.LogInformation("Rows: Recommended for you + {Because} Because You Watched, {Picks} titles each, fresh at least every {Hours} h; {Excluded} librar{Plural} switched off",
             s.BecauseRows, s.PicksPerRow, s.RefreshHours, s.ExcludedLibraries.Count, s.ExcludedLibraries.Count == 1 ? "y" : "ies");
+        _logger.LogInformation("Series: {Rows}; series count {SeriesWeight} of 100 for films, films count {FilmsWeight} of 100 for series",
+            s.SeriesRecommendations ? $"rows of their own (Series for you + {s.BecauseRows} Because You Watched, kept here; the TV app doesn't show them yet)" : "no rows of their own (only taste)",
+            s.SeriesWeight, s.FilmsForSeriesWeight);
 
         await using var db = _database.Open();
         var users = await db.Users.AsNoTracking().ToListAsync(cancellationToken);
@@ -326,11 +329,11 @@ public sealed class RefreshService : BackgroundService
             var settings = ServerSettings.Current.Clone();
             settings.RedoDescribeTotal = await db.Movies.CountAsync(m => m.RedoDescribe && !m.ManuallyEdited, cancellationToken);
             ServerSettings.Save(settings);
-            _logger.LogInformation("New tag set: {Count} films queued to be described again, 160 per round", count);
+            _logger.LogInformation("New tag set: {Count} titles queued to be described again, 160 per round", count);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
-            _logger.LogWarning("Couldn't queue films for the new tag set: {Error}", error.Message);
+            _logger.LogWarning("Couldn't queue titles for the new tag set: {Error}", error.Message);
         }
     }
 
@@ -365,22 +368,22 @@ public sealed class RefreshService : BackgroundService
         var lastPlayed = await _jellyfin.GetLastPlayedAsync(user.UserId, cancellationToken);
         var briefChanged = (user.Brief ?? "") != (user.BriefProfileFor ?? "")
             // Descriptions read before the newer fields (running time, endings, what they want in plain words) are read once more
-            || (!string.IsNullOrWhiteSpace(user.Brief) && Curation.BriefProfile.FromJson(user.BriefProfile) is { LookingFor: null });
+            || (!string.IsNullOrWhiteSpace(user.Brief) && Curation.BriefProfile.FromJson(user.BriefProfile) is { LookingFor: null } or { SeriesKinds: null });
         var newWatch = lastPlayed is not null && lastPlayed != user.LastSeenPlay;
         var stale = user.LastRefresh is null || DateTime.UtcNow - user.LastRefresh > TimeSpan.FromHours(Math.Max(1, ServerSettings.Current.RefreshHours));
 
         // Series: never a refresh per episode (that would be an AI call each time), only when a
-        // series moves up a level (a new one watched, one finished). Episodes are read only when
-        // the latest one changed.
+        // series is started (it leaves "Series for you") or moves up a level (now counts, or
+        // finished). Episodes are read only when the latest one changed.
         var seriesNews = false;
         DateTime? lastEpisode = user.LastSeenEpisode;
         var seriesLevels = user.SeriesLevels;
-        if (ServerSettings.Current.SeriesWeight > 0)
+        if (ServerSettings.Current.SeriesWeight > 0 || ServerSettings.Current.SeriesRecommendations)
         {
             lastEpisode = await _jellyfin.GetLastPlayedAsync(user.UserId, cancellationToken, "Episode");
             if (lastEpisode is not null && lastEpisode != user.LastSeenEpisode)
             {
-                seriesLevels = SeriesTaste.Signature(await _curator.SeriesWatchedAsync(user, cancellationToken));
+                seriesLevels = SeriesTaste.Signature(await _curator.SeriesWatchedAsync(user, cancellationToken, all: true));
                 seriesNews = seriesLevels != (user.SeriesLevels ?? "");
             }
         }
