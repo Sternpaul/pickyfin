@@ -75,6 +75,20 @@ namespace Pickyfin.Server.Library
         /// <summary>Who it suits watching with.</summary>
         public static readonly IReadOnlyList<string> Occasions = new[] { "date night", "family", "with friends", "alone" };
 
+        /// <summary>
+        /// What form a series takes. Series only, and not part of the tag set (Version): adding it
+        /// didn't send every film to be described again.
+        /// </summary>
+        public static readonly IReadOnlyList<string> Formats = new[]
+        {
+            "miniseries", "ongoing", "anthology", "sitcom", "procedural", "docuseries", "animated",
+            // Say nothing about taste in films: never counted (SeriesTaste)
+            "reality", "talk show", "game show",
+        };
+
+        public static string? CanonicalFormat(string? raw) =>
+            raw is null ? null : Formats.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
+
         public static string? CanonicalPacing(string? raw) =>
             raw is null ? null : Pacing.FirstOrDefault(c => string.Equals(c, raw.Trim(), StringComparison.OrdinalIgnoreCase));
         public static string? CanonicalEnding(string? raw) =>

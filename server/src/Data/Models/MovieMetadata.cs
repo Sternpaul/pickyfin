@@ -27,6 +27,8 @@ namespace Pickyfin.Server.Data.Models
         public string? Status { get; set; }
         public string? Network { get; set; }
         public string? Format { get; set; }
+        /// <summary>Series only: when someone switched on last finished an episode (watched series are described first).</summary>
+        public DateTime? LastWatched { get; set; }
 
         // Basic metadata
         public string Title { get; set; } = string.Empty;

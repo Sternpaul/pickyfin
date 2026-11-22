@@ -22,6 +22,17 @@ public static class GenreCheck
         ["Thriller"] = "Thriller", ["War"] = "War", ["Kriegsfilm"] = "War", ["Krieg"] = "War", ["Western"] = "Western",
     };
 
+    // TMDB's TV genres (what Jellyfin has for series) join two film genres in one name, or name
+    // kinds of TV films don't have; each counts as the film genres it covers (none for talk shows etc.)
+    private static readonly Dictionary<string, string[]> TvGenreNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Action & Adventure"] = new[] { "Action", "Adventure" }, ["Action & Abenteuer"] = new[] { "Action", "Adventure" },
+        ["Sci-Fi & Fantasy"] = new[] { "Science Fiction", "Fantasy" },
+        ["War & Politics"] = new[] { "War", "History" }, ["Krieg & Politik"] = new[] { "War", "History" },
+        ["Kids"] = new[] { "Family" }, ["Kinder"] = new[] { "Family" },
+        ["Soap"] = new[] { "Drama", "Romance" }, ["Seifenoper"] = new[] { "Drama", "Romance" },
+    };
+
     private static string[] G(params string[] genres) => genres;
 
     // Which genres a subcategory can live under. Subcategories missing here are never flagged
@@ -78,7 +89,9 @@ public static class GenreCheck
     private static readonly string[] HorrorTags = Fits.Where(f => f.Value[0] == "Horror").Select(f => f.Key).ToArray();
 
     public static List<string> KnownGenres(MovieMetadata movie) =>
-        movie.GenreList.Select(g => GenreNames.GetValueOrDefault(g.Trim())).Where(g => g is not null).Select(g => g!).Distinct().ToList();
+        movie.GenreList.SelectMany(g => TvGenreNames.TryGetValue(g.Trim(), out var tv) ? tv
+                : GenreNames.TryGetValue(g.Trim(), out var name) ? new[] { name } : Array.Empty<string>())
+            .Distinct().ToList();
 
     /// <summary>Whether an issue line came from this check (so it can be cleared once a film is looked up).</summary>
     public static bool IsGenreLine(string line) =>

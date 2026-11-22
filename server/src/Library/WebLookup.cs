@@ -16,6 +16,14 @@ namespace Pickyfin.Server.Library;
 public sealed class WebLookup
 {
     private static readonly string[] FilmSites = { "en.wikipedia.org", "letterboxd.com", "themoviedb.org", "rottentomatoes.com", "mubi.com", "imdb.com" };
+    // Letterboxd and MUBI have no TV
+    private static readonly string[] SeriesSites = { "en.wikipedia.org", "themoviedb.org", "rottentomatoes.com", "imdb.com", "metacritic.com" };
+
+    /// <summary>What the title is called in a search: "film" or "TV series".</summary>
+    private static string Noun(MovieMetadata m) => m.IsSeries ? "TV series" : "film";
+    /// <summary>" directed by X" for a film, " created by X" for a series, or "".</summary>
+    private static string By(MovieMetadata m) =>
+        string.IsNullOrWhiteSpace(m.Director) ? "" : $" {(m.IsSeries ? "created" : "directed")} by {m.Director}";
     private const string UserAgent = "Pickyfin/1.0 (https://github.com/Sternpaul/pickyfin)";
 
     private readonly IHttpClientFactory _http;
@@ -175,12 +183,12 @@ public sealed class WebLookup
     {
         if (Blocked() is { } why) throw new InvalidOperationException(why);
         var s = ServerSettings.Current;
-        var query = $"{movie.Title} ({movie.ReleaseYear}) film" + (string.IsNullOrWhiteSpace(movie.Director) ? "" : $" directed by {movie.Director}")
+        var query = $"{movie.Title} ({movie.ReleaseYear}) {Noun(movie)}" + By(movie)
             + (string.IsNullOrWhiteSpace(movie.OriginalTitle) ? "" : $" original title {movie.OriginalTitle}");
 
         Task<List<(string Title, string Url, string Text)>> Start(string id) => id switch
         {
-            "exa" => ExaAsync(query, cancellationToken),
+            "exa" => ExaAsync(query, movie, cancellationToken),
             "parallel" => ParallelAsync(movie, cancellationToken),
             "linkup" => LinkupAsync(movie, cancellationToken),
             "tavily" => TavilyAsync(movie, cancellationToken),
@@ -258,7 +266,7 @@ public sealed class WebLookup
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ServerSettings.Current.LinkupApiKey);
         request.Content = JsonContent.Create(new
         {
-            q = $"What is the {movie.ReleaseYear} film {movie.Title}{(string.IsNullOrWhiteSpace(movie.Director) ? "" : $" by {movie.Director}")} about: plot, genre, tone, mood, themes and critical reception?",
+            q = $"What is the {movie.ReleaseYear} {Noun(movie)} {movie.Title}{By(movie)} about: plot, genre, tone, mood, themes and critical reception?",
             depth = "standard", outputType = "searchResults", maxResults = 5,
             excludeDomains = WikipediaOn ? new[] { "wikipedia.org" } : Array.Empty<string>(),
         });
@@ -282,7 +290,7 @@ public sealed class WebLookup
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ServerSettings.Current.TavilyApiKey);
         request.Content = JsonContent.Create(new
         {
-            query = $"{movie.Title} {movie.ReleaseYear} film{(string.IsNullOrWhiteSpace(movie.Director) ? "" : $" {movie.Director}")} plot genre tone themes review",
+            query = $"{movie.Title} {movie.ReleaseYear} {Noun(movie)}{(string.IsNullOrWhiteSpace(movie.Director) ? "" : $" {movie.Director}")} plot genre tone themes review",
             search_depth = "basic", chunks_per_source = 3, max_results = 5, include_answer = false,
             exclude_domains = WikipediaOn ? new[] { "wikipedia.org" } : Array.Empty<string>(),
         });
@@ -322,8 +330,8 @@ public sealed class WebLookup
         client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         const string api = "https://en.wikipedia.org/w/api.php?format=json&formatversion=2";
 
-        // Find the article: a title match, preferably one saying "film" and the year
-        var search = $"{movie.Title} {movie.ReleaseYear} film";
+        // Find the article: a title match, preferably one saying "film" (or "TV series") and the year
+        var search = $"{movie.Title} {movie.ReleaseYear} {Noun(movie)}";
         using var found = JsonDocument.Parse(await client.GetStringAsync($"{api}&action=query&list=search&srlimit=5&srsearch={Uri.EscapeDataString(search)}", cancellationToken));
         static string Fold(string t) => new string(t.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
         var wanted = Fold(movie.Title);
@@ -343,7 +351,8 @@ public sealed class WebLookup
         using var article = JsonDocument.Parse(await client.GetStringAsync($"{api}&action=query&prop=extracts&explaintext=1&exsectionformat=wiki&redirects=1&titles={Uri.EscapeDataString(page)}", cancellationToken));
         var p = article.RootElement.GetProperty("query").GetProperty("pages")[0];
         var text = p.TryGetProperty("extract", out var ex) ? ex.GetString() ?? "" : "";
-        if (!text.Contains("film", StringComparison.OrdinalIgnoreCase)) return new();
+        if (movie.IsSeries ? !text.Contains("series", StringComparison.OrdinalIgnoreCase) && !text.Contains("television", StringComparison.OrdinalIgnoreCase)
+            : !text.Contains("film", StringComparison.OrdinalIgnoreCase)) return new();
 
         // The summary before the first heading, then the plot and the reception
         static string Section(string all, params string[] names)
@@ -374,13 +383,15 @@ public sealed class WebLookup
 
     private async Task<List<(string Title, string Url, string Text)>> ParallelAsync(MovieMetadata movie, CancellationToken cancellationToken)
     {
-        var who = string.IsNullOrWhiteSpace(movie.Director) ? "" : $", directed by {movie.Director}";
+        var who = string.IsNullOrWhiteSpace(movie.Director) ? "" : $",{By(movie)}";
         var original = string.IsNullOrWhiteSpace(movie.OriginalTitle) ? "" : $" (original title {movie.OriginalTitle})";
         var arguments = new
         {
-            objective = $"What the {movie.ReleaseYear} film {movie.Title}{original}{who} is about: plot, genre, tone, mood, themes, style and critical reception. "
-                + (WikipediaOn ? "Prefer Letterboxd, TMDB, IMDb, Rotten Tomatoes and film reviews; not Wikipedia." : "Prefer Wikipedia, Letterboxd, TMDB, IMDb, Rotten Tomatoes and film reviews."),
-            search_queries = new[] { $"{movie.Title} {movie.ReleaseYear} film", $"{movie.Title} {movie.ReleaseYear} review" }
+            objective = $"What the {movie.ReleaseYear} {Noun(movie)} {movie.Title}{original}{who} is about: plot, genre, tone, mood, themes, style and critical reception. "
+                + (movie.IsSeries
+                    ? (WikipediaOn ? "Prefer TMDB, IMDb, Rotten Tomatoes, Metacritic and TV reviews; not Wikipedia." : "Prefer Wikipedia, TMDB, IMDb, Rotten Tomatoes, Metacritic and TV reviews.")
+                    : (WikipediaOn ? "Prefer Letterboxd, TMDB, IMDb, Rotten Tomatoes and film reviews; not Wikipedia." : "Prefer Wikipedia, Letterboxd, TMDB, IMDb, Rotten Tomatoes and film reviews.")),
+            search_queries = new[] { $"{movie.Title} {movie.ReleaseYear} {Noun(movie)}", $"{movie.Title} {movie.ReleaseYear} review" }
                 .Concat(string.IsNullOrWhiteSpace(movie.OriginalTitle) ? Array.Empty<string>() : new[] { $"{movie.OriginalTitle} {movie.ReleaseYear}" }).ToArray(),
         };
 
@@ -482,16 +493,17 @@ public sealed class WebLookup
         catch (JsonException) { return ((int)response.StatusCode, null); }
     }
 
-    private async Task<List<(string Title, string Url, string Text)>> ExaAsync(string query, CancellationToken cancellationToken)
+    private async Task<List<(string Title, string Url, string Text)>> ExaAsync(string query, MovieMetadata movie, CancellationToken cancellationToken)
     {
         var skipWiki = WikipediaOn;
-        var sites = skipWiki ? FilmSites.Where(f => !IsWikipedia(f)).ToArray() : FilmSites;
-        var found = await SearchAsync(query, sites, cancellationToken);
-        if (found.Count == 0) found = await SearchAsync(query, null, cancellationToken, skipWiki ? new[] { "wikipedia.org" } : null);
+        var all = movie.IsSeries ? SeriesSites : FilmSites;
+        var sites = skipWiki ? all.Where(f => !IsWikipedia(f)).ToArray() : all;
+        var found = await SearchAsync(query, sites, cancellationToken, noun: Noun(movie));
+        if (found.Count == 0) found = await SearchAsync(query, null, cancellationToken, skipWiki ? new[] { "wikipedia.org" } : null, Noun(movie));
         return found;
     }
 
-    private async Task<List<(string Title, string Url, string Text)>> SearchAsync(string query, string[]? sites, CancellationToken cancellationToken, string[]? exclude = null)
+    private async Task<List<(string Title, string Url, string Text)>> SearchAsync(string query, string[]? sites, CancellationToken cancellationToken, string[]? exclude = null, string noun = "film")
     {
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(60);
@@ -505,7 +517,7 @@ public sealed class WebLookup
             ["includeDomains"] = sites,
             ["excludeDomains"] = exclude,
             // Only the passages that say what the film is like, not the whole page
-            ["contents"] = new { highlights = new { query = "What is this film about: plot, genre, tone, mood, themes, style and critical reception", maxCharacters = 1200 } },
+            ["contents"] = new { highlights = new { query = $"What is this {noun} about: plot, genre, tone, mood, themes, style and critical reception", maxCharacters = 1200 } },
         }.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value));
 
         using var response = await client.SendAsync(request, cancellationToken);

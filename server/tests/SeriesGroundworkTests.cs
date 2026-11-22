@@ -48,7 +48,7 @@ public class SeriesGroundworkTests
     });
 
     [Fact]
-    public Task Series_are_not_described_yet() => WithDatabase(async database =>
+    public Task Series_are_described_after_films() => WithDatabase(async database =>
     {
         var store = new MovieStore(database);
         await using (var db = database.Open())
@@ -57,7 +57,7 @@ public class SeriesGroundworkTests
             await db.SaveChangesAsync();
         }
         var pending = await store.GetMoviesNeedingClassificationAsync(includeOutdated: true);
-        Assert.Equal(new[] { "Heat" }, pending.Select(m => m.Title));
+        Assert.Equal(new[] { "Heat", "Breaking Bad" }, pending.Select(m => m.Title));
         var (total, _, _, _, _) = await store.GetStatsAsync();
         Assert.Equal(1, total);
     });
@@ -101,7 +101,7 @@ public class SeriesGroundworkTests
             await using (var db = database.Open())
             {
                 // Make it look like a database from before series
-                foreach (var column in new[] { "Kind", "Seasons", "Episodes", "EndYear", "Status", "Network", "Format" })
+                foreach (var column in new[] { "Kind", "Seasons", "Episodes", "EndYear", "Status", "Network", "Format", "LastWatched" })
                     await db.Database.ExecuteSqlRawAsync("ALTER TABLE \"Movies\" DROP COLUMN \"" + column + "\"");
                 await db.Database.ExecuteSqlRawAsync(
                     "INSERT INTO \"Movies\" (\"ItemId\", \"Title\", \"Popularity\", \"Checked\", \"Verified\", \"RedoDescribe\", \"OscarWins\", \"OscarNominations\", \"CriticalAcclaimScore\", \"IsClassified\", \"VocabularyVersion\", \"ManuallyEdited\", \"DateAdded\", \"LastUpdated\") "

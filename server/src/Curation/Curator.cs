@@ -23,6 +23,7 @@ public sealed record CurationResult(List<PickRow> Rows, string Summary);
 ///    shortlist, reading the brief and the history
 /// 4. "Because You Watched …" rows for the two most recent counted watches, ranked
 ///    by similarity to that movie, nudged by the brief
+/// Series someone watched join the counted history as taste (see SeriesTaste); only films are picked.
 /// </summary>
 public sealed class Curator
 {
@@ -135,8 +136,12 @@ public sealed class Curator
 
         // 2. Shortlist
         var recentHistory = history.Take(30).ToList();
-        // Taste: recent watches here plus films they rated well on Letterboxd
-        var taste = recentHistory.Concat(lb.Liked.Take(20)).DistinctBy(Identity).ToList();
+        // Series they watched: taste in films too (weighed by Tuning), never picked themselves
+        var seriesWatched = await SeriesWatchedAsync(user, cancellationToken);
+        // Taste: recent watches here plus films they rated well on Letterboxd, plus their series
+        var taste = recentHistory.Concat(lb.Liked.Take(20)).DistinctBy(Identity).Select(m => (Title: m, Weight: 1.0))
+            .Concat(SeriesTaste.ForTaste(seriesWatched, Settings.SeriesWeight))
+            .ToList();
         var scored = candidates
             .Select(m => (Movie: m, Score: Score(m, brief, taste, Similar, BriefFit) + LetterboxdNudge(m, lb, Similar) + TuningNudge(m, shownBefore)))
             .OrderByDescending(x => x.Score)
@@ -155,7 +160,7 @@ public sealed class Curator
         }
         else try
         {
-            recommended = await AskAiAsync(user, brief, recentHistory, lb, shortlist, wanted, cancellationToken);
+            recommended = await AskAiAsync(user, brief, recentHistory, Settings.SeriesWeight > 0 ? seriesWatched : new(), lb, shortlist, wanted, cancellationToken);
             how = "AI picked from a shortlist of " + shortlist.Count;
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -199,8 +204,31 @@ public sealed class Curator
 
         var lbText = lb.Any ? $"; Letterboxd {lb.Watched.Count} watched, {lb.Watchlist.Count} on watchlist in library" : "";
         var pinText = pinnedCount > 0 ? $"; {pinnedCount} added by you" : "";
-        var summary = $"{rows.Count} row(s){pinText}; {history.Count} counted watch(es); brief {(brief is null || brief.IsEmpty ? "not set" : "used")}{lbText}; {how}.";
+        var seriesText = seriesWatched.Count > 0 && Settings.SeriesWeight > 0 ? $", {seriesWatched.Count} series ({seriesWatched.Count(w => w.Finished)} finished)" : "";
+        var summary = $"{rows.Count} row(s){pinText}; {history.Count} counted watch(es){seriesText}; brief {(brief is null || brief.IsEmpty ? "not set" : "used")}{lbText}; {how}.";
         return new CurationResult(rows, summary);
+    }
+
+    /// <summary>
+    /// The series this person watched enough of to say something about their taste, newest first.
+    /// Empty when series don't count (Tuning) or Jellyfin can't be read: picks go on without them.
+    /// </summary>
+    /// <param name="all">Also series that don't count (sampled, reality…), and even when series are switched off: for the admin page.</param>
+    public async Task<List<SeriesWatch>> SeriesWatchedAsync(UserProfile user, CancellationToken cancellationToken, bool all = false)
+    {
+        if (Settings.SeriesWeight <= 0 && !all) return new();
+        try
+        {
+            var series = (await _store.GetAllSeriesAsync(cancellationToken)).ToDictionary(m => m.ItemId);
+            if (series.Count == 0) return new();
+            var episodes = await _jellyfin.GetWatchedEpisodesAsync(user.UserId, cancellationToken);
+            return SeriesTaste.Read(episodes, series, user.CountHistoryFrom, all);
+        }
+        catch (Exception error) when (error is JellyfinException or HttpRequestException)
+        {
+            _logger.LogWarning("Couldn't read the series {User} watched: {Error}", user.Name, error.Message);
+            return new();
+        }
     }
 
     /// <summary>What someone's Letterboxd says, resolved to library movies.</summary>
@@ -290,15 +318,16 @@ public sealed class Curator
         return Math.Min(1.0, subcategory * 0.5 + mood * 0.25 + theme * 0.15 + keyword * 0.10 + extra);
     }
 
-    private static double HistoryScore(MovieMetadata movie, List<MovieMetadata> history, Func<MovieMetadata, MovieMetadata, double> similar)
+    /// <param name="history">What they watched, each with how much it counts (a film 1, a series up to 1).</param>
+    internal static double HistoryScore(MovieMetadata movie, List<(MovieMetadata Title, double Weight)> history, Func<MovieMetadata, MovieMetadata, double> similar)
     {
         if (history.Count == 0 || !movie.IsClassified) return 0;
         // Average of the three closest watches: one strong match counts, but not alone
-        var best = history.Select(h => similar(h, movie)).OrderByDescending(s => s).Take(3).ToList();
+        var best = history.Select(h => similar(h.Title, movie) * h.Weight).OrderByDescending(s => s).Take(3).ToList();
         return best.Average();
     }
 
-    private static double Score(MovieMetadata movie, BriefProfile? brief, List<MovieMetadata> history,
+    private static double Score(MovieMetadata movie, BriefProfile? brief, List<(MovieMetadata Title, double Weight)> history,
         Func<MovieMetadata, MovieMetadata, double> similar, Func<MovieMetadata, double> briefFit)
     {
         var hasBrief = brief is { IsEmpty: false };
@@ -380,7 +409,7 @@ public sealed class Curator
     // ---------- AI choice ----------
 
     private async Task<List<Guid>> AskAiAsync(
-        UserProfile user, BriefProfile? brief, List<MovieMetadata> history, LetterboxdTaste lb, List<MovieMetadata> shortlist, int count, CancellationToken cancellationToken)
+        UserProfile user, BriefProfile? brief, List<MovieMetadata> history, List<SeriesWatch> series, LetterboxdTaste lb, List<MovieMetadata> shortlist, int count, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Settings.ApiKey)) throw new InvalidOperationException("no AI key set");
 
@@ -394,6 +423,12 @@ public sealed class Curator
             ? "Recently finished: nothing yet."
             : "Recently finished, newest first (a shared TV may also show others' viewing; trust the description above more):");
         foreach (var movie in history.Take(25)) prompt.AppendLine($"- {movie.Title} ({movie.ReleaseYear})");
+        if (series.Count > 0)
+        {
+            prompt.AppendLine();
+            prompt.AppendLine("TV series they watched, newest first (\"finished\" = all or most of it; otherwise how many episodes). They say what they enjoy; only films are picked:");
+            foreach (var watch in series.Take(15)) prompt.AppendLine("- " + SeriesTaste.Line(watch));
+        }
         if (lb.RatedTitles.Count > 0)
         {
             prompt.AppendLine();

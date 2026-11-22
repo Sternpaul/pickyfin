@@ -44,13 +44,14 @@ public sealed class WebSweep
         var midnight = DateTime.Today.AddDays(1).ToUniversalTime();
         if (left <= 0) { Jobs.Idle(key, title, $"Today's {s.WebLookupsPerDay} done", midnight); return; }
 
-        var todo = (await _store.GetAllMoviesAsync(cancellationToken)).Where(Wanted).ToList();
+        var todo = (await _store.GetAllTitlesAsync(cancellationToken)).Where(Wanted).ToList();
         if (todo.Count == 0) { Jobs.Idle(key, title, "Up to date"); return; }
         var ready = todo.Where(Ready).ToList();
         if (ready.Count == 0) { Jobs.Idle(key, title, "Waiting for step 2 to check films", DateTime.UtcNow.AddMinutes(5)); return; }
-        Jobs.Running(key, title, $"{Math.Min(PerRound, left)} films");
+        Jobs.Running(key, title, $"{Math.Min(PerRound, left)} titles");
         var batch = ready
-            .OrderByDescending(m => m.Issue is not null)
+            .OrderBy(m => m.IsSeries) // films first
+            .ThenByDescending(m => m.Issue is not null)
             .ThenBy(m => m.Popularity)
             .Take(Math.Min(PerRound, left))
             .ToList();

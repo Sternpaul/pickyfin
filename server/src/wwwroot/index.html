@@ -377,6 +377,9 @@
   .mx-row .bar { grid-column: 2 / -1; height: 4px; border-radius: 4px; background: var(--raised); overflow: hidden; }
   .mx-row .bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent)); }
   .mx-row .why { grid-column: 2 / -1; font-size: 11.5px; color: var(--muted); }
+  /* Both on one map: a series is a ring, a film a dot */
+  #mx-world circle.series { fill-opacity: .18; stroke: currentColor; stroke-width: 1.6; }
+  .mx-sec { font: 600 11.5px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 12px 8px 2px; }
   .mx-tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line-strong); margin-right: 4px; color: var(--text); }
   .mx-about { max-width: 90ch; margin-top: 14px; }
   @media (max-width: 760px) {
@@ -543,9 +546,10 @@
     <section data-page="movies" class="hidden">
       <div class="page-head"><div>
         <h1>Movies</h1>
-        <p>Every movie in the library and how the AI described it. Open one to correct it; movies you edit are never re-tagged.</p>
+        <p>Every movie in the library and how the AI described it. Open one to correct it; movies you edit are never re-tagged. Series are described the same way: they aren't recommended (yet), but what people watch as series tells more about their taste in films.</p>
       </div></div>
       <div class="filters">
+        <div class="seg" id="m-kind"><button type="button" data-v="movie">Films</button><button type="button" data-v="series">Series</button><button type="button" data-v="all">Both</button></div>
         <input type="search" id="m-q" placeholder="Title, director or year">
         <div class="seg" id="m-state"><button type="button" data-v="all">All</button><button type="button" data-v="tagged">Tagged</button><button type="button" data-v="untagged">Not yet</button><button type="button" data-v="edited">Edited</button><button type="button" data-v="issues">Issues</button></div>
         <select id="m-tag"><option value="">Any tag</option></select>
@@ -562,7 +566,7 @@
     <section data-page="issues" class="hidden">
       <div class="page-head"><div>
         <h1>Issues</h1>
-        <p>Movies whose tags may be wrong: the AI didn't know the film, the tags don't fit the genres Jellyfin has, or a second AI disagreed. Correct them by hand, look them up on the web and tag them again, or mark them as fine.</p>
+        <p>Films and series whose tags may be wrong: the AI didn't know the title, the tags don't fit the genres Jellyfin has, or a second AI disagreed. Correct them by hand, look them up on the web and tag them again, or mark them as fine.</p>
       </div></div>
       <div class="summary-line" id="iss-sum"></div>
       <div class="actions" style="margin-bottom:8px"><button class="btn" id="iss-all">Look up all on the web and tag again</button><span class="note" id="iss-note"></span></div>
@@ -573,7 +577,7 @@
     <section data-page="libraries" class="hidden">
       <div class="page-head"><div>
         <h1>Libraries</h1>
-        <p>Which libraries recommendations may come from. Movies in a switched-off library are never recommended and never sent to the AI. Watch history from every library still counts toward taste.</p>
+        <p>Which libraries recommendations may come from. Movies in a switched-off library are never recommended and never sent to the AI. Watch history from every library still counts toward taste. Series aren't recommended (yet); they're described like films so what people watch as series can tell more about their taste. Switch a TV library off to skip that.</p>
       </div></div>
       <div class="settings" id="libraries"><div class="empty">Loading…</div></div>
     </section>
@@ -766,6 +770,10 @@
             <div class="control"><div class="ends"><span>Safe picks</span><span>Discoveries</span></div><input type="range" id="Discovery" min="0" max="100" step="5"></div>
           </div>
           <div class="setting">
+            <div><h3>How much series count</h3><p class="why">What someone watches as series tells about their taste in films too: a person who finished three seasons of a slow Nordic crime show likely enjoys such films. Series they gave up on after an episode or two don't count, nor do reality and talk shows. Series aren't recommended themselves (yet).</p></div>
+            <div class="control"><div class="ends"><span>Not at all</span><span>Like films</span></div><input type="range" id="SeriesWeight" min="0" max="100" step="10"></div>
+          </div>
+          <div class="setting">
             <div><h3>Variety</h3><p class="why">How many films of the same kind may appear together. "Little" stays close to what they love.</p></div>
             <div class="control"><div><div class="seg" id="Variety"><button type="button" data-v="low">Little</button><button type="button" data-v="medium">Some</button><button type="button" data-v="high">Lots</button></div></div></div>
           </div>
@@ -820,12 +828,13 @@
 
     <!-- MATRIX -->
     <section data-page="matrix" class="hidden">
-      <div class="page-head"><div><h1>Matrix</h1><p>Every film on one map: the closer two films sit, the more alike they are. Scroll or pinch to zoom, drag to move around, and click a film to see what it's closest to.</p></div></div>
+      <div class="page-head"><div><h1>Matrix</h1><p>Every film on one map: the closer two films sit, the more alike they are. Scroll or pinch to zoom, drag to move around, and click a film to see what it's closest to. Series have their own matrix (switch at the top of the map): films are only ranked against films and series against series, so series never shift a film's scores. "Both" puts films (dots) and series (rings) on one map, and a picked title shows its closest films and series.</p></div></div>
       <div class="mx-wrap">
         <div class="mx" id="mx">
           <svg id="mx-svg" role="img" aria-label="Map of films by meaning"><g id="mx-world"></g><g id="mx-links"></g><g id="mx-labels"></g></svg>
           <div class="mx-top">
             <input type="search" id="matrix-find" list="matrix-titles" placeholder="Find a film…" autocomplete="off"><datalist id="matrix-titles"></datalist>
+            <span class="mx-facts glass" id="matrix-kind"><button type="button" data-v="movie" class="on">Films</button><button type="button" data-v="series">Series</button><button type="button" data-v="all" title="Films and series on one map">Both</button></span>
             <span class="mx-facts" id="matrix-facts"></span>
           </div>
           <div class="mx-legend" id="matrix-legend"></div>
@@ -1062,7 +1071,7 @@ async function loadSettings() {
   $('#MeaningWeight').value = settings.MeaningWeight ?? 50;
   $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
-  $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery;
+  $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery; $('#SeriesWeight').value = settings.SeriesWeight ?? 50;
   seg($('#Variety'), settings.Variety); seg($('#NewArrivals'), settings.NewArrivals); seg($('#Rotation'), settings.Rotation);
   const mr = $('#MinRating'); mr.value = [...mr.options].some(o => Number(o.value) === settings.MinRating) ? String(settings.MinRating) : '0';
   for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).value = settings[k] ?? 50;
@@ -1082,6 +1091,7 @@ async function loadSettings() {
 const sliderText = {
   BriefWeight: v => v == 50 ? 'Half and half' : v > 50 ? `${v}% description · ${100 - v}% history` : `${100 - v}% history · ${v}% description`,
   Discovery: v => `${v} of 100${v == 40 ? ' · default' : ''}`,
+  SeriesWeight: v => v == 0 ? 'Off: only films count' : `${v} of 100${v == 50 ? ' · default' : v == 100 ? ' · every series they watched counts like a film' : ''}`,
   MeaningWeight: v => v == 50 ? 'Half and half · default' : v > 50 ? `${v}% meaning · ${100 - v}% tags` : `${100 - v}% tags · ${v}% meaning`,
   BecausePeople: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
   BecauseCountry: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
@@ -1175,12 +1185,12 @@ window.addEventListener('beforeunload', e => { if (savePending()) { e.preventDef
 const tuningValues = () => ({
   BecauseRows: Number(segValue($('#because-seg'))),
   BecausePeople: Number($('#BecausePeople').value), BecauseCountry: Number($('#BecauseCountry').value), BecauseEra: Number($('#BecauseEra').value), PicksPerRow: Number($('#PicksPerRow').value), RefreshHours: Number($('#RefreshHours').value),
-  BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value), MeaningWeight: Number($('#MeaningWeight').value),
+  BriefWeight: Number($('#BriefWeight').value), Discovery: Number($('#Discovery').value), MeaningWeight: Number($('#MeaningWeight').value), SeriesWeight: Number($('#SeriesWeight').value),
   Variety: segValue($('#Variety')), NewArrivals: segValue($('#NewArrivals')), Rotation: segValue($('#Rotation')), MinRating: Number($('#MinRating').value),
 });
 $('#tuning-defaults').addEventListener('click', async () => {
   if (!confirm('Set all tuning back to the defaults?')) return;
-  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, MeaningWeight: 50, Discovery: 40, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
+  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, MeaningWeight: 50, Discovery: 40, SeriesWeight: 50, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
 });
 $('#test-ai').addEventListener('click', async e => {
   const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';
@@ -1260,7 +1270,10 @@ const mxImg = (id, cls = '') => `<img src="${posterUrl(id)}" alt="" class="${cls
 
 async function loadMatrix() {
   wireMatrix();
-  try { mx.data = await call('GET', '/api/matrix' + (mx.model ? `?model=${encodeURIComponent(mx.model)}` : '')); }
+  // Films and series are two matrices
+  seg($('#matrix-kind'), mx.kind || 'movie', v => { if (v !== (mx.kind || 'movie')) { mx.kind = v; mx.pick = null; $('#matrix-find').value = ''; loadMatrix(); } });
+  const q = new URLSearchParams({ kind: mx.kind || 'movie' }); if (mx.model) q.set('model', mx.model);
+  try { mx.data = await call('GET', '/api/matrix?' + q); }
   catch { showMxEmpty('Couldn\'t load the matrix.'); return; }
   const d = mx.data;
   const model = d.Model ? d.Model.replace(/^[^/]+\//, '').replace(':free', '') : null;
@@ -1272,6 +1285,8 @@ async function loadMatrix() {
   $('#matrix-about').innerHTML = !d.On
     ? 'Matching by meaning is off (AI page), so there is no map; films are compared by their tags only.'
     : `Every embedding model builds its own matrix${models.length > 1 ? ` (${models.length} so far)` : ''}; the map shows ${esc(model || 'one')} with ${d.Matched.toLocaleString()} of ${d.Films.toLocaleString()} described films. Switch models at the top of the map. `
+      + (d.Kind === 'series' ? 'This is the series matrix: series are ranked against series only. '
+        : d.Kind === 'all' ? 'Films (dots) and series (rings) on one map. The percentages still rank a film among films and a series among series, so "meaning 95" for a series next to a film means: of all series, this one is among the closest few to that film. ' : '')
       + `Each film's meaning is stored once per model in the server's database (pickyfin.db, table Embeddings). The percentages average all models. `
       + `The percentages are worked out whenever you look, mixing tags and meaning as set on Tuning (now ${100 - d.Weight}% tags, ${d.Weight}% meaning). `
       + `The map squeezes the meanings onto two directions, so two films can look close without being alike; the percentages are exact.`;
@@ -1288,11 +1303,15 @@ async function loadMatrix() {
   mx.pts = raw.map(p => ({ ...p, wx: ox + (p.X - x0) * scale, wy: oy + (y1 - p.Y) * scale, g: mx.top.indexOf(p.Group) }));
   mx.at = Object.fromEntries(mx.pts.map(p => [p.Id, p]));
 
-  if (!mx.pts.length) { showMxEmpty(d.On ? 'No film is matched by meaning yet. They appear here as the server matches them.' : 'Matching by meaning is off (AI page).'); $('#matrix-legend').innerHTML = ''; return; }
+  if (!mx.pts.length) { showMxEmpty(!d.On ? 'Matching by meaning is off (AI page).' : d.Kind === 'series' ? 'No series is matched by meaning yet. Series are described after the films, then matched; they appear here as that happens.' : 'No film is matched by meaning yet. They appear here as the server matches them.'); $('#matrix-legend').innerHTML = ''; return; }
   showMxEmpty('');
   const radius = mx.pts.length > 1500 ? 2.4 : mx.pts.length > 400 ? 3.2 : 4.5;
   mx.radius = radius;
-  $('#mx-world').innerHTML = mx.pts.map((p, i) => `<circle data-i="${i}" cx="${p.wx.toFixed(1)}" cy="${p.wy.toFixed(1)}" fill="${p.g >= 0 ? groupColors[p.g] : 'var(--faint)'}" class="${p.g >= 0 ? 'g' + p.g : ''}"/>`).join('');
+  const joined = d.Kind === 'all';
+  $('#mx-world').innerHTML = mx.pts.map((p, i) => {
+    const c = p.g >= 0 ? groupColors[p.g] : 'var(--faint)', ring = joined && p.Kind === 'series';
+    return `<circle data-i="${i}" cx="${p.wx.toFixed(1)}" cy="${p.wy.toFixed(1)}" fill="${c}" class="${[p.g >= 0 ? 'g' + p.g : '', ring ? 'series' : ''].filter(Boolean).join(' ')}"${ring ? ` style="color:${c}"` : ''}/>`;
+  }).join('');
   mx.circles = [...$('#mx-world').children];
   $('#matrix-legend').innerHTML = mx.top.map((g, i) => `<button type="button" class="glass" data-g="${i}" style="--c:${groupColors[i]}">${esc(g)}</button>`).join('');
   mx.focus = null; delete $('#mx').dataset.focus;
@@ -1545,13 +1564,21 @@ async function pickFilm(id, move = true) {
   box.classList.remove('hidden');
   box.classList.add('glass');
   $('#mx').classList.add('with-panel');
-  box.innerHTML = `<div class="mx-head">${mxImg(id)}<div style="min-width:0"><h3>${esc(film.Title || '')}</h3><div class="sub">${[film.Year, point?.Group].filter(Boolean).map(esc).join(' · ')}</div>
-    <button type="button" class="btn quiet" id="matrix-open">Open film</button></div><button type="button" class="x" id="matrix-close" title="Close">×</button></div>
+  const isSeries = film.Kind === 'series';
+  box.innerHTML = `<div class="mx-head">${mxImg(id)}<div style="min-width:0"><h3>${esc(film.Title || '')}</h3><div class="sub">${[isSeries ? 'Series' : '', film.Year, point?.Group].filter(Boolean).map(esc).join(' · ')}</div>
+    <button type="button" class="btn quiet" id="matrix-open">Open ${isSeries ? 'series' : 'film'}</button></div><button type="button" class="x" id="matrix-close" title="Close">×</button></div>
     <div class="mx-list"><p class="note" style="padding:8px">Loading…</p></div>`;
   $('#matrix-open').onclick = () => openMovie(id);
   $('#matrix-close').onclick = closePick;
-  let r;
-  try { r = await call('GET', `/api/movies/${id}/related`); } catch { $('.mx-list', box).innerHTML = '<p class="note" style="padding:8px">Couldn\'t load its closest films.</p>'; return; }
+  // The closest of its own kind (or of both, on the joined map), and the closest of the other kind:
+  // how films and series line up by meaning
+  const own = isSeries ? 'series' : 'movie', other = isSeries ? 'movie' : 'series';
+  const main = mx.kind === 'all' ? 'all' : own;
+  let r, cross = null;
+  try {
+    [r, cross] = await Promise.all([call('GET', `/api/movies/${id}/related?kind=${main}`),
+      main === 'all' ? null : call('GET', `/api/movies/${id}/related?kind=${other}`).catch(() => null)]);
+  } catch { $('.mx-list', box).innerHTML = '<p class="note" style="padding:8px">Couldn\'t load its closest titles.</p>'; return; }
   if (mx.pick !== id) return;
   mx.films = r.Films;
   const near = new Set(r.Films.map(f => f.ItemId));
@@ -1563,12 +1590,17 @@ async function pickFilm(id, move = true) {
   const by = f => { const e = Object.entries(f.By || {}); return e.length > 1 ? ` (${e.map(([m, v]) => `<span title="${esc(m)}">${v}</span>`).join(' / ')})` : ''; };
   const why = f => [f.Series ? '<span class="mx-tag">same series</span>' : '', f.Crowd ? '<span class="mx-tag">TMDB viewers liked both</span>' : ''].join('')
     + `meaning ${f.Meaning ?? '–'}${by(f)} · tags ${f.Tags}`;
+  const rows = list => list.map((f, i) => `<div class="mx-row" data-pick="${f.ItemId}"><span class="n">${i + 1}</span><span class="t">${f.Kind === 'series' && main !== 'series' ? '<span class="mx-tag">series</span>' : ''}${esc(f.Title)}<span>${f.ReleaseYear || ''}</span></span><span class="p">${f.Score}%</span>
+        <span class="bar"><i style="width:${Math.max(2, f.Score)}%"></i></span><span class="why">${why(f)}</span></div>`).join('');
+  const head = t => `<div class="mx-sec">${t}</div>`;
+  const crossList = (cross?.Films || []).slice(0, 6);
   $('.mx-list', box).innerHTML = (r.Meaning ? '' : '<p class="note" style="padding:4px 8px">Not matched by meaning yet, so compared by tags only.</p>')
-    + (r.Films.length ? r.Films.map((f, i) => `<div class="mx-row" data-pick="${f.ItemId}"><span class="n">${i + 1}</span><span class="t">${esc(f.Title)}<span>${f.ReleaseYear || ''}</span></span><span class="p">${f.Score}%</span>
-        <span class="bar"><i style="width:${Math.max(2, f.Score)}%"></i></span><span class="why">${why(f)}</span></div>`).join('')
-      : '<p class="note" style="padding:8px">None yet: the film needs its tags first.</p>');
+    + (main !== 'all' && crossList.length ? head(`Closest ${own === 'series' ? 'series' : 'films'}`) : '')
+    + (r.Films.length ? rows(r.Films) : '<p class="note" style="padding:8px">None yet: it needs its tags first.</p>')
+    + (crossList.length ? head(`Closest ${other === 'series' ? 'series' : 'films'}`) + rows(crossList) : '');
   $$('.mx-row', box).forEach(row => {
-    row.onclick = () => pickFilm(row.dataset.pick);
+    // A title that isn't on this map opens its page instead
+    row.onclick = () => mx.at[row.dataset.pick] ? pickFilm(row.dataset.pick) : openMovie(row.dataset.pick);
     row.onmouseenter = () => mxHighlight(row.dataset.pick);
     row.onmouseleave = () => mxHighlight(null);
   });
@@ -1587,13 +1619,15 @@ function focusPick() {
 }
 
 // The films closest to this one: tags and meaning together, with what links them
-async function loadRelated(id) {
-  const box = $('#e-related'); if (!box) return;
-  let r; try { r = await call('GET', `/api/movies/${id}/related`); } catch { box.innerHTML = '<summary>Closest films</summary><p class="note">Couldn\'t load them.</p>'; return; }
-  if (!r.Films.length) { box.innerHTML = '<summary>Closest films</summary><p class="note">None yet: the film needs its tags first.</p>'; return; }
-  const why = f => [f.Series ? 'same series' : '', f.Crowd ? 'TMDB viewers liked both' : '', f.Meaning != null ? `meaning ${f.Meaning}` : '', `tags ${f.Tags}`].filter(Boolean).join(' · ');
-  box.innerHTML = `<summary>Closest films</summary>
-    ${r.Meaning ? '' : '<p class="note">By tags only for now: this film isn\'t matched by meaning yet.</p>'}
+// kind: list films ("movie") or series; boxId: where (the drawer has one box per kind for a series)
+async function loadRelated(id, kind = 'movie', boxId = '#e-related') {
+  const box = $(boxId); if (!box) return;
+  const head = `<summary>Closest ${kind === 'series' ? 'series' : 'films'}</summary>`;
+  let r; try { r = await call('GET', `/api/movies/${id}/related?kind=${kind}`); } catch { box.innerHTML = head + '<p class="note">Couldn\'t load them.</p>'; return; }
+  if (!r.Films.length) { box.innerHTML = head + '<p class="note">None yet: it needs its tags first.</p>'; return; }
+  const why = f => [f.Series ? 'same film series' : '', f.Crowd ? 'TMDB viewers liked both' : '', f.Meaning != null ? `meaning ${f.Meaning}` : '', `tags ${f.Tags}`].filter(Boolean).join(' · ');
+  box.innerHTML = `${head}
+    ${r.Meaning ? '' : '<p class="note">By tags only for now: this one isn\'t matched by meaning yet.</p>'}
     <ol class="related">${r.Films.map(f => `<li><a href="#" data-film="${f.ItemId}">${esc(f.Title)}</a> <span class="note">${f.ReleaseYear || ''} · ${why(f)}</span></li>`).join('')}</ol>`;
   box.querySelectorAll('[data-film]').forEach(a => a.onclick = e => { e.preventDefault(); openMovie(a.dataset.film); });
 }
@@ -1670,7 +1704,7 @@ async function fillLibraryFilter() {
   try {
     const libs = await call('GET', '/api/libraries');
     const sel = $('#m-lib'), keep = sel.value;
-    sel.innerHTML = '<option value="">All libraries</option>' + libs.map(l => `<option value="${l.Id}">${esc(l.Name)}${l.Enabled ? '' : ' (off)'}</option>`).join('');
+    sel.innerHTML = '<option value="">All libraries</option>' + libs.filter(l => (segValue($('#m-kind')) || 'movie') !== 'movie' || l.HoldsMovies).map(l => `<option value="${l.Id}">${esc(l.Name)}${l.Enabled ? '' : ' (off)'}</option>`).join('');
     sel.value = keep;
   } catch {}
 }
@@ -1684,25 +1718,28 @@ function filmCard(m) {
   const el = document.createElement('button');
   el.className = 'film';
   el.innerHTML = `${poster(m.Id, m.Title, flag)}
-    <div><div class="t">${esc(m.Title)} <span class="y">${m.Year ?? ''}</span></div>
-    <div class="m">${esc([...m.Subcategories, ...m.Moods].slice(0, 3).join(', '))}</div></div>`;
+    <div><div class="t">${esc(m.Title)} <span class="y">${m.Aired ?? m.Year ?? ''}</span></div>
+    <div class="m">${m.Kind === 'series' ? '<b>Series</b> · ' : ''}${esc([...m.Subcategories, ...m.Moods].slice(0, 3).join(', '))}</div></div>`;
   el.addEventListener('click', () => openMovie(m.Id));
   return el;
 }
 async function loadMovies(reset) {
   await ensureVocab(); if (reset) { moviePage = 0; fillLibraryFilter(); }
-  const params = new URLSearchParams({ q: $('#m-q').value, state: segValue($('#m-state')) || 'all', tag: $('#m-tag').value, trust: $('#m-trust').value, sort: $('#m-sort').value, skip: moviePage * PAGE, take: PAGE });
+  const kind = segValue($('#m-kind')) || 'movie';
+  const params = new URLSearchParams({ kind, q: $('#m-q').value, state: segValue($('#m-state')) || 'all', tag: $('#m-tag').value, trust: $('#m-trust').value, sort: $('#m-sort').value, skip: moviePage * PAGE, take: PAGE });
   if ($('#m-lib').value) params.set('library', $('#m-lib').value);
   const r = await call('GET', '/api/movies?' + params);
   const box = $('#movies'); if (reset) box.innerHTML = '';
   const before = box.children.length;
   r.Items.forEach(m => box.appendChild(filmCard(m)));
   checkPosters({ querySelectorAll: s => [...box.children].slice(before).flatMap(c => [...c.querySelectorAll(s)]) });
-  $('#m-count').textContent = r.Total === 1 ? '1 movie' : `${r.Total.toLocaleString()} movies`;
+  const noun = { movie: ['movie', 'movies'], series: ['series', 'series'], all: ['title', 'titles'] }[kind];
+  $('#m-count').textContent = `${r.Total.toLocaleString()} ${r.Total === 1 ? noun[0] : noun[1]}`;
   if (!r.Total) box.innerHTML = '<div class="empty" style="grid-column:1/-1">Nothing matches.</div>';
   $('#m-more').classList.toggle('hidden', (moviePage + 1) * PAGE >= r.Total);
 }
 seg($('#m-state'), 'all', () => loadMovies(true));
+seg($('#m-kind'), 'movie', () => loadMovies(true));
 $('#m-q').addEventListener('input', () => { clearTimeout(movieTimer); movieTimer = setTimeout(() => loadMovies(true), 250); });
 for (const id of ['#m-tag', '#m-lib', '#m-trust', '#m-sort']) $(id).addEventListener('change', () => loadMovies(true));
 $('#m-more').addEventListener('click', () => { moviePage++; loadMovies(false); });
@@ -1725,7 +1762,9 @@ async function openMovie(id) {
   openDrawer('');
   const d = await call('GET', `/api/movies/${id}`);
   const m = d.Summary;
-  $('#d-title').textContent = `${m.Title}${m.Year ? ' (' + m.Year + ')' : ''}`;
+  const series = m.Kind === 'series';
+  const when = series ? m.Aired : m.Year;
+  $('#d-title').textContent = `${m.Title}${when ? ' (' + when + ')' : ''}${series ? ' · series' : ''}`;
   const subs = [...m.Subcategories], moods = [...m.Moods];
   const who = !m.Tagged ? 'Not described yet'
     : m.Edited ? '✓ Described by you; the AI leaves it alone'
@@ -1741,7 +1780,9 @@ async function openMovie(id) {
         <div class="label" style="margin-bottom:6px">${who}</div>
         ${d.OriginalTitle ? `<div>Original title <b>${esc(d.OriginalTitle)}</b></div>` : ''}
         ${d.Genres?.length ? `<div>Genres <b>${esc(d.Genres.join(', '))}</b>${d.Countries ? ` · ${esc(d.Countries)}` : ''}</div>` : ''}
-        ${d.Director ? `<div>Directed by <b>${esc(d.Director)}</b></div>` : ''}
+        ${series ? `<div><b>TV series</b>${[d.Seasons ? `${d.Seasons} season${d.Seasons === 1 ? '' : 's'}` : '', d.Episodes ? `${d.Episodes} episodes` : '', d.Network ? esc(d.Network) : '', d.Status === 'Continuing' ? 'still running' : d.Status === 'Ended' ? 'ended' : '', d.Format ? esc(d.Format) : ''].filter(Boolean).map(x => ' · ' + x).join('')}</div>
+          <div class="note">Not recommended (yet); it tells more about taste in films.${d.LastWatched ? ` Last watched by someone switched on: ${new Date(d.LastWatched).toLocaleDateString()}.` : ''}</div>` : ''}
+        ${d.Director ? `<div>${series ? 'Created by' : 'Directed by'} <b>${esc(d.Director)}</b></div>` : ''}
         ${d.Cast ? `<div>With <b>${esc(d.Cast)}</b></div>` : ''}
         ${m.Libraries.filter(l => l !== '?').length ? `<div>In <b>${esc(m.Libraries.filter(l => l !== '?').join(', '))}</b>${m.Excluded ? ' (switched off)' : ''}</div>` : ''}
         <div>Rated <b>${m.Acclaim || '–'}</b> of 10${d.RtScore != null || d.Metascore != null || d.ImdbRating != null
@@ -1750,7 +1791,7 @@ async function openMovie(id) {
         ${d.LbRating != null ? `<div>Letterboxd <b>${d.LbRating.toFixed(1)}</b> of 5${d.LbCount ? ` <span class="note">(${d.LbCount.toLocaleString()} ratings)</span>` : ''}${lbHist(d.LbHistogram)}${d.LbUrl ? ` · <a href="${esc(d.LbUrl)}" target="_blank" rel="noopener">page</a>` : ''}</div>` : ''}
         ${d.BasedOn || d.SettingEra || d.SettingPlace ? `<div>${d.BasedOn && d.BasedOn !== 'original' ? `Based on a <b>${esc(d.BasedOn)}</b>` : d.BasedOn === 'original' ? '<b>Original</b> story' : ''}${(d.SettingEra || d.SettingPlace) ? `${d.BasedOn ? ' · ' : ''}Set in <b>${esc([d.SettingEra, d.SettingPlace].filter(Boolean).join(', '))}</b>` : ''}</div>` : ''}
         ${d.ContentNotes?.length ? `<div>Content <b>${esc(d.ContentNotes.join(', '))}</b></div>` : ''}
-        ${d.Minutes || d.CollectionName ? `<div>${d.Minutes ? `<b>${Math.floor(d.Minutes / 60) ? Math.floor(d.Minutes / 60) + ' h ' : ''}${d.Minutes % 60} min</b>` : ''}${d.Minutes && d.CollectionName ? ' · ' : ''}${d.CollectionName ? `Part of <b>${esc(d.CollectionName)}</b>` : ''}</div>` : ''}
+        ${d.Minutes || d.CollectionName ? `<div>${d.Minutes ? `<b>${Math.floor(d.Minutes / 60) ? Math.floor(d.Minutes / 60) + ' h ' : ''}${d.Minutes % 60} min</b>${series ? ' per episode' : ''}` : ''}${d.Minutes && d.CollectionName ? ' · ' : ''}${d.CollectionName ? `Part of <b>${esc(d.CollectionName)}</b>` : ''}</div>` : ''}
         ${d.Awards ? `<div>Awards <b>${esc(d.Awards)}</b></div>` : ''}
         ${d.Pacing || d.Ending || d.Occasions?.length ? `<div>${[d.Pacing ? `<b>${esc(d.Pacing)}</b> pace` : '', d.Ending ? `<b>${esc(d.Ending)}</b> ending` : '', d.Occasions?.length ? `for <b>${esc(d.Occasions.join(', '))}</b>` : ''].filter(Boolean).join(' · ')}</div>` : ''}
         ${d.Plot ? `<p class="plot">${esc(d.Plot)}</p>` : ''}
@@ -1775,9 +1816,13 @@ async function openMovie(id) {
   const editorState = () => JSON.stringify([subs, moods, $('#e-themes').value, $('#e-narr').value, $('#e-acc').value, $('#e-int').value, $('#e-score').value]);
   const loaded = editorState();
   drawerDirty = () => !!$('#e-themes') && editorState() !== loaded;
-  $('#d-body').insertAdjacentHTML('beforeend', '<div class="edit-row"><details class="history" id="e-related"><summary>Closest films</summary><p class="note">Loading…</p></details></div>');
+  // Its closest titles of its own kind, and of the other kind: a series' closest films are what it adds
+  // to someone's taste in films
+  $('#d-body').insertAdjacentHTML('beforeend', `<div class="edit-row"><details class="history" id="e-related"><summary>${series ? 'Closest series' : 'Closest films'}</summary><p class="note">Loading…</p></details></div>`);
+  $('#d-body').insertAdjacentHTML('beforeend', `<div class="edit-row"><details class="history" id="e-related-other"><summary>${series ? 'Closest films' : 'Closest series'}</summary><p class="note">Loading…</p></details></div>`);
   $('#d-body').insertAdjacentHTML('beforeend', '<div class="edit-row"><details class="history" id="e-history"><summary>History</summary><p class="note">Loading…</p></details></div>');
-  loadRelated(id);
+  loadRelated(id, series ? 'series' : 'movie');
+  loadRelated(id, series ? 'movie' : 'series', '#e-related-other');
   loadHistory(id);
   $('#e-subs').appendChild(tagEditor(subs, vocab.Subcategories, 'subcategory'));
   $('#e-moods').appendChild(tagEditor(moods, vocab.Moods, 'mood'));
@@ -1834,7 +1879,7 @@ async function loadIssues() {
     const el = document.createElement('div');
     el.className = 'issue';
     el.innerHTML = `${poster(m.Id, m.Title)}
-      <div><div class="t">${esc(m.Title)} <span class="y" style="color:var(--faint);font-weight:400">${m.Year ?? ''}</span></div>
+      <div><div class="t">${esc(m.Title)} <span class="y" style="color:var(--faint);font-weight:400">${m.Aired ?? m.Year ?? ''}${m.Kind === 'series' ? ' · series' : ''}</span></div>
         <ul>${it.Lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
         <div class="tagsnow">${m.Tagged ? 'Now: ' + esc([...m.Subcategories, ...m.Moods].join(', ')) : 'No tags yet'}${it.LookedUp ? (it.FoundOnWeb ? ' · already looked up on the web' : ' · nothing found on the web') : ''}</div></div>
       <div class="acts">${it.Lookup === 'working' ? '<span class="note busy-note">Looking up and describing now…</span>'
@@ -1858,7 +1903,7 @@ async function loadIssues() {
 }
 $('#iss-all').addEventListener('click', async e => {
   e.target.disabled = true;
-  try { await call('POST', '/api/issues/lookup-all'); toast('Looking up every flagged movie, 20 at a time'); setTimeout(loadIssues, 1000); }
+  try { await call('POST', '/api/issues/lookup-all'); toast('Looking up every flagged title, 20 at a time'); setTimeout(loadIssues, 1000); }
   catch (err) { toast(err.message); e.target.disabled = false; }
 });
 // Parallel's mode and limit only matter with a key (without one it's free and fast)
@@ -1997,7 +2042,7 @@ async function openUser(id, name, tab = 'letterboxd') {
   const lb = d.Letterboxd;
   const counted = d.History.filter(h => h.Counted).length;
   $('#d-body').innerHTML = `
-    <div class="tabs"><button data-t="letterboxd">Letterboxd</button><button data-t="history">Watch history<sup>${counted}/${d.History.length}</sup></button><button data-t="rows">Rows<sup>${d.Rows.length}</sup></button><button data-t="brief">Understood as</button></div>
+    <div class="tabs"><button data-t="letterboxd">Letterboxd</button><button data-t="history">Watch history<sup>${counted}/${d.History.length}</sup></button><button data-t="series">Series<sup>${d.Series.filter(s => s.Weight > 0).length}/${d.Series.length}</sup></button><button data-t="rows">Rows<sup>${d.Rows.length}</sup></button><button data-t="brief">Understood as</button></div>
     <div data-tab="letterboxd">
       <div class="settings">
         <div class="setting">
@@ -2024,6 +2069,11 @@ async function openUser(id, name, tab = 'letterboxd') {
       <p class="note" style="margin-top:0">Films ${esc(name)} finished in Jellyfin, newest first. Faded ones were watched before the "count from" date and don't shape taste.</p>
       ${d.History.length ? `<table class="list"><tr><th>Film</th><th>Last watched</th><th></th></tr>${d.History.map(h => `<tr class="${h.Counted ? '' : 'dim'}"><td>${esc(h.Title)} <span class="y">${h.Year ?? ''}</span></td><td>${day(h.LastPlayed)}</td><td class="note">${h.Counted ? 'counts' : 'ignored'}</td></tr>`).join('')}</table>` : '<p class="empty">Nothing watched yet.</p>'}
     </div>
+    <div data-tab="series" class="hidden">
+      <p class="note" style="margin-top:0">Series ${esc(name)} watched in Jellyfin, newest first. Series aren't recommended (yet), but they shape taste in films: 3 or more episodes count, a finished one (most of its episodes, or 3+ seasons) counts most. ${d.SeriesWeight ? `Up to ${10} of them count, the most recent ones; how much is set on Tuning.` : 'Switched off on Tuning: none count now.'} Episodes before the "count from" date don't count.</p>
+      ${d.Series.length ? `<table class="list"><tr><th>Series</th><th>Episodes</th><th>Last watched</th><th></th></tr>${d.Series.map(s => `<tr class="${s.Weight ? '' : 'dim'}"><td><a href="#" data-film="${s.Id}">${esc(s.Title)}</a> <span class="y">${s.Aired ?? ''}</span></td><td>${s.Episodes}${s.Of ? ' of ' + s.Of : ''}${s.Seasons ? ` <span class="note">(${s.Seasons} season${s.Seasons === 1 ? '' : 's'})</span>` : ''}</td><td>${s.LastWatched ? day(s.LastWatched) : ''}</td><td class="note">${
+        s.Level === 'sampled' ? 'only tried' : s.Level === 'not taste' ? 'reality/talk show, ignored' : !s.Tagged ? `${s.Level}, counts once described` : s.Weight ? `${s.Level} · counts ${s.Weight}%` : `${s.Level} · not among the ${10} most recent`}</td></tr>`).join('')}</table>` : '<p class="empty">No series watched (or none counted from the "count from" date).</p>'}
+    </div>
     <div data-tab="rows" class="hidden" id="rows-edit"></div>
     <div data-tab="brief" class="hidden">
       ${d.BriefTags ? `<p class="note" style="margin-top:0">How the AI translated what you wrote into the vocabulary it uses for movies.</p>
@@ -2034,6 +2084,7 @@ async function openUser(id, name, tab = 'letterboxd') {
         : '<p class="empty">Nothing written yet, or not read by the AI yet.</p>'}
     </div>`;
   rowsEditor(d, id);
+  $$('[data-tab="series"] [data-film]', $('#d-body')).forEach(a => a.onclick = e => { e.preventDefault(); openMovie(a.dataset.film); });
   checkPosters($('#d-body'));
   const show = t => { $$('.tabs button', $('#d-body')).forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('[data-tab]', $('#d-body')).forEach(p => p.classList.toggle('hidden', p.dataset.tab !== t)); };
   $$('.tabs button', $('#d-body')).forEach(b => b.onclick = () => show(b.dataset.t)); show(tab);
@@ -2181,11 +2232,14 @@ async function loadLibraries() {
   const box = $('#libraries');
   try {
     const libs = await call('GET', '/api/libraries');
-    if (!libs.length) { box.innerHTML = '<div class="empty">No movie libraries in Jellyfin.</div>'; return; }
+    if (!libs.length) { box.innerHTML = '<div class="empty">No movie or TV libraries in Jellyfin.</div>'; return; }
+    const counts = l => [l.Movies ? l.Movies.toLocaleString() + ' movies' : '', l.Series ? l.Series.toLocaleString() + ' series' : ''].filter(Boolean).join(', ');
+    // A TV library only feeds taste; anything holding movies is recommended from
+    const on = l => l.Movies || (l.HoldsMovies && !l.Series) ? 'Recommended from' : 'Used for taste';
     box.innerHTML = libs.map(l => `
       <div class="lib">
-        <div class="grow"><div class="lib-name">${esc(l.Name)}</div><div class="note">${l.Movies ? l.Movies.toLocaleString() + ' movies' : 'Counted after the next library sync'}</div></div>
-        <span class="state"><span class="dot ${l.Enabled ? 'ok' : ''}"></span>${l.Enabled ? 'Recommended from' : 'Off'}</span>
+        <div class="grow"><div class="lib-name">${esc(l.Name)}</div><div class="note">${counts(l) || 'Counted after the next library sync'}</div></div>
+        <span class="state"><span class="dot ${l.Enabled ? 'ok' : ''}"></span>${l.Enabled ? on(l) : 'Off'}</span>
         <label class="switch" title="Recommend from ${esc(l.Name)}"><input type="checkbox" data-id="${l.Id}" ${l.Enabled ? 'checked' : ''}><span></span></label>
       </div>`).join('');
     $$('input', box).forEach(i => i.addEventListener('change', async () => {
@@ -2361,7 +2415,9 @@ async function loadStatus() {
     // The queue, in the order a round runs
     const label = { running: 'Running', waiting: 'Waiting', paused: 'Paused', off: 'Off' };
     $('#queue').innerHTML = (s.Queue || []).map(q => {
-      const count = q.Of != null ? `<div class="count">${n(q.Done)} / ${n(q.Of)}<div class="meter"><div style="width:${q.Of ? Math.min(100, 100 * q.Done / q.Of) : 0}%"></div></div></div>` : '<div class="count"></div>';
+      // Series go through the same steps (they only help with taste); their share is shown under the count
+      const ofSeries = q.SeriesOf != null ? `<div class="note" title="Series aren't recommended; they tell more about taste">incl. ${n(q.SeriesDone)} / ${n(q.SeriesOf)} series</div>` : '';
+      const count = q.Of != null ? `<div class="count">${n(q.Done)} / ${n(q.Of)}<div class="meter"><div style="width:${q.Of ? Math.min(100, 100 * q.Done / q.Of) : 0}%"></div></div>${ofSeries}</div>` : '<div class="count"></div>';
       const text = q.Queued ? `${n(q.Queued)} queued to describe again${q.State === 'running' && q.Text ? ' · now ' + q.Text.toLowerCase() : ''}`
         : q.Text === 'Done' && q.At ? `Done at ${clock(q.At)}` : q.Text;
       const when = q.State === 'running' ? `for ${dur(Math.max(60, q.RunningFor))}`

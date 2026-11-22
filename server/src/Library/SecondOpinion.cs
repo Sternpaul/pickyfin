@@ -65,7 +65,7 @@ public sealed class SecondOpinion
         foreach (var expired in SetAsideUntil.Where(x => x.Value <= now).Select(x => x.Key).ToList()) { SetAsideUntil.Remove(expired); FailedTimes.Remove(expired); }
         var setAside = all.Count(m => SetAsideUntil.ContainsKey(m.ItemId));
         var pending = all.Where(m => !SetAsideUntil.ContainsKey(m.ItemId))
-            .OrderBy(m => FailedTimes.GetValueOrDefault(m.ItemId)).ThenBy(m => m.Title).ToList();
+            .OrderBy(m => FailedTimes.GetValueOrDefault(m.ItemId)).ThenBy(m => m.IsSeries).ThenBy(m => m.Title).ToList();
         var asideText = setAside > 0 ? $" ({setAside} set aside until tomorrow)" : "";
         if (pending.Count == 0)
         {

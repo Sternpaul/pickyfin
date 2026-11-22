@@ -35,6 +35,9 @@ public sealed class UserProfile
     public DateTime? LastRefresh { get; set; }
     /// <summary>Last seen "most recent watch", to notice new watches cheaply.</summary>
     public DateTime? LastSeenPlay { get; set; }
+    /// <summary>Last seen "most recent episode", and the series levels then (SeriesTaste.Signature): a series moving up means fresh picks.</summary>
+    public DateTime? LastSeenEpisode { get; set; }
+    public string? SeriesLevels { get; set; }
     public bool RefreshRequested { get; set; }
     public string? LastResult { get; set; }
 
@@ -223,6 +226,7 @@ public sealed class Database
         AddColumn("Movies", "Status", "TEXT NULL");
         AddColumn("Movies", "Network", "TEXT NULL");
         AddColumn("Movies", "Format", "TEXT NULL");
+        AddColumn("Movies", "LastWatched", "TEXT NULL");
         AddColumn("Users", "UseLetterboxd", "INTEGER NOT NULL DEFAULT 1");
         AddColumn("Users", "LetterboxdUsername", "TEXT NULL");
         AddColumn("Users", "LetterboxdWatchlistUrl", "TEXT NULL");
@@ -230,6 +234,8 @@ public sealed class Database
         AddColumn("Users", "LetterboxdSynced", "TEXT NULL");
         AddColumn("Users", "LetterboxdStatus", "TEXT NULL");
         AddColumn("Users", "HiddenItems", "TEXT NOT NULL DEFAULT ''");
+        AddColumn("Users", "LastSeenEpisode", "TEXT NULL");
+        AddColumn("Users", "SeriesLevels", "TEXT NULL");
 
         Run(@"CREATE TABLE IF NOT EXISTS ""Letterboxd"" (
             ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_Letterboxd"" PRIMARY KEY AUTOINCREMENT,

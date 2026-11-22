@@ -103,9 +103,16 @@ public sealed class Meaning
     public static string Document(MovieMetadata m)
     {
         var b = new StringBuilder();
-        b.Append($"{m.Title}{(m.ReleaseYear is { } y ? $" ({y})" : "")}.");
+        // A film's text must stay exactly as it was: any change would embed every film again
+        if (m.IsSeries)
+        {
+            var run = new[] { Ai.ClassificationPrompt.Aired(m), m.Seasons is { } n ? $"{n} season{(n == 1 ? "" : "s")}" : null, m.Format }.Where(x => x is not null);
+            b.Append($"{m.Title}. A TV series ({string.Join(", ", run)}).".Replace(" ().", "."));
+            if (!string.IsNullOrWhiteSpace(m.Network)) b.Append($" On {m.Network}.");
+        }
+        else b.Append($"{m.Title}{(m.ReleaseYear is { } y ? $" ({y})" : "")}.");
         if (!string.IsNullOrWhiteSpace(m.OriginalTitle)) b.Append($" Original title: {m.OriginalTitle}.");
-        if (!string.IsNullOrWhiteSpace(m.Director)) b.Append($" Directed by {m.Director}.");
+        if (!string.IsNullOrWhiteSpace(m.Director)) b.Append(m.IsSeries ? $" Created by {m.Director}." : $" Directed by {m.Director}.");
         if (!string.IsNullOrWhiteSpace(m.Cast)) b.Append($" With {m.Cast}.");
         if (m.GenreList.Count > 0) b.Append($" Genres: {string.Join(", ", m.GenreList)}.");
         if (!string.IsNullOrWhiteSpace(m.Countries)) b.Append($" From {m.Countries}.");
@@ -234,6 +241,7 @@ public sealed class Meaning
             .ToDictionary(e => (e.ItemId, e.Model), e => e.Hash);
         var films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(cancellationToken))
             .Where(m => !s.IsLibraryExcluded(m.Libraries))
+            .OrderBy(m => m.IsSeries) // films first
             .Select(m => (Id: m.ItemId, Kind: "film", Text: Document(m))).ToList();
         var briefs = (await db.Users.AsNoTracking().Where(u => u.Enabled).ToListAsync(cancellationToken))
             .Select(u => (Id: u.UserId, Kind: "brief", Text: BriefText(u)))
@@ -484,19 +492,21 @@ public sealed class Meaning
         // Models that dropped out of the order no longer count
         var order = Order(s).Where(m => !OpenRouterModels.IsGone(m)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         List<Embedding> rows;
-        HashSet<Guid> visible;
+        HashSet<Guid> visible, series;
         await using (var db = _database.Open())
         {
             rows = await db.Embeddings.AsNoTracking().ToListAsync(cancellationToken);
             // films Jellyfin no longer has (hidden until the admin confirms) don't count
             visible = (await db.Movies.Select(m => m.ItemId).ToListAsync(cancellationToken)).ToHashSet();
+            series = (await db.Movies.Where(m => m.Kind == MovieMetadata.SeriesKind).Select(m => m.ItemId).ToListAsync(cancellationToken)).ToHashSet();
         }
         rows = rows.Where(r => r.Kind != "film" || visible.Contains(r.ItemId)).ToList();
         var parts = rows.GroupBy(r => r.Model)
             .Where(g => order.Count == 0 || order.Contains(g.Key))
             .Select(g => new Part(g.Key,
                 g.Where(r => r.Kind == "film").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)),
-                g.Where(r => r.Kind == "brief").ToDictionary(r => r.ItemId, r => Unpack(r.Vector))))
+                g.Where(r => r.Kind == "brief").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)),
+                series))
             .OrderByDescending(p => p.Films.Count).ToList();
         var snapshot = new Snapshot(version, parts);
         lock (_gate) _snapshot = snapshot;
@@ -507,36 +517,51 @@ public sealed class Meaning
     /// One model's matrix. A score is where the target ranks among all films for the source
     /// (the closest ones near 1, an average film 0), so models with different similarity
     /// ranges can be averaged.
+    /// Films and series are two matrices: a film is ranked among films only, a series among
+    /// series only, whatever the source is. So series never shift a film's score, and "how close
+    /// is this film to that series" still works (the film ranked among films, seen from the series).
     /// </summary>
     public sealed class Part
     {
+        public const int MinimumPool = 20;
         public string Model { get; }
+        /// <summary>Every title with a vector: films and series.</summary>
         public Dictionary<Guid, float[]> Films { get; }
         public Dictionary<Guid, float[]> Briefs { get; }
-        private readonly Dictionary<(Guid, bool), Dictionary<Guid, double>> _ranks = new();
-        private Dictionary<Guid, (double X, double Y)>? _map;
+        private readonly Dictionary<Guid, float[]> _movies, _series;
+        private readonly Dictionary<(Guid, bool, bool), Dictionary<Guid, double>> _ranks = new();
+        private readonly Dictionary<string, Dictionary<Guid, (double X, double Y)>> _maps = new();
 
-        public Part(string model, Dictionary<Guid, float[]> films, Dictionary<Guid, float[]> briefs)
+        public Part(string model, Dictionary<Guid, float[]> films, Dictionary<Guid, float[]> briefs, IReadOnlySet<Guid>? series = null)
         {
             Model = model;
             Films = films;
             Briefs = briefs;
+            _series = series is null ? new() : films.Where(f => series.Contains(f.Key)).ToDictionary(f => f.Key, f => f.Value);
+            _movies = series is null ? films : films.Where(f => !series.Contains(f.Key)).ToDictionary(f => f.Key, f => f.Value);
         }
 
-        public bool Any => Films.Count >= 20;
+        /// <summary>Enough films for the film matrix to mean something.</summary>
+        public bool Any => _movies.Count >= MinimumPool;
+        public bool AnySeries => _series.Count >= MinimumPool;
+        public bool IsSeries(Guid id) => _series.ContainsKey(id);
+        /// <summary>The films, or the series: the titles one matrix ranks.</summary>
+        public IReadOnlyDictionary<Guid, float[]> Pool(bool series) => series ? _series : _movies;
 
         public double? Rank(Guid source, Guid target, bool brief)
         {
-            if (!Any || source == target && !brief) return null;
-            if (!Films.ContainsKey(target)) return null;
+            if (source == target && !brief) return null;
+            var inSeries = _series.ContainsKey(target);
+            var pool = inSeries ? _series : _movies;
+            if (pool.Count < MinimumPool || !pool.ContainsKey(target)) return null;
             Dictionary<Guid, double> ranks;
             lock (_ranks)
             {
-                if (!_ranks.TryGetValue((source, brief), out ranks!))
+                if (!_ranks.TryGetValue((source, brief, inSeries), out ranks!))
                 {
                     var from = brief ? Briefs.GetValueOrDefault(source) : Films.GetValueOrDefault(source);
                     if (from is null) return null;
-                    var ordered = Films.Where(f => f.Key != source)
+                    var ordered = pool.Where(f => f.Key != source)
                         .Select(f => (Id: f.Key, Cos: Dot(from, f.Value)))
                         .OrderBy(x => x.Cos).ToList();
                     ranks = new Dictionary<Guid, double>(ordered.Count);
@@ -546,7 +571,7 @@ public sealed class Meaning
                         var above = Math.Max(0, (percentile - 0.5) / 0.5);
                         ranks[ordered[i].Id] = 0.7 * above * above;
                     }
-                    _ranks[(source, brief)] = ranks;
+                    _ranks[(source, brief, inSeries)] = ranks;
                 }
             }
             return ranks.TryGetValue(target, out var r) ? r : null;
@@ -557,15 +582,19 @@ public sealed class Meaning
         /// differ most (principal components). Close points mean similar things; the map
         /// flattens a lot, so the closest-films list is the exact answer.
         /// </summary>
-        public Dictionary<Guid, (double X, double Y)> Map()
+        /// <param name="kind">"movie" (default): the films; "series": the series; "all": both on one map.
+        /// Only the map is joined: scores always rank a film among films and a series among series.</param>
+        public Dictionary<Guid, (double X, double Y)> Map(string? kind = null)
         {
+            kind = kind is MovieMetadata.SeriesKind or "all" ? kind : MovieMetadata.MovieKind;
             lock (_ranks)
             {
-                if (_map is not null) return _map;
-                var ids = Films.Keys.ToList();
-                if (ids.Count < 3) return _map = new();
-                var dim = Films[ids[0]].Length;
-                var rows = ids.Select(id => Films[id]).Where(v => v.Length == dim).ToList();
+                if (_maps.TryGetValue(kind, out var known)) return known;
+                var pool = kind == "all" ? Films : kind == MovieMetadata.SeriesKind ? _series : _movies;
+                var ids = pool.Keys.ToList();
+                if (ids.Count < 3) return _maps[kind] = new();
+                var dim = pool[ids[0]].Length;
+                var rows = ids.Select(id => pool[id]).Where(v => v.Length == dim).ToList();
                 var mean = new double[dim];
                 foreach (var v in rows) for (var j = 0; j < dim; j++) mean[j] += v[j];
                 for (var j = 0; j < dim; j++) mean[j] /= rows.Count;
@@ -592,8 +621,7 @@ public sealed class Meaning
                 var first = Component(null);
                 var second = Component(first);
                 double Along(float[] r, double[] axis) { double t = 0; for (var j = 0; j < dim; j++) t += (r[j] - mean[j]) * axis[j]; return t; }
-                _map = ids.Where(id => Films[id].Length == dim).ToDictionary(id => id, id => (Along(Films[id], first), Along(Films[id], second)));
-                return _map;
+                return _maps[kind] = ids.Where(id => pool[id].Length == dim).ToDictionary(id => id, id => (Along(pool[id], first), Along(pool[id], second)));
             }
         }
 
@@ -627,7 +655,7 @@ public sealed class Meaning
         /// <summary>The model with the most films.</summary>
         public string Model => Parts.FirstOrDefault()?.Model ?? "";
         public bool Any => Parts.Any(p => p.Any);
-        public bool Has(Guid film) => Parts.Any(p => p.Any && p.Films.ContainsKey(film));
+        public bool Has(Guid film) => Parts.Any(p => (p.IsSeries(film) ? p.AnySeries : p.Any) && p.Films.ContainsKey(film));
         public Part? For(string? model) => Parts.FirstOrDefault(p => string.Equals(p.Model, model, StringComparison.OrdinalIgnoreCase)) ?? Parts.FirstOrDefault();
 
         /// <summary>How close a film is to another, 0..0.7 (as strong as a very good tag match at most); null when unknown.</summary>
@@ -648,7 +676,7 @@ public sealed class Meaning
             return n == 0 ? null : sum / n;
         }
 
-        public Dictionary<Guid, (double X, double Y)> Map(string? model = null) => For(model)?.Map() ?? new();
+        public Dictionary<Guid, (double X, double Y)> Map(string? model = null, string? kind = null) => For(model)?.Map(kind) ?? new();
     }
 
     /// <summary>Tags and meaning together: weight 0 = tags only, 1 = meaning only.</summary>

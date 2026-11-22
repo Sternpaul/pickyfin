@@ -23,6 +23,26 @@ public sealed class JellyfinItem
     public Dictionary<string, string>? ProviderIds { get; set; }
     public List<JellyfinPerson>? People { get; set; }
     public JellyfinUserData? UserData { get; set; }
+
+    // Series only
+    /// <summary>"Continuing" or "Ended".</summary>
+    public string? Status { get; set; }
+    public DateTime? EndDate { get; set; }
+    public List<JellyfinNamed>? Studios { get; set; }
+    /// <summary>For a series: its seasons (a "Specials" season counts too).</summary>
+    public int? ChildCount { get; set; }
+    /// <summary>For a series: its episodes.</summary>
+    public int? RecursiveItemCount { get; set; }
+
+    // Episodes only
+    public Guid? SeriesId { get; set; }
+    /// <summary>For an episode: its season number (0 = specials).</summary>
+    public int? ParentIndexNumber { get; set; }
+}
+
+public sealed class JellyfinNamed
+{
+    public string Name { get; set; } = "";
 }
 
 public sealed class JellyfinPerson
@@ -55,6 +75,8 @@ public sealed class JellyfinClient
     };
 
     private const string MovieFields = "Overview,ProviderIds,People,Genres,DateCreated,CriticRating,CommunityRating,ProductionYear,OriginalTitle,ProductionLocations";
+    // Status and EndDate come with every series; seasons, episodes and the network need asking for
+    private const string SeriesFields = MovieFields + ",Studios,ChildCount,RecursiveItemCount";
 
     private readonly HttpClient _http;
 
@@ -123,32 +145,45 @@ public sealed class JellyfinClient
     }
 
     /// <summary>All movies the given user may see, with their watch state.</summary>
-    public async Task<List<JellyfinItem>> GetMoviesAsync(Guid userId, bool withDetails, CancellationToken cancellationToken = default)
+    public Task<List<JellyfinItem>> GetMoviesAsync(Guid userId, bool withDetails, CancellationToken cancellationToken = default) =>
+        GetAllPagesAsync($"/Items?userId={userId}&Recursive=true&IncludeItemTypes=Movie&Fields={(withDetails ? MovieFields : "ProductionYear")}&EnableImages=false&EnableUserData=true", 500, cancellationToken);
+
+    /// <summary>All series the given user may see.</summary>
+    public Task<List<JellyfinItem>> GetSeriesAsync(Guid userId, bool withDetails, CancellationToken cancellationToken = default) =>
+        GetAllPagesAsync($"/Items?userId={userId}&Recursive=true&IncludeItemTypes=Series&Fields={(withDetails ? SeriesFields : "ProductionYear")}&EnableImages=false&EnableUserData=true", 500, cancellationToken);
+
+    /// <summary>Every episode the user finished, with its series and when they last played it.</summary>
+    public Task<List<JellyfinItem>> GetWatchedEpisodesAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        GetAllPagesAsync($"/Items?userId={userId}&Recursive=true&IncludeItemTypes=Episode&IsPlayed=true&EnableImages=false&EnableUserData=true", 2000, cancellationToken);
+
+    private async Task<List<JellyfinItem>> GetAllPagesAsync(string query, int pageSize, CancellationToken cancellationToken)
     {
-        var fields = withDetails ? MovieFields : "ProductionYear";
         var all = new List<JellyfinItem>();
-        const int pageSize = 500;
         for (var start = 0; ; start += pageSize)
         {
-            var page = await SendAsync<ItemsPage>(Request(HttpMethod.Get,
-                $"/Items?userId={userId}&Recursive=true&IncludeItemTypes=Movie&Fields={fields}&EnableImages=false&EnableUserData=true&StartIndex={start}&Limit={pageSize}"),
-                cancellationToken);
+            var page = await SendAsync<ItemsPage>(Request(HttpMethod.Get, $"{query}&StartIndex={start}&Limit={pageSize}"), cancellationToken);
             all.AddRange(page.Items);
             if (page.Items.Count < pageSize) break;
         }
         return all;
     }
 
-    /// <summary>When the user last finished a movie, or null if never. A cheap way to notice new watches.</summary>
-    public async Task<DateTime?> GetLastPlayedAsync(Guid userId, CancellationToken cancellationToken = default)
+    /// <summary>When the user last finished a movie (or an episode: type "Episode"), or null if never. A cheap way to notice new watches.</summary>
+    public async Task<DateTime?> GetLastPlayedAsync(Guid userId, CancellationToken cancellationToken = default, string type = "Movie")
     {
         var page = await SendAsync<ItemsPage>(Request(HttpMethod.Get,
-            $"/Items?userId={userId}&Recursive=true&IncludeItemTypes=Movie&IsPlayed=true&SortBy=DatePlayed&SortOrder=Descending&Limit=1&EnableImages=false&EnableUserData=true"),
+            $"/Items?userId={userId}&Recursive=true&IncludeItemTypes={type}&IsPlayed=true&SortBy=DatePlayed&SortOrder=Descending&Limit=1&EnableImages=false&EnableUserData=true"),
             cancellationToken);
         return page.Items.FirstOrDefault()?.UserData?.LastPlayedDate;
     }
 
-    public sealed record Library(Guid Id, string Name, string? CollectionType);
+    public sealed record Library(Guid Id, string Name, string? CollectionType)
+    {
+        /// <summary>Movie libraries and mixed ones (no type) can hold movies.</summary>
+        public bool HoldsMovies => CollectionType is null or "" or "movies" or "mixed" or "homevideos";
+        /// <summary>TV libraries and mixed ones can hold series.</summary>
+        public bool HoldsSeries => CollectionType is null or "" or "tvshows" or "mixed";
+    }
 
     private sealed class VirtualFolder
     {
@@ -157,31 +192,20 @@ public sealed class JellyfinClient
         public Guid ItemId { get; set; }
     }
 
-    /// <summary>Libraries that can hold movies (movie libraries and mixed ones).</summary>
-    public async Task<List<Library>> GetMovieLibrariesAsync(CancellationToken cancellationToken = default)
+    /// <summary>Libraries that can hold movies or series (movie, TV and mixed libraries).</summary>
+    public async Task<List<Library>> GetLibrariesAsync(CancellationToken cancellationToken = default)
     {
         var folders = await SendAsync<List<VirtualFolder>>(Request(HttpMethod.Get, "/Library/VirtualFolders"), cancellationToken);
         return folders
-            .Where(f => f.CollectionType is null or "" or "movies" or "mixed" or "homevideos")
             .Select(f => new Library(f.ItemId, f.Name, f.CollectionType))
+            .Where(l => l.HoldsMovies || l.HoldsSeries)
             .ToList();
     }
 
-    /// <summary>Ids of all movies in one library.</summary>
-    public async Task<List<Guid>> GetLibraryMovieIdsAsync(Guid userId, Guid libraryId, CancellationToken cancellationToken = default)
-    {
-        var ids = new List<Guid>();
-        const int pageSize = 2000;
-        for (var start = 0; ; start += pageSize)
-        {
-            var page = await SendAsync<ItemsPage>(Request(HttpMethod.Get,
-                $"/Items?userId={userId}&ParentId={libraryId}&Recursive=true&IncludeItemTypes=Movie&EnableImages=false&EnableUserData=false&StartIndex={start}&Limit={pageSize}"),
-                cancellationToken);
-            ids.AddRange(page.Items.Select(i => i.Id));
-            if (page.Items.Count < pageSize) break;
-        }
-        return ids;
-    }
+    /// <summary>Ids of all movies (or series: type "Series") in one library.</summary>
+    public async Task<List<Guid>> GetLibraryItemIdsAsync(Guid userId, Guid libraryId, string type = "Movie", CancellationToken cancellationToken = default) =>
+        (await GetAllPagesAsync($"/Items?userId={userId}&ParentId={libraryId}&Recursive=true&IncludeItemTypes={type}&EnableImages=false&EnableUserData=false", 2000, cancellationToken))
+            .Select(i => i.Id).ToList();
 
 
     private sealed class CreatedPlaylist

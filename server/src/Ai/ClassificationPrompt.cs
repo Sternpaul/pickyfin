@@ -21,12 +21,20 @@ namespace Pickyfin.Server.Ai
         public static object Facts(MovieMetadata m, int index, int plotChars = 900, bool withReview = false) => new
         {
             Ref = Ref(index),
+            // Films carry no type; a series says so, with what's known about its run
+            Type = m.IsSeries ? "TV series" : null,
             m.Title,
             OriginalTitle = m.OriginalTitle,
-            Year = m.ReleaseYear,
+            Year = m.IsSeries ? null : m.ReleaseYear,
+            Aired = m.IsSeries ? Aired(m) : null,
+            Seasons = m.IsSeries ? m.Seasons : null,
+            Episodes = m.IsSeries ? m.Episodes : null,
+            Network = m.IsSeries ? m.Network : null,
             Genres = m.GenreList.Count > 0 ? m.GenreList : null,
             Countries = string.IsNullOrWhiteSpace(m.Countries) ? null : m.Countries,
-            m.Director,
+            // For a series the "director" field holds its creators (from TMDB)
+            Director = m.IsSeries ? null : m.Director,
+            CreatedBy = m.IsSeries ? m.Director : null,
             Cast = string.IsNullOrWhiteSpace(m.Cast) ? null : m.Cast,
             Keywords = m.KeywordSet.Items.Count > 0 ? m.KeywordSet.Items.Take(15) : null,
             Plot = Cut(m.Plot, plotChars),
@@ -36,6 +44,12 @@ namespace Pickyfin.Server.Ai
             Review = withReview && Reviewed(m) ? ReviewLines(m) : null,
             Recheck = withReview && m.Recheck ? "yes" : null,
         };
+
+        /// <summary>"2008–2013", "2019–" (still running) or "2019".</summary>
+        public static string? Aired(MovieMetadata m) =>
+            m.ReleaseYear is not { } start ? null
+            : string.Equals(m.Status, "Continuing", StringComparison.OrdinalIgnoreCase) ? $"{start}–"
+            : m.EndYear is { } end && end != start ? $"{start}–{end}" : $"{start}";
 
         private static bool Reviewed(MovieMetadata m) =>
             m.IsClassified && (m.Issue is not null || !string.IsNullOrWhiteSpace(m.WebNotes) || m.Recheck);
@@ -50,7 +64,7 @@ namespace Pickyfin.Server.Ai
         public static string Build(IList<MovieMetadata> movies)
         {
             var moviesJson = JsonSerializer.Serialize(movies.Select((m, i) => Facts(m, i, withReview: true)), Compact);
-            return $@"You classify movies for a recommendation engine. Use what you know about each film together with the facts given (genres, keywords, plot, and text from the web when present). The facts are reliable; don't contradict them.
+            return $@"You classify movies and TV series for a recommendation engine. Entries with ""Type"": ""TV series"" are series: describe the series as a whole (all its seasons), not one episode. Use what you know about each film together with the facts given (genres, keywords, plot, and text from the web when present). The facts are reliable; don't contradict them.
 
 Some movies are being described again. They carry ""EarlierTags"" (what an AI said the first time) and ""Review"" (what a second AI and an automatic genre check said about those tags: objections, or that they found nothing wrong). These are opinions, not facts, and any of them can be wrong. When ""FromTheWeb"" is there, it is the strongest evidence. Weigh everything together, keep earlier tags that fit, replace the ones that don't, and make your own decision.
 Movies with ""Recheck"": ""yes"" are a routine re-check of films described before with all of this. Keep their earlier tags unless something is clearly wrong or the web text now clearly says otherwise; don't swap a fitting tag for another fitting one.
@@ -78,6 +92,7 @@ Return a JSON object with a ""movies"" array, one entry per input movie, with th
 - ""Pacing"": exactly one of {Quoted(ClassificationVocabulary.Pacing)}.
 - ""Ending"": how the ending leaves the viewer, exactly one of {Quoted(ClassificationVocabulary.Endings)}.
 - ""Occasions"": 1 or 2 situations it suits best, ONLY from: {Quoted(ClassificationVocabulary.Occasions)} (""alone"" = needs full attention or is too dark to share).
+- ""Format"": ONLY for TV series, exactly one of {Quoted(ClassificationVocabulary.Formats)} (the most specific that fits: a crime series solving a case per episode is ""procedural"", a closed story in one or two seasons ""miniseries"", a story told over many seasons ""ongoing""); leave it out for films. For a series, ""Ending"" is how the series ends so far (""open"" if it's still running), and ""BasedOn"" is what the series is based on.
 
 Example output:
 {{""movies"": [{{""Ref"": ""m1"", ""Known"": ""yes"", ""Subcategories"": [""Cyberpunk"", ""AI & Robots""], ""Moods"": [""cerebral"", ""thrilling""], ""Themes"": [""simulated reality"", ""rebellion"", ""identity""], ""NarrativeStyle"": ""hero-journey"", ""Accessibility"": ""mainstream"", ""Intensity"": ""high"", ""CriticalAcclaimScore"": 8, ""CriticsScore"": 83, ""AudienceScore"": 85, ""ScoreSource"": ""Rotten Tomatoes"", ""ContentNotes"": [""graphic violence""], ""BasedOn"": ""original"", ""SettingEra"": ""2199"", ""SettingPlace"": ""simulated city"", ""Pacing"": ""fast"", ""Ending"": ""open"", ""Occasions"": [""with friends"", ""date night""]}}]}}
@@ -96,7 +111,7 @@ Input:
                 Tagged = new { Subcategories = m.SubcategorySet.Items, Moods = m.MoodSet.Items },
             });
             var json = JsonSerializer.Serialize(items, Compact);
-            return $@"You review movie tags written by another AI for a recommendation engine. For each movie you get facts and the tags it was given.
+            return $@"You review movie tags written by another AI for a recommendation engine. For each movie you get facts and the tags it was given. Entries with ""Type"": ""TV series"" are series, tagged as a whole; judge them the same way.
 
 Subcategories come from this fixed list: {Quoted(ClassificationVocabulary.Subcategories)}
 Moods come from this fixed list: {Quoted(ClassificationVocabulary.Moods)}

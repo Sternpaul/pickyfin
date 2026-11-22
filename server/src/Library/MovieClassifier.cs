@@ -80,6 +80,9 @@ namespace Pickyfin.Server.Library
             // per batch, so it only happens when the admin opts in.
             var includeOutdated = ServerSettings.Current.ReclassifyOutdatedMovies && !onlyNew;
             var unclassified = await _movieStore.GetMoviesNeedingClassificationAsync(includeOutdated, cancellationToken, includeQueued: !onlyNew);
+            // The library sync tags new films only: series go a few calls per round afterwards, so a
+            // TV library never holds up anyone's picks
+            if (onlyNew) unclassified = unclassified.Where(m => !m.IsSeries).ToList();
             if (!unclassified.Any())
             {
                 _logger.LogInformation("All movies are tagged");
@@ -284,6 +287,7 @@ namespace Pickyfin.Server.Library
                     if (o.ValueKind == JsonValueKind.String && ClassificationVocabulary.CanonicalOccasion(o.GetString()) is { } occasion && !occasions.Contains(occasion)) occasions.Add(occasion);
             movie.Occasions = JsonSerializer.Serialize(occasions.Take(2));
             movie.SettingPlace = Text("SettingPlace", 40);
+            if (movie.IsSeries) movie.Format = ClassificationVocabulary.CanonicalFormat(Text("Format", 20));
         }
 
         internal static string ExtractJson(string text)

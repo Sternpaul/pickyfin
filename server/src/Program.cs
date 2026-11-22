@@ -148,20 +148,25 @@ api.MapGet("/me", (HttpContext http) =>
 admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, MovieHistory history, CancellationToken ct) =>
 {
     var s = ServerSettings.Current;
-    int rescanned = 0, rescanOf = 0;
+    int rescanned = 0, rescanOf = 0, seriesRescanned = 0, seriesRescanOf = 0;
     var queuedAgain = await store.CountRedoAsync(ct);
     if (s.RescanMonths > 0 || s.RescanPassStarted is not null)
     {
         var cutoff = Rescan.Cutoff(s);
         await using var db = database.Open();
-        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind && m.IsClassified && !m.ManuallyEdited && !m.Verified)
-            .Select(m => new { m.Libraries, m.Rescanned }).ToListAsync(ct);
+        var rows = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.ManuallyEdited && !m.Verified)
+            .Select(m => new { m.Libraries, m.Rescanned, m.Kind }).ToListAsync(ct);
         var eligible = rows.Where(r => !s.IsLibraryExcluded(r.Libraries)).ToList();
         rescanOf = eligible.Count;
         rescanned = eligible.Count(r => r.Rescanned >= cutoff);
+        seriesRescanOf = eligible.Count(r => r.Kind == MovieMetadata.SeriesKind);
+        seriesRescanned = eligible.Count(r => r.Kind == MovieMetadata.SeriesKind && r.Rescanned >= cutoff);
     }
-    var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct);
-    int scored = 0, detailed = 0, embedded = 0, lbRated = 0;
+    // Every step works on films and series alike; the series part is shown on its own line
+    var (total, classified, issues, reviewed, lookedUp) = await store.GetStatsAsync(ct, kind: null);
+    var (seriesTotal, seriesClassified, seriesIssues, seriesReviewed, seriesLookedUp) = await store.GetStatsAsync(ct, kind: MovieMetadata.SeriesKind);
+    var films = total - seriesTotal;
+    int scored = 0, detailed = 0, embedded = 0, lbRated = 0, seriesScored = 0, seriesDetailed = 0, seriesEmbedded = 0;
     if (LetterboxdRatings.Last is { Reached: true })
     {
         await using var db = database.Open();
@@ -191,16 +196,20 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         // a film counts as matched once any model has it
         var ids = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film" && order.Contains(e.Model)).Select(e => e.ItemId).Distinct().ToListAsync(ct);
         var set = ids.ToHashSet();
-        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).Select(m => new { m.ItemId, m.Libraries }).ToListAsync(ct);
-        embedded = rows.Count(r => set.Contains(r.ItemId) && !s.IsLibraryExcluded(r.Libraries));
+        var rows = await db.Movies.AsNoTracking().Select(m => new { m.ItemId, m.Libraries, m.Kind }).ToListAsync(ct);
+        var matched = rows.Where(r => set.Contains(r.ItemId) && !s.IsLibraryExcluded(r.Libraries)).ToList();
+        embedded = matched.Count;
+        seriesEmbedded = matched.Count(r => r.Kind == MovieMetadata.SeriesKind);
     }
     if (!string.IsNullOrWhiteSpace(s.OmdbApiKey) || !string.IsNullOrWhiteSpace(s.TmdbApiKey))
     {
         await using var db = database.Open();
-        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).Select(m => new { m.Libraries, Scored = m.ScoresFetched != null, Detailed = m.DetailsFetched != null }).ToListAsync(ct);
+        var rows = await db.Movies.AsNoTracking().Select(m => new { m.Libraries, m.Kind, Scored = m.ScoresFetched != null, Detailed = m.DetailsFetched != null }).ToListAsync(ct);
         var counted = rows.Where(r => !s.IsLibraryExcluded(r.Libraries)).ToList();
         scored = counted.Count(r => r.Scored);
         detailed = counted.Count(r => r.Detailed);
+        seriesScored = counted.Count(r => r.Kind == MovieMetadata.SeriesKind && r.Scored);
+        seriesDetailed = counted.Count(r => r.Kind == MovieMetadata.SeriesKind && r.Detailed);
     }
     var (waitingFor, seconds) = Activity.Current;
     var hasKey = !string.IsNullOrWhiteSpace(s.ApiKey);
@@ -223,7 +232,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
 
     // One row per job, in the order a round runs them
     // rest: what the films not done are, when the step has done all it can (e.g. "not found on TMDB")
-    object Row(string key, string title, bool on, string off, int? done = null, int? of = null, int queued = 0, string? tip = null, string? rest = null)
+    // series: how many of done and of are series (shown under the count)
+    object Row(string key, string title, bool on, string off, int? done = null, int? of = null, int queued = 0, string? tip = null, string? rest = null, (int Done, int Of)? series = null)
     {
         var j = Jobs.Get(key);
         var state = !on ? "off" : j is { Running: true } ? "running" : j is { Error: true } ? "paused"
@@ -259,6 +269,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
             Next = on && state != "running" ? j?.Next : null,
             RunningFor = j is { Running: true } ? (int)(DateTime.UtcNow - j.Since).TotalSeconds : 0,
             Done = done, Of = of, Queued = queued, Tip = tip, At = j?.Since,
+            SeriesDone = series is { Of: > 0 } sd ? sd.Done : (int?)null, SeriesOf = series is { Of: > 0 } so ? so.Of : (int?)null,
         };
     }
     var lookupKey = lookupAll is { Running: true } ? "lookupall" : "sweep";
@@ -268,18 +279,19 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Row("picks", "Rows for each person", true, ""),
         // While a "describe again" pass runs, count what this pass has done
         Row("tagging", "1 · Describe", hasKey, "Off: no AI key", queuedAgain > 0 ? Math.Max(0, classified - queuedAgain) : classified, total, queuedAgain,
-            Tip("describe", "Described with")),
-        Row("second", "2 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified, tip: Tip("check", "Checked with")),
+            Tip("describe", "Described with"), series: (seriesClassified, seriesTotal)),
+        Row("second", "2 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified, tip: Tip("check", "Checked with"), series: (seriesReviewed, seriesClassified)),
         Row(lookupKey, "3 · Look up", WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto || lookupAll is { Running: true }),
-            WebLookup.Configured ? "Off" : "Off: no web search set up", lookedUp, classified, tip: Tip("lookup", "Described again from the web with")),
-        Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with")),
-        Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total),
-        Row(LetterboxdRatings.Key, LetterboxdRatings.Title, s.LetterboxdOn, "Off", LetterboxdRatings.Last is { Reached: true } ? lbRated : null, LetterboxdRatings.Last is { Reached: true } ? total : null,
+            WebLookup.Configured ? "Off" : "Off: no web search set up", lookedUp, classified, tip: Tip("lookup", "Described again from the web with"), series: (seriesLookedUp, seriesClassified)),
+        Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with"), series: (seriesRescanned, seriesRescanOf)),
+        Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total, series: (seriesScored, seriesTotal)),
+        // Letterboxd has films only
+        Row(LetterboxdRatings.Key, LetterboxdRatings.Title, s.LetterboxdOn, "Off", LetterboxdRatings.Last is { Reached: true } ? lbRated : null, LetterboxdRatings.Last is { Reached: true } ? films : null,
             tip: $"From letterboxd-collector at {LetterboxdRatings.Address(s)}" + (LetterboxdRatings.Last is { } lbLast ? $"\n{lbLast.Message}" + (lbLast.WithRating is { } wr ? $"; it has ratings for {wr:N0} films" : "") : ""),
-            rest: $"Up to date · {total - lbRated:N0} film{(total - lbRated == 1 ? " has" : "s have")} no Letterboxd rating in the collector (yet)"),
+            rest: $"Up to date · {films - lbRated:N0} film{(films - lbRated == 1 ? " has" : "s have")} no Letterboxd rating in the collector (yet)"),
         Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total,
-            rest: $"Up to date · {total - detailed:N0} film{(total - detailed == 1 ? "" : "s")} without a TMDB or IMDb id in Jellyfin"),
-        Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip),
+            rest: $"Up to date · {total - detailed:N0} title{(total - detailed == 1 ? "" : "s")} without a TMDB or IMDb id in Jellyfin", series: (seriesDetailed, seriesTotal)),
+        Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip, series: (seriesEmbedded, seriesClassified)),
     };
 
     int gone;
@@ -297,7 +309,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         worker.LastError,
         LastErrorAt = worker.LastErrorAt,
         LibrarySynced = library.LastSync,
-        Movies = total,
+        Movies = films,
+        Series = seriesTotal,
         Classified = classified,
         Issues = issues,
         Queue = queue,
@@ -489,7 +502,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // Anything that changes what gets picked: everyone gets fresh picks
     var picksChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g))
         || before.BecauseRows != settings.BecauseRows || before.PicksPerRow != settings.PicksPerRow
-        || before.BriefWeight != settings.BriefWeight || before.MeaningWeight != settings.MeaningWeight || before.Discovery != settings.Discovery || before.Variety != settings.Variety
+        || before.BriefWeight != settings.BriefWeight || before.MeaningWeight != settings.MeaningWeight || before.Discovery != settings.Discovery || before.SeriesWeight != settings.SeriesWeight || before.Variety != settings.Variety
         || before.BecausePeople != settings.BecausePeople || before.BecauseCountry != settings.BecauseCountry || before.BecauseEra != settings.BecauseEra
         || before.NewArrivals != settings.NewArrivals || before.Rotation != settings.Rotation || before.MinRating != settings.MinRating;
     if (picksChanged)
@@ -520,13 +533,18 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
 
 admin.MapGet("/libraries", async (JellyfinClient jellyfin, MovieStore store, CancellationToken ct) =>
 {
-    var libraries = await jellyfin.GetMovieLibrariesAsync(ct);
-    var movies = await store.GetAllMoviesAsync(ct);
+    var libraries = await jellyfin.GetLibrariesAsync(ct);
+    var titles = await store.GetAllTitlesAsync(ct);
+    int Count(Guid library, bool series) =>
+        titles.Count(m => m.IsSeries == series && m.Libraries?.Contains(library.ToString(), StringComparison.OrdinalIgnoreCase) == true);
     return Results.Ok(libraries.Select(l => new
     {
         l.Id,
         l.Name,
-        Movies = movies.Count(m => m.Libraries?.Contains(l.Id.ToString(), StringComparison.OrdinalIgnoreCase) == true),
+        l.HoldsMovies,
+        l.HoldsSeries,
+        Movies = Count(l.Id, series: false),
+        Series = Count(l.Id, series: true),
         Enabled = !ServerSettings.Current.ExcludedLibraries.Contains(l.Id),
     }));
 });
@@ -661,6 +679,7 @@ record SettingsView
     public bool? EmbeddingModelsAuto { get; init; }
     public int MeaningWeight { get; init; } = 50;
     public int Discovery { get; init; }
+    public int SeriesWeight { get; init; } = 50;
     public string Variety { get; init; } = "medium";
     public string NewArrivals { get; init; } = "some";
     public string Rotation { get; init; } = "medium";
@@ -728,6 +747,7 @@ record SettingsView
         EmbeddingModelsAuto = s.EmbeddingModelsAuto,
         MeaningWeight = s.MeaningWeight,
         Discovery = s.Discovery,
+        SeriesWeight = s.SeriesWeight,
         Variety = s.Variety,
         NewArrivals = s.NewArrivals,
         Rotation = s.Rotation,
@@ -832,6 +852,7 @@ record SettingsView
         if (EmbeddingModelsAuto is { } embedAuto) s.EmbeddingModelsAuto = embedAuto;
         s.MeaningWeight = Math.Clamp(MeaningWeight, 0, 100);
         s.Discovery = Math.Clamp(Discovery, 0, 100);
+        s.SeriesWeight = Math.Clamp(SeriesWeight, 0, 100);
         s.Variety = Variety is "low" or "medium" or "high" ? Variety : "medium";
         s.NewArrivals = NewArrivals is "off" or "some" or "lots" ? NewArrivals : "some";
         s.Rotation = Rotation is "low" or "medium" or "high" ? Rotation : "medium";

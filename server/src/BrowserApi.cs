@@ -68,7 +68,7 @@ public static class BrowserApi
         var libraries = sync.Libraries;
         if (libraries.Count == 0)
         {
-            try { libraries = await jellyfin.GetMovieLibrariesAsync(ct); }
+            try { libraries = await jellyfin.GetLibrariesAsync(ct); }
             catch (Exception error) when (error is JellyfinException or HttpRequestException) { }
         }
         return libraries.ToDictionary(l => l.Id, l => l.Name);
@@ -79,6 +79,9 @@ public static class BrowserApi
         Id = m.ItemId,
         m.Title,
         Year = m.ReleaseYear,
+        m.Kind,
+        // A series' run instead of one year: "2008–2013", "2019–"
+        Aired = m.IsSeries ? Ai.ClassificationPrompt.Aired(m) : null,
         Tagged = m.IsClassified,
         Edited = m.ManuallyEdited,
         Subcategories = Tags(m.SubcategorySet),
@@ -136,6 +139,13 @@ public static class BrowserApi
         m.BasedOn,
         m.SettingEra,
         m.SettingPlace,
+        // Series only
+        m.Seasons,
+        m.Episodes,
+        m.Status,
+        m.Network,
+        m.Format,
+        m.LastWatched,
     };
 
     private static int _lookupAllRunning;
@@ -161,11 +171,17 @@ public static class BrowserApi
 
         // ---------- movies ----------
 
-        admin.MapGet("/movies", async (string? q, string? state, Guid? library, string? tag, string? trust, string? sort, int? skip, int? take,
+        // kind: "movie" (default), "series" or "all"
+        admin.MapGet("/movies", async (string? q, string? state, Guid? library, string? tag, string? trust, string? sort, int? skip, int? take, string? kind,
             MovieStore store, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
         {
             var names = await LibraryNamesAsync(sync, jellyfin, ct);
-            IEnumerable<MovieMetadata> movies = await store.GetAllMoviesAsync(ct);
+            IEnumerable<MovieMetadata> movies = kind switch
+            {
+                "series" => await store.GetAllSeriesAsync(ct),
+                "all" => await store.GetAllTitlesAsync(ct),
+                _ => await store.GetAllMoviesAsync(ct),
+            };
 
             Dictionary<Guid, int>? rank = null;
             if (!string.IsNullOrWhiteSpace(q))
@@ -210,38 +226,45 @@ public static class BrowserApi
             return movie is null ? Results.NotFound() : Results.Ok(Detail(movie, await LibraryNamesAsync(sync, jellyfin, ct)));
         });
 
-        // The matrix page: every matched film on a map, and how far matching has got
-        admin.MapGet("/matrix", async (string? model, Database database, Meaning meaning, CancellationToken ct) =>
+        // The matrix page: every matched film on a map, and how far matching has got.
+        // Films and series are two matrices (kind "movie" or "series"), each on its own map;
+        // "all" puts both on one map (the scores stay per kind: a film ranked among films).
+        admin.MapGet("/matrix", async (string? model, string? kind, Database database, Meaning meaning, CancellationToken ct) =>
         {
             var s = ServerSettings.Current;
             var snapshot = await meaning.SnapshotAsync(ct);
             // Every model has its own map; the page shows one at a time
             var part = snapshot.For(model);
+            var wanted = kind is MovieMetadata.SeriesKind or "all" ? kind : MovieMetadata.MovieKind;
             List<MovieMetadata> films;
             await using (var db = database.Open())
-                films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(ct)).Where(m => !s.IsLibraryExcluded(m.Libraries)).ToList();
-            var map = part?.Map() ?? new();
+                films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified && (wanted == "all" || m.Kind == wanted)).ToListAsync(ct)).Where(m => !s.IsLibraryExcluded(m.Libraries)).ToList();
+            var map = part?.Map(wanted) ?? new();
             var points = films.Where(f => map.ContainsKey(f.ItemId)).Select(f => new
             {
-                Id = f.ItemId, f.Title, Year = f.ReleaseYear,
+                Id = f.ItemId, f.Title, Year = f.ReleaseYear, f.Kind,
                 X = Math.Round(map[f.ItemId].X, 4), Y = Math.Round(map[f.ItemId].Y, 4),
                 Group = f.SubcategorySet.Items.FirstOrDefault() ?? "",
             }).ToList();
             return Results.Ok(new
             {
                 On = Meaning.On(s),
+                Kind = wanted,
                 Model = part?.Model,
-                Models = snapshot.Parts.Select(x => new { Id = x.Model, Name = Meaning.Short(x.Model), Films = x.Films.Keys.Count(id => films.Any(f => f.ItemId == id)) }),
+                Models = snapshot.Parts.Select(x => new { Id = x.Model, Name = Meaning.Short(x.Model), Films = films.Count(f => x.Films.ContainsKey(f.ItemId)) }),
                 Matched = points.Count,
                 Films = films.Count,
                 Weight = s.MeaningWeight,
                 Points = points,
-                All = films.OrderBy(f => f.Title).Select(f => new { Id = f.ItemId, f.Title, Year = f.ReleaseYear }),
+                All = films.OrderBy(f => f.Title).Select(f => new { Id = f.ItemId, f.Title, Year = f.ReleaseYear, f.Kind }),
             });
         });
 
-        // The films closest to this one, by tags and meaning together: one row of the "matrix"
-        admin.MapGet("/movies/{id:guid}/related", async (Guid id, Database database, Meaning meaning, CancellationToken ct) =>
+        // The titles closest to this one, by tags and meaning together: one row of the "matrix".
+        // kind: which titles to list ("movie", "series" or "all"); by default the same kind as this one.
+        // A series' closest films are what it adds to someone's taste for film picks. With "all"
+        // both kinds are in one list: each film ranked among films, each series among series.
+        admin.MapGet("/movies/{id:guid}/related", async (Guid id, string? kind, Database database, Meaning meaning, CancellationToken ct) =>
         {
             var s = ServerSettings.Current;
             List<MovieMetadata> all;
@@ -249,10 +272,11 @@ public static class BrowserApi
                 all = await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(ct);
             var movie = all.FirstOrDefault(m => m.ItemId == id);
             if (movie is null) return Results.Ok(new { Meaning = false, Films = new List<object>() });
+            var wanted = kind is MovieMetadata.MovieKind or MovieMetadata.SeriesKind or "all" ? kind : movie.Kind;
             var snapshot = await meaning.SnapshotAsync(ct);
             var weight = snapshot.Any ? Math.Clamp(s.MeaningWeight, 0, 100) / 100.0 : 0;
             var engine = new SimilarityEngine { KeywordWeight = 0.10 };
-            var films = all.Where(m => m.ItemId != id && !s.IsLibraryExcluded(m.Libraries))
+            var films = all.Where(m => m.ItemId != id && (wanted == "all" || m.Kind == wanted) && !s.IsLibraryExcluded(m.Libraries))
                 .Select(m =>
                 {
                     var tags = engine.CalculateSimilarity(movie, m);
@@ -262,7 +286,7 @@ public static class BrowserApi
                 .OrderByDescending(x => x.Score).Take(12)
                 .Select(x => (object)new
                 {
-                    x.Movie.ItemId, x.Movie.Title, x.Movie.ReleaseYear,
+                    x.Movie.ItemId, x.Movie.Title, x.Movie.ReleaseYear, x.Movie.Kind,
                     Score = (int)Math.Round(x.Score * 100), Tags = (int)Math.Round(x.Tags * 100),
                     Meaning = x.Near is { } near ? (int?)Math.Round(near / 0.7 * 100) : null,
                     // each model's own view, to see where they agree
@@ -271,7 +295,7 @@ public static class BrowserApi
                     Series = movie.CollectionId is { } c && x.Movie.CollectionId == c,
                 })
                 .ToList();
-            return Results.Ok(new { Meaning = snapshot.Has(id), Films = films });
+            return Results.Ok(new { Meaning = snapshot.Has(id), Kind = wanted, Films = films });
         });
 
         admin.MapPut("/movies/{id:guid}", async (Guid id, MovieEdit edit, Database database, LibrarySync sync, JellyfinClient jellyfin, MovieHistory history, CancellationToken ct) =>
@@ -337,7 +361,8 @@ public static class BrowserApi
         admin.MapGet("/issues", async (MovieStore store, LibrarySync sync, JellyfinClient jellyfin, WebLookup web, CancellationToken ct) =>
         {
             var names = await LibraryNamesAsync(sync, jellyfin, ct);
-            var movies = (await store.GetAllMoviesAsync(ct)).Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+            // Films and series: series go through the same steps, so their tags need checking too
+            var movies = (await store.GetAllTitlesAsync(ct)).Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
             var usage = web.ThisMonth;
             var s = ServerSettings.Current;
             return Results.Ok(new
@@ -426,8 +451,9 @@ public static class BrowserApi
                 var ct = life.ApplicationStopping;
                 try
                 {
-                    var open = (await store.GetAllMoviesAsync(ct))
-                        .Where(m => m.Issue is not null && !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+                    var open = (await store.GetAllTitlesAsync(ct))
+                        .Where(m => m.Issue is not null && !ServerSettings.Current.IsLibraryExcluded(m.Libraries))
+                        .OrderBy(m => m.IsSeries).ToList(); // films first
                     log.LogInformation("Look up all: {Count} flagged movie(s), {Batch} per AI call", open.Count, MovieClassifier.BatchSize);
                     lock (LookupGate) { _lookupWaiting = open.Select(m => m.ItemId).ToHashSet(); _lookupWorking = new(); _lookupDone = 0; _lookupTotal = open.Count; }
                     // Look up 20, then describe those 20 in one AI call: no flood of requests to the provider
@@ -464,7 +490,7 @@ public static class BrowserApi
                         Activity.Background = null;
                         lock (LookupGate) { _lookupWaiting = new(); _lookupWorking = new(); }
                     }
-                    var left = (await store.GetAllMoviesAsync(ct)).Count(m => m.Issue is not null);
+                    var left = (await store.GetAllTitlesAsync(ct)).Count(m => m.Issue is not null);
                     log.LogInformation("Look up all finished: {Done} looked up and described again; {Left} issue(s) left", done, left);
                     Jobs.Idle("lookupall", "Look up all flagged films", "Done");
                 }
@@ -488,7 +514,7 @@ public static class BrowserApi
 
         // ---------- one person's data ----------
 
-        admin.MapGet("/users/{id:guid}/details", async (Guid id, Database database, JellyfinClient jellyfin, MovieStore store, CancellationToken ct) =>
+        admin.MapGet("/users/{id:guid}/details", async (Guid id, Database database, JellyfinClient jellyfin, MovieStore store, Curation.Curator curator, CancellationToken ct) =>
         {
             UserProfile? user;
             List<LetterboxdFilm> films;
@@ -523,11 +549,31 @@ public static class BrowserApi
                 .ToList();
 
             object Film(LetterboxdFilm f) => new { f.Title, f.Year, f.Rating, f.Date, f.Source, InLibrary = Name(f.ItemId), f.ItemId };
+            // Series they watched and whether each counts toward their taste in films
+            var weight = ServerSettings.Current.SeriesWeight;
+            var watchedSeries = await curator.SeriesWatchedAsync(user, ct, all: true);
+            // The ones that join their taste now (described, among the most recent that count), with their weight
+            var inTaste = Curation.SeriesTaste.ForTaste(watchedSeries.Where(w => w.Counts), weight).ToDictionary(x => x.Title.ItemId, x => x.Weight);
+            var series = watchedSeries.Select(w => new
+            {
+                Id = w.Series.ItemId,
+                w.Series.Title,
+                Aired = Ai.ClassificationPrompt.Aired(w.Series),
+                w.Episodes,
+                Of = w.Series.Episodes,
+                w.Seasons,
+                w.LastWatched,
+                w.Level,
+                Tagged = w.Series.IsClassified,
+                Weight = inTaste.TryGetValue(w.Series.ItemId, out var counts) ? (int)Math.Round(counts * 100) : 0,
+            }).ToList();
             return Results.Ok(new
             {
                 user.UserId,
                 user.Name,
                 History = played,
+                Series = series,
+                SeriesWeight = weight,
                 Letterboxd = new
                 {
                     Use = user.UseLetterboxd,

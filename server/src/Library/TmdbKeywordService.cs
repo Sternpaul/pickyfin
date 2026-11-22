@@ -29,6 +29,8 @@ namespace Pickyfin.Server.Library
 
         private const string FindUrl = "https://api.themoviedb.org/3/find/{0}?api_key={1}&external_source=imdb_id";
         private const string KeywordsUrl = "https://api.themoviedb.org/3/movie/{0}/keywords?api_key={1}";
+        // TV ids are their own number range at TMDB, and TV keywords come back as "results"
+        private const string TvKeywordsUrl = "https://api.themoviedb.org/3/tv/{0}/keywords?api_key={1}";
         private readonly SemaphoreSlim _cacheLock = new(1, 1);
 
         public TmdbKeywordService(
@@ -51,11 +53,18 @@ namespace Pickyfin.Server.Library
                 return;
             }
             if (movies == null || movies.Count == 0) return;
+            // Movies first, each kind with its own cache (TMDB movie and TV ids overlap)
+            foreach (var group in movies.GroupBy(m => m.IsSeries).OrderBy(g => g.Key))
+                await EnrichAsync(apiKey, group.ToList(), tv: group.Key, cancellationToken);
+        }
 
-            var cache = await LoadCacheAsync();
+        private async Task EnrichAsync(string apiKey, List<MovieMetadata> movies, bool tv, CancellationToken cancellationToken)
+        {
+            var what = tv ? "series" : "movies";
+            var cache = await LoadCacheAsync(tv);
             var changed = new List<MovieMetadata>();
             var saved = 0;
-            _logger.LogInformation("TMDB keywords: fetching for {Count} movies", movies.Count);
+            _logger.LogInformation("TMDB keywords: fetching for {Count} {What}", movies.Count, what);
 
             foreach (var movie in movies)
             {
@@ -67,7 +76,7 @@ namespace Pickyfin.Server.Library
                 int? tmdbId = movie.TmdbId;
                 if (tmdbId == null && !string.IsNullOrWhiteSpace(movie.ImdbId))
                 {
-                    tmdbId = await ResolveTmdbIdFromImdbAsync(apiKey, movie.ImdbId, ct);
+                    tmdbId = await ResolveTmdbIdFromImdbAsync(apiKey, movie.ImdbId, tv, ct);
                     if (tmdbId != null) movie.TmdbId = tmdbId;
                 }
                 if (tmdbId == null) continue;
@@ -80,7 +89,7 @@ namespace Pickyfin.Server.Library
                 if (string.IsNullOrWhiteSpace(movie.Keywords) || movie.Keywords == "[]")
                 {
                     var keywords = entry.Keywords
-                        ?? await FetchKeywordsAsync(apiKey, tmdbId.Value, ct);
+                        ?? await FetchKeywordsAsync(apiKey, tmdbId.Value, tv, ct);
                     entry.Keywords = keywords ?? new List<string>();
                     movie.Keywords = JsonSerializer.Serialize(entry.Keywords);
                     movie.LastUpdated = DateTime.UtcNow;
@@ -98,7 +107,7 @@ namespace Pickyfin.Server.Library
                     }
                     else
                     {
-                        var popularity = await FetchPopularityAsync(apiKey, movie.ImdbId, tmdbId.Value, ct);
+                        var popularity = await FetchPopularityAsync(apiKey, movie.ImdbId, tmdbId.Value, tv, ct);
                         if (popularity.HasValue && popularity.Value > 0)
                         {
                             movie.Popularity = popularity.Value;
@@ -110,7 +119,7 @@ namespace Pickyfin.Server.Library
 
                 // Persist any cache updates.
                 cache[tmdbId.Value] = entry;
-                await SaveCacheAsync(cache);
+                await SaveCacheAsync(cache, tv);
 
                 // Save as we go, so a restart doesn't lose the work
                 if (changed.Count >= 100)
@@ -118,7 +127,7 @@ namespace Pickyfin.Server.Library
                     await _movieStore.SaveMoviesAsync(changed.Distinct().ToList(), CancellationToken.None);
                     saved += changed.Distinct().Count();
                     changed.Clear();
-                    _logger.LogInformation("TMDB keywords: {Saved} movies so far", saved);
+                    _logger.LogInformation("TMDB keywords: {Saved} {What} so far", saved, what);
                 }
 
                 await Task.Delay(50, CancellationToken.None); // be polite to TMDB
@@ -128,10 +137,10 @@ namespace Pickyfin.Server.Library
                 await _movieStore.SaveMoviesAsync(changed.Distinct().ToList(), CancellationToken.None);
             saved += changed.Distinct().Count();
 
-            _logger.LogInformation("TMDB keywords: done, {Count} movies updated", saved);
+            _logger.LogInformation("TMDB keywords: done, {Count} {What} updated", saved, what);
         }
 
-        private async Task<double?> FetchPopularityAsync(string apiKey, string? imdbId, int tmdbId, CancellationToken cancellationToken)
+        private async Task<double?> FetchPopularityAsync(string apiKey, string? imdbId, int tmdbId, bool tv, CancellationToken cancellationToken)
         {
             // Prefer the /find response (already fetched implicitly via id resolution):
             // re-use ResolveTmdbIdFromImdb which returns the hit's popularity. If we only
@@ -142,7 +151,7 @@ namespace Pickyfin.Server.Library
                 {
                     var url = string.Format(FindUrl, imdbId, apiKey);
                     var resp = await _httpClient.GetFromJsonAsync<TmdbFindResponse>(url, cancellationToken);
-                    var hit = resp?.movie_results?.FirstOrDefault();
+                    var hit = (tv ? resp?.tv_results : resp?.movie_results)?.FirstOrDefault();
                     if (hit != null && hit.popularity > 0) return hit.popularity;
                 }
                 catch (Exception)
@@ -155,13 +164,13 @@ namespace Pickyfin.Server.Library
             return null;
         }
 
-        private async Task<int?> ResolveTmdbIdFromImdbAsync(string apiKey, string imdbId, CancellationToken cancellationToken)
+        private async Task<int?> ResolveTmdbIdFromImdbAsync(string apiKey, string imdbId, bool tv, CancellationToken cancellationToken)
         {
             try
             {
                 var url = string.Format(FindUrl, imdbId, apiKey);
                 var resp = await _httpClient.GetFromJsonAsync<TmdbFindResponse>(url, cancellationToken);
-                var hit = resp?.movie_results?.FirstOrDefault();
+                var hit = (tv ? resp?.tv_results : resp?.movie_results)?.FirstOrDefault();
                 if (hit != null && hit.id > 0) return hit.id;
             }
             catch (Exception)
@@ -171,14 +180,15 @@ namespace Pickyfin.Server.Library
             return null;
         }
 
-        private async Task<List<string>?> FetchKeywordsAsync(string apiKey, int tmdbId, CancellationToken cancellationToken)
+        private async Task<List<string>?> FetchKeywordsAsync(string apiKey, int tmdbId, bool tv, CancellationToken cancellationToken)
         {
             try
             {
-                var url = string.Format(KeywordsUrl, tmdbId, apiKey);
+                var url = string.Format(tv ? TvKeywordsUrl : KeywordsUrl, tmdbId, apiKey);
                 var resp = await _httpClient.GetFromJsonAsync<TmdbKeywordResponse>(url, cancellationToken);
-                if (resp?.keywords == null) return null;
-                return resp.keywords
+                var list = tv ? resp?.results : resp?.keywords;
+                if (list == null) return null;
+                return list
                     .Select(k => k.name)
                     .Where(n => !string.IsNullOrWhiteSpace(n))
                     .Select(n => n!.Trim())
@@ -186,21 +196,21 @@ namespace Pickyfin.Server.Library
             }
             catch (Exception)
             {
-                _logger.LogDebug("TMDB keyword fetch for movie {TmdbId} failed; skipping.", tmdbId);
+                _logger.LogDebug("TMDB keyword fetch for {Kind} {TmdbId} failed; skipping.", tv ? "series" : "movie", tmdbId);
                 return null;
             }
         }
 
-        private string CachePath => System.IO.Path.Combine(_cacheDir, "tmdb_keywords_cache.json");
+        private string CachePath(bool tv) => System.IO.Path.Combine(_cacheDir, tv ? "tmdb_tv_keywords_cache.json" : "tmdb_keywords_cache.json");
 
-        private async Task<Dictionary<int, TmdbCacheEntry>> LoadCacheAsync()
+        private async Task<Dictionary<int, TmdbCacheEntry>> LoadCacheAsync(bool tv)
         {
             await _cacheLock.WaitAsync();
             try
             {
-                if (System.IO.File.Exists(CachePath))
+                if (System.IO.File.Exists(CachePath(tv)))
                 {
-                    var json = await System.IO.File.ReadAllTextAsync(CachePath);
+                    var json = await System.IO.File.ReadAllTextAsync(CachePath(tv));
                     if (!string.IsNullOrWhiteSpace(json))
                         return JsonSerializer.Deserialize<Dictionary<int, TmdbCacheEntry>>(json) ?? new();
                 }
@@ -210,10 +220,10 @@ namespace Pickyfin.Server.Library
             return new Dictionary<int, TmdbCacheEntry>();
         }
 
-        private async Task SaveCacheAsync(Dictionary<int, TmdbCacheEntry> cache)
+        private async Task SaveCacheAsync(Dictionary<int, TmdbCacheEntry> cache, bool tv)
         {
             await _cacheLock.WaitAsync();
-            try { await System.IO.File.WriteAllTextAsync(CachePath, JsonSerializer.Serialize(cache)); }
+            try { await System.IO.File.WriteAllTextAsync(CachePath(tv), JsonSerializer.Serialize(cache)); }
             catch { /* best-effort cache write */ }
             finally { _cacheLock.Release(); }
         }
@@ -221,6 +231,7 @@ namespace Pickyfin.Server.Library
         private class TmdbFindResponse
         {
             public List<TmdbMovieHit>? movie_results { get; set; }
+            public List<TmdbMovieHit>? tv_results { get; set; }
         }
         private class TmdbMovieHit
         {
@@ -238,6 +249,8 @@ namespace Pickyfin.Server.Library
         {
             public int id { get; set; }
             public List<TmdbKeyword>? keywords { get; set; }
+            /// <summary>TV keywords come under this name.</summary>
+            public List<TmdbKeyword>? results { get; set; }
         }
         private class TmdbKeyword
         {

@@ -36,12 +36,26 @@ public sealed class MovieStore
     {
         await using var db = _database.Open();
         var pending = await db.Movies.AsNoTracking()
-            .Where(m => m.Kind == MovieMetadata.MovieKind && !m.ManuallyEdited && (!m.IsClassified || (includeQueued && m.RedoDescribe) || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
+            .Where(m => !m.ManuallyEdited && (!m.IsClassified || (includeQueued && m.RedoDescribe) || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
             .ToListAsync(cancellationToken);
-        // New films first, then the ones queued to be described again
-        pending = pending.OrderBy(m => m.IsClassified).ThenBy(m => m.Title).ToList();
+        // Movies before series: a new film never waits behind a backlog of series. Series someone
+        // watched go first (they're what tells us about taste), most recently watched first.
+        // Within each: new ones first, then the ones queued to be described again.
+        pending = pending
+            .OrderBy(m => m.IsSeries)
+            .ThenByDescending(m => m.IsSeries ? m.LastWatched ?? DateTime.MinValue : DateTime.MinValue)
+            .ThenBy(m => m.IsClassified).ThenBy(m => m.Title).ToList();
         // Movies only in switched-off libraries are never recommended, so don't pay to classify them
         return pending.Where(m => !ServerSettings.Current.IsLibraryExcluded(m.Libraries)).ToList();
+    }
+
+    /// <summary>Series not described yet (in libraries that are switched on): tagged a few calls per round.</summary>
+    public async Task<int> CountUntaggedSeriesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        var libraries = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.SeriesKind && !m.IsClassified && !m.ManuallyEdited)
+            .Select(m => m.Libraries).ToListAsync(cancellationToken);
+        return libraries.Count(l => !ServerSettings.Current.IsLibraryExcluded(l));
     }
 
     /// <summary>Films queued to be described again.</summary>
@@ -51,11 +65,12 @@ public sealed class MovieStore
         return await db.Movies.CountAsync(m => m.RedoDescribe && !m.ManuallyEdited, cancellationToken);
     }
 
-    public async Task<(int Total, int Classified, int Issues, int Reviewed, int LookedUp)> GetStatsAsync(CancellationToken cancellationToken = default)
+    /// <param name="kind">"movie", "series", or null for both.</param>
+    public async Task<(int Total, int Classified, int Issues, int Reviewed, int LookedUp)> GetStatsAsync(CancellationToken cancellationToken = default, string? kind = MovieMetadata.MovieKind)
     {
-        // Only movies that can be recommended (not in switched-off libraries)
+        // Only titles in libraries that are switched on
         await using var db = _database.Open();
-        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).Select(m => new { m.Libraries, m.IsClassified, HasIssue = m.Issue != null, Reviewed = m.Checked || m.ManuallyEdited || (m.WebNotes != null && m.WebNotes != ""), LookedUp = m.WebNotes != null }).ToListAsync(cancellationToken);
+        var rows = await db.Movies.AsNoTracking().Where(m => kind == null || m.Kind == kind).Select(m => new { m.Libraries, m.IsClassified, HasIssue = m.Issue != null, Reviewed = m.Checked || m.ManuallyEdited || (m.WebNotes != null && m.WebNotes != ""), LookedUp = m.WebNotes != null }).ToListAsync(cancellationToken);
         var counted = rows.Where(r => !ServerSettings.Current.IsLibraryExcluded(r.Libraries)).ToList();
         return (counted.Count, counted.Count(r => r.IsClassified), counted.Count(r => r.HasIssue), counted.Count(r => r.IsClassified && r.Reviewed), counted.Count(r => r.IsClassified && r.LookedUp));
     }

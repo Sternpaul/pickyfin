@@ -201,10 +201,10 @@ public sealed class RefreshService : BackgroundService
         }
 
         // Tagging that stopped on an error tries again on its own, not only at the next library sync;
-        // films queued to be described again go 8 calls per round
+        // films queued to be described again, and series not described yet, go 8 calls per round
         if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey) && (MovieClassifier.RetryAt ?? DateTime.MinValue) <= DateTime.UtcNow)
         {
-            var queued = await _store.CountRedoAsync(cancellationToken);
+            var queued = await _store.CountRedoAsync(cancellationToken) + await _store.CountUntaggedSeriesAsync(cancellationToken);
             if (MovieClassifier.RetryAt is not null || queued > 0)
             {
                 State = "Describing films";
@@ -368,12 +368,34 @@ public sealed class RefreshService : BackgroundService
             || (!string.IsNullOrWhiteSpace(user.Brief) && Curation.BriefProfile.FromJson(user.BriefProfile) is { LookingFor: null });
         var newWatch = lastPlayed is not null && lastPlayed != user.LastSeenPlay;
         var stale = user.LastRefresh is null || DateTime.UtcNow - user.LastRefresh > TimeSpan.FromHours(Math.Max(1, ServerSettings.Current.RefreshHours));
-        if (!user.RefreshRequested && !briefChanged && !newWatch && !stale && !letterboxdNews) return;
+
+        // Series: never a refresh per episode (that would be an AI call each time), only when a
+        // series moves up a level (a new one watched, one finished). Episodes are read only when
+        // the latest one changed.
+        var seriesNews = false;
+        DateTime? lastEpisode = user.LastSeenEpisode;
+        var seriesLevels = user.SeriesLevels;
+        if (ServerSettings.Current.SeriesWeight > 0)
+        {
+            lastEpisode = await _jellyfin.GetLastPlayedAsync(user.UserId, cancellationToken, "Episode");
+            if (lastEpisode is not null && lastEpisode != user.LastSeenEpisode)
+            {
+                seriesLevels = SeriesTaste.Signature(await _curator.SeriesWatchedAsync(user, cancellationToken));
+                seriesNews = seriesLevels != (user.SeriesLevels ?? "");
+            }
+        }
+
+        if (!user.RefreshRequested && !briefChanged && !newWatch && !stale && !letterboxdNews && !seriesNews)
+        {
+            if (lastEpisode != user.LastSeenEpisode)
+                await UpdateAsync(user.UserId, u => { u.LastSeenEpisode = lastEpisode; u.SeriesLevels = seriesLevels; }, cancellationToken);
+            return;
+        }
 
         State = $"Picking for {user.Name}";
         Jobs.Running("picks", "Rows for each person", $"Picking for {user.Name}");
         _logger.LogInformation("Refreshing picks for {User} ({Reason})", user.Name,
-            user.RefreshRequested ? "asked" : briefChanged ? "brief changed" : newWatch ? "new watch" : letterboxdNews ? "new on Letterboxd" : "scheduled");
+            user.RefreshRequested ? "asked" : briefChanged ? "brief changed" : newWatch ? "new watch" : letterboxdNews ? "new on Letterboxd" : seriesNews ? "series watched further" : "scheduled");
 
         var profile = BriefProfile.FromJson(user.BriefProfile);
         if (briefChanged)
@@ -395,6 +417,8 @@ public sealed class RefreshService : BackgroundService
         {
             u.LastRefresh = DateTime.UtcNow;
             u.LastSeenPlay = lastPlayed;
+            u.LastSeenEpisode = lastEpisode;
+            u.SeriesLevels = seriesLevels;
             u.RefreshRequested = false;
             u.LastResult = result.Summary;
         }, cancellationToken);

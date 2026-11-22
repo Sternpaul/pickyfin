@@ -36,6 +36,15 @@ watched films and the watchlist). Films they've
 watched there are never recommended, good ratings shape their taste, films close
 to ones they disliked move down, and watchlist films move up.
 
+**Series** count toward taste in films, but aren't recommended (yet). They go through
+the same steps as films (described with the same tags, TMDB, OMDb, web lookup, matching
+by meaning), always after the films, so a TV library never holds up anyone's picks.
+What someone watched as series joins their watch history: 3 or more episodes count, a
+finished series (most of its episodes, or 3+ seasons) counts most; series tried for an
+episode or two, and reality, talk and game shows, don't count. *How much series count*
+is on the Tuning page; each person's page lists their series and what counts. Films
+and series have separate meaning matrices, so series never shift how films compare.
+
 **Tuning page**: six plain settings for everyone: description or watch history,
 safe picks or discoveries, variety, new arrivals, how much rows change between
 refreshes, and skipping weakly rated films; plus the number and size of rows.

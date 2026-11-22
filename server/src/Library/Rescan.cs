@@ -71,10 +71,11 @@ public sealed class Rescan
         if (s.RescanMonths <= 0 && s.RescanPassStarted is null) { Jobs.Idle(Key, Title, "Off"); return; }
         if (string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(Key, Title, "Off: no AI key"); return; }
 
-        var movies = (await _store.GetAllMoviesAsync(cancellationToken)).Where(Eligible).ToList();
+        var movies = (await _store.GetAllTitlesAsync(cancellationToken)).Where(Eligible).ToList();
         var cutoff = Cutoff(s);
         var due = movies.Where(m => m.Rescanned is null || m.Rescanned < cutoff)
-            .OrderBy(m => m.Rescanned ?? DateTime.MinValue).ThenBy(m => m.Popularity).ToList();
+            .OrderBy(m => m.IsSeries) // films first
+            .ThenBy(m => m.Rescanned ?? DateTime.MinValue).ThenBy(m => m.Popularity).ToList();
         var perDay = s.RescanMonths > 0 ? PerDay(movies.Count, s.RescanMonths) : ManualPace(s);
         var startOfDay = DateTime.UtcNow.Date;
         var doneToday = movies.Count(m => m.Rescanned >= startOfDay);

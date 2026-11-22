@@ -141,6 +141,8 @@ public sealed class ServerSettings
     public int MeaningWeight { get; set; } = 50;
     /// <summary>0 = safe, well-known picks, 100 = lesser-known discoveries.</summary>
     public int Discovery { get; set; } = 40;
+    /// <summary>How much the series someone watches count toward their taste in films: 0 = not at all, 50 = default, 100 = like films.</summary>
+    public int SeriesWeight { get; set; } = 50;
     /// <summary>"low", "medium" or "high": how mixed the genres are.</summary>
     public string Variety { get; set; } = "medium";
     /// <summary>"off", "some" or "lots": push movies added in the last 30 days.</summary>

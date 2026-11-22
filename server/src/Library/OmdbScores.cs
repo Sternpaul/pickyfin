@@ -120,14 +120,16 @@ public sealed class OmdbScores
 
         List<MovieMetadata> todo;
         await using (var db = _database.Open())
-            todo = (await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).ToListAsync(cancellationToken))
+            todo = (await db.Movies.AsNoTracking().ToListAsync(cancellationToken))
                 .Where(m => !s.IsLibraryExcluded(m.Libraries) && Due(m))
-                .OrderBy(m => m.ScoresFetched ?? DateTime.MinValue)
+                // Films first: the daily allowance goes to them before any series
+                .OrderBy(m => m.IsSeries)
+                .ThenBy(m => m.ScoresFetched ?? DateTime.MinValue)
                 .ToList();
         if (todo.Count == 0) { Jobs.Idle(Key, Title, "Up to date"); return; }
 
         var batch = todo.Take(Math.Min(PerRound, left)).ToList();
-        Jobs.Running(Key, Title, $"{batch.Count} films");
+        Jobs.Running(Key, Title, $"{batch.Count} titles");
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(20);
         int found = 0, done = 0;
@@ -136,7 +138,7 @@ public sealed class OmdbScores
             cancellationToken.ThrowIfCancellationRequested();
             var query = !string.IsNullOrWhiteSpace(movie.ImdbId)
                 ? $"i={Uri.EscapeDataString(movie.ImdbId!)}"
-                : $"t={Uri.EscapeDataString(movie.Title)}&type=movie" + (movie.ReleaseYear is { } yr ? $"&y={yr}" : "");
+                : $"t={Uri.EscapeDataString(movie.Title)}&type={(movie.IsSeries ? "series" : "movie")}" + (movie.ReleaseYear is { } yr ? $"&y={yr}" : "");
             Scores scores;
             try
             {
