@@ -63,7 +63,7 @@ public sealed class TmdbDetails
 
         List<MovieMetadata> todo;
         await using (var db = _database.Open())
-            todo = (await db.Movies.AsNoTracking().ToListAsync(cancellationToken))
+            todo = (await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).ToListAsync(cancellationToken))
                 .Where(m => !s.IsLibraryExcluded(m.Libraries) && Wanted(m))
                 .OrderBy(m => m.DetailsFetched ?? DateTime.MinValue)
                 .ToList();

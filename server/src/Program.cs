@@ -154,7 +154,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     {
         var cutoff = Rescan.Cutoff(s);
         await using var db = database.Open();
-        var rows = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.ManuallyEdited && !m.Verified)
+        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind && m.IsClassified && !m.ManuallyEdited && !m.Verified)
             .Select(m => new { m.Libraries, m.Rescanned }).ToListAsync(ct);
         var eligible = rows.Where(r => !s.IsLibraryExcluded(r.Libraries)).ToList();
         rescanOf = eligible.Count;
@@ -165,7 +165,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     if (LetterboxdRatings.Last is { Reached: true })
     {
         await using var db = database.Open();
-        var rows = await db.Movies.AsNoTracking().Where(m => m.LbRating != null).Select(m => m.Libraries).ToListAsync(ct);
+        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind && m.LbRating != null).Select(m => m.Libraries).ToListAsync(ct);
         lbRated = rows.Count(l => !s.IsLibraryExcluded(l));
     }
     string? meaningTip = null;
@@ -191,13 +191,13 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         // a film counts as matched once any model has it
         var ids = await db.Embeddings.AsNoTracking().Where(e => e.Kind == "film" && order.Contains(e.Model)).Select(e => e.ItemId).Distinct().ToListAsync(ct);
         var set = ids.ToHashSet();
-        var rows = await db.Movies.AsNoTracking().Select(m => new { m.ItemId, m.Libraries }).ToListAsync(ct);
+        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).Select(m => new { m.ItemId, m.Libraries }).ToListAsync(ct);
         embedded = rows.Count(r => set.Contains(r.ItemId) && !s.IsLibraryExcluded(r.Libraries));
     }
     if (!string.IsNullOrWhiteSpace(s.OmdbApiKey) || !string.IsNullOrWhiteSpace(s.TmdbApiKey))
     {
         await using var db = database.Open();
-        var rows = await db.Movies.AsNoTracking().Select(m => new { m.Libraries, Scored = m.ScoresFetched != null, Detailed = m.DetailsFetched != null }).ToListAsync(ct);
+        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).Select(m => new { m.Libraries, Scored = m.ScoresFetched != null, Detailed = m.DetailsFetched != null }).ToListAsync(ct);
         var counted = rows.Where(r => !s.IsLibraryExcluded(r.Libraries)).ToList();
         scored = counted.Count(r => r.Scored);
         detailed = counted.Count(r => r.Detailed);

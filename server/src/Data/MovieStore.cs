@@ -11,7 +11,22 @@ public sealed class MovieStore
 
     public MovieStore(Database database) => _database = database;
 
+    /// <summary>Movies only: everything that recommends, matches Letterboxd films or counts films uses this.</summary>
     public async Task<List<MovieMetadata>> GetAllMoviesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        return await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Series only.</summary>
+    public async Task<List<MovieMetadata>> GetAllSeriesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        return await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.SeriesKind).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Movies and series: for the pipeline steps that describe and enrich every title the same way.</summary>
+    public async Task<List<MovieMetadata>> GetAllTitlesAsync(CancellationToken cancellationToken = default)
     {
         await using var db = _database.Open();
         return await db.Movies.AsNoTracking().ToListAsync(cancellationToken);
@@ -21,7 +36,7 @@ public sealed class MovieStore
     {
         await using var db = _database.Open();
         var pending = await db.Movies.AsNoTracking()
-            .Where(m => !m.ManuallyEdited && (!m.IsClassified || (includeQueued && m.RedoDescribe) || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
+            .Where(m => m.Kind == MovieMetadata.MovieKind && !m.ManuallyEdited && (!m.IsClassified || (includeQueued && m.RedoDescribe) || (includeOutdated && m.VocabularyVersion < ClassificationVocabulary.Version)))
             .ToListAsync(cancellationToken);
         // New films first, then the ones queued to be described again
         pending = pending.OrderBy(m => m.IsClassified).ThenBy(m => m.Title).ToList();
@@ -40,7 +55,7 @@ public sealed class MovieStore
     {
         // Only movies that can be recommended (not in switched-off libraries)
         await using var db = _database.Open();
-        var rows = await db.Movies.AsNoTracking().Select(m => new { m.Libraries, m.IsClassified, HasIssue = m.Issue != null, Reviewed = m.Checked || m.ManuallyEdited || (m.WebNotes != null && m.WebNotes != ""), LookedUp = m.WebNotes != null }).ToListAsync(cancellationToken);
+        var rows = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).Select(m => new { m.Libraries, m.IsClassified, HasIssue = m.Issue != null, Reviewed = m.Checked || m.ManuallyEdited || (m.WebNotes != null && m.WebNotes != ""), LookedUp = m.WebNotes != null }).ToListAsync(cancellationToken);
         var counted = rows.Where(r => !ServerSettings.Current.IsLibraryExcluded(r.Libraries)).ToList();
         return (counted.Count, counted.Count(r => r.IsClassified), counted.Count(r => r.HasIssue), counted.Count(r => r.IsClassified && r.Reviewed), counted.Count(r => r.IsClassified && r.LookedUp));
     }
@@ -82,13 +97,14 @@ public sealed class MovieStore
     }
 
     /// <summary>
-    /// Films Jellyfin doesn't list (any more) are hidden; ones it lists again come back.
-    /// Returns how many were newly hidden and how many came back.
+    /// Titles of one kind ("movie" or "series") that Jellyfin doesn't list (any more) are hidden;
+    /// ones it lists again come back. Only rows of that kind are touched, so a list of movies
+    /// never hides the series. Returns how many were newly hidden and how many came back.
     /// </summary>
-    public async Task<(int Hidden, int Back)> MarkGoneAsync(HashSet<Guid> liveIds, CancellationToken cancellationToken = default)
+    public async Task<(int Hidden, int Back)> MarkGoneAsync(HashSet<Guid> liveIds, string kind, CancellationToken cancellationToken = default)
     {
         await using var db = _database.Open();
-        var all = await db.Movies.IgnoreQueryFilters().Select(m => new { m.ItemId, m.GoneSince }).ToListAsync(cancellationToken);
+        var all = await db.Movies.IgnoreQueryFilters().Where(m => m.Kind == kind).Select(m => new { m.ItemId, m.GoneSince }).ToListAsync(cancellationToken);
         var hide = all.Where(m => m.GoneSince is null && !liveIds.Contains(m.ItemId)).Select(m => m.ItemId).ToList();
         var back = all.Where(m => m.GoneSince is not null && liveIds.Contains(m.ItemId)).Select(m => m.ItemId).ToList();
         var now = DateTime.UtcNow;

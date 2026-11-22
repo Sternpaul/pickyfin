@@ -93,7 +93,7 @@ public sealed class LibrarySync
         if (changed.Count > 0) await _store.SaveMoviesAsync(changed, cancellationToken);
         // Films Jellyfin no longer lists are only hidden: deleting them (with tags that took days to
         // make) waits for the admin to confirm on the admin page, in case Jellyfin lost them by accident
-        var (hidden, back) = await _store.MarkGoneAsync(items.Select(i => i.Id).ToHashSet(), cancellationToken);
+        var (hidden, back) = await _store.MarkGoneAsync(items.Select(i => i.Id).ToHashSet(), MovieMetadata.MovieKind, cancellationToken);
         if (hidden > 0) _logger.LogWarning("Library: {Count} film(s) are no longer in Jellyfin; hidden, and kept until you confirm their removal on the admin page", hidden);
         if (back > 0) _logger.LogInformation("Library: {Count} film(s) are back in Jellyfin, with their tags as before", back);
         var orphans = await _store.DeleteOrphanedEmbeddingsAsync(cancellationToken);

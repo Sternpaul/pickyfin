@@ -120,7 +120,7 @@ public sealed class OmdbScores
 
         List<MovieMetadata> todo;
         await using (var db = _database.Open())
-            todo = (await db.Movies.AsNoTracking().ToListAsync(cancellationToken))
+            todo = (await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).ToListAsync(cancellationToken))
                 .Where(m => !s.IsLibraryExcluded(m.Libraries) && Due(m))
                 .OrderBy(m => m.ScoresFetched ?? DateTime.MinValue)
                 .ToList();

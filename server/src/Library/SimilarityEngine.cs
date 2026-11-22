@@ -54,8 +54,13 @@ namespace Pickyfin.Server.Library
             return Math.Min(1.0, score); // Range: 0.0 to 1.0
         }
 
+        /// <summary>
+        /// TMDB's viewers liked these together. Movie and TV ids are separate number ranges at TMDB
+        /// (movie 1396 is not show 1396), so only titles of the same kind can be linked.
+        /// </summary>
         public static bool CrowdLinked(MovieMetadata a, MovieMetadata b) =>
-            (b.TmdbId is { } bt && a.RecSet.Contains(bt)) || (a.TmdbId is { } at && b.RecSet.Contains(at));
+            a.Kind == b.Kind
+            && ((b.TmdbId is { } bt && a.RecSet.Contains(bt)) || (a.TmdbId is { } at && b.RecSet.Contains(at)));
 
         // Keyword weight for similarity (set by PlaylistEngine per config; default 0 = off).
         public double KeywordWeight { get; set; } = 0.0;

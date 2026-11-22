@@ -216,6 +216,13 @@ public sealed class Database
         AddColumn("Movies", "BasedOn", "TEXT NULL");
         AddColumn("Movies", "SettingEra", "TEXT NULL");
         AddColumn("Movies", "SettingPlace", "TEXT NULL");
+        AddColumn("Movies", "Kind", "TEXT NOT NULL DEFAULT 'movie'");
+        AddColumn("Movies", "Seasons", "INTEGER NULL");
+        AddColumn("Movies", "Episodes", "INTEGER NULL");
+        AddColumn("Movies", "EndYear", "INTEGER NULL");
+        AddColumn("Movies", "Status", "TEXT NULL");
+        AddColumn("Movies", "Network", "TEXT NULL");
+        AddColumn("Movies", "Format", "TEXT NULL");
         AddColumn("Users", "UseLetterboxd", "INTEGER NOT NULL DEFAULT 1");
         AddColumn("Users", "LetterboxdUsername", "TEXT NULL");
         AddColumn("Users", "LetterboxdWatchlistUrl", "TEXT NULL");

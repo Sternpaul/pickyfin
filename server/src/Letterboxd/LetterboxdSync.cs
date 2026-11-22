@@ -285,6 +285,7 @@ public sealed class LetterboxdSync
     /// <summary>Links each film to a library movie: TMDB id, IMDb id, then title and year.</summary>
     public async Task<(int Watched, int Watchlist, int Matched)> MatchAsync(Guid userId, CancellationToken cancellationToken)
     {
+        // Movies only: Letterboxd has films, and a TMDB movie id can equal an unrelated show's TV id
         var movies = await _store.GetAllMoviesAsync(cancellationToken);
         var byTmdb = movies.Where(m => m.TmdbId is not null).GroupBy(m => m.TmdbId!.Value).ToDictionary(g => g.Key, g => g.First());
         var byImdb = movies.Where(m => !string.IsNullOrWhiteSpace(m.ImdbId)).GroupBy(m => m.ImdbId!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);

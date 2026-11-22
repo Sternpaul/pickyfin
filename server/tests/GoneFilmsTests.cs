@@ -26,13 +26,13 @@ public class GoneFilmsTests
             }
 
             // Jellyfin now lists only Heat: the other two are hidden, not deleted
-            Assert.Equal((2, 0), await store.MarkGoneAsync(new HashSet<Guid> { keep }));
+            Assert.Equal((2, 0), await store.MarkGoneAsync(new HashSet<Guid> { keep }, MovieMetadata.MovieKind));
             Assert.Equal(new[] { keep }, (await store.GetAllMoviesAsync()).Select(m => m.ItemId));
             Assert.Equal(3, (await store.GetAllIncludingGoneAsync()).Count);
             Assert.Equal(2, (await store.GetGoneAsync()).Count);
 
             // the extra comes back in Jellyfin: visible again, tags kept
-            Assert.Equal((0, 1), await store.MarkGoneAsync(new HashSet<Guid> { keep, extra }));
+            Assert.Equal((0, 1), await store.MarkGoneAsync(new HashSet<Guid> { keep, extra }, MovieMetadata.MovieKind));
             Assert.Contains((await store.GetAllMoviesAsync()), m => m.ItemId == extra && m.IsClassified);
 
             // the admin confirms: only the duplicate is still gone, and it goes with its meaning

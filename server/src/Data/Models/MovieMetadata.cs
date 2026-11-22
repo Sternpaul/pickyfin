@@ -10,6 +10,24 @@ namespace Pickyfin.Server.Data.Models
     {
         public Guid ItemId { get; set; } // Jellyfin's internal BaseItem ID
 
+        public const string MovieKind = "movie", SeriesKind = "series";
+        /// <summary>
+        /// "movie" or "series". Series go through the same pipeline (tags, scores, meaning) but are
+        /// never recommended (yet); they only tell us more about a person's taste.
+        /// </summary>
+        public string Kind { get; set; } = MovieKind;
+        [NotMapped] public bool IsSeries => Kind == SeriesKind;
+
+        // Series only: seasons and episodes in the library, the last year it aired, whether it's
+        // still running ("Continuing" / "Ended"), where it aired, and what form it takes
+        // (miniseries, ongoing, anthology, sitcom, procedural, docuseries).
+        public int? Seasons { get; set; }
+        public int? Episodes { get; set; }
+        public int? EndYear { get; set; }
+        public string? Status { get; set; }
+        public string? Network { get; set; }
+        public string? Format { get; set; }
+
         // Basic metadata
         public string Title { get; set; } = string.Empty;
         public int? ReleaseYear { get; set; }

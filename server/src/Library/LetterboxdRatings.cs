@@ -153,7 +153,8 @@ public sealed class LetterboxdRatings
         Jobs.Running(Key, Title, "Reading the collector");
         List<MovieMetadata> movies;
         await using (var db = _database.Open())
-            movies = await db.Movies.AsNoTracking().ToListAsync(cancellationToken);
+            // Letterboxd only has films, and TMDB movie and TV ids overlap: never match a series
+            movies = await db.Movies.AsNoTracking().Where(m => m.Kind == MovieMetadata.MovieKind).ToListAsync(cancellationToken);
         var byId = movies.ToDictionary(m => m.ItemId);
         var byTmdb = movies.Where(m => m.TmdbId is not null).GroupBy(m => m.TmdbId!.Value).ToDictionary(g => g.Key, g => g.ToList());
         var byImdb = movies.Where(m => !string.IsNullOrWhiteSpace(m.ImdbId)).GroupBy(m => m.ImdbId!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
