@@ -138,7 +138,9 @@ public sealed class ServerSettings
     /// <summary>True: the free embedding models most used on OpenRouter this week.</summary>
     public bool EmbeddingModelsAuto { get; set; } = true;
     /// <summary>0 = tags only, 100 = meaning only, when comparing films and descriptions.</summary>
-    public int MeaningWeight { get; set; } = 50;
+    public int MeaningWeight { get; set; } = 70;
+    /// <summary>Which scoring the saved values are for; 2 = meaning spread out, 70% by default (2026-11). Missing in older files: 0.</summary>
+    public int ScoringVersion { get; set; }
     /// <summary>0 = safe, well-known picks, 100 = lesser-known discoveries.</summary>
     public int Discovery { get; set; } = 40;
     /// <summary>How much the series someone watches count toward their taste in films: 0 = not at all, 50 = default, 100 = like films.</summary>
@@ -176,8 +178,25 @@ public sealed class ServerSettings
                 ? JsonSerializer.Deserialize<ServerSettings>(File.ReadAllText(_path), JsonOptions) ?? new()
                 : new ServerSettings();
             settings.ApplyEnvironment();
+            // Meaning was held back before (capped, flat at the top) and 50% was the default: an
+            // untouched 50 becomes the new default 70 once. Any other value is the admin's own choice.
+            if (Upgrade(settings) && File.Exists(_path))
+                {
+                    var temp = _path + ".tmp";
+                    File.WriteAllText(temp, JsonSerializer.Serialize(settings, JsonOptions));
+                    File.Move(temp, _path, overwrite: true);
+                }
             Current = settings;
         }
+    }
+
+    /// <summary>Brings saved values from an older scoring up to date; true when something changed.</summary>
+    internal static bool Upgrade(ServerSettings settings)
+    {
+        if (settings.ScoringVersion >= 2) return false;
+        if (settings.MeaningWeight == 50) settings.MeaningWeight = 70;
+        settings.ScoringVersion = 2;
+        return true;
     }
 
     public static void Save(ServerSettings settings)

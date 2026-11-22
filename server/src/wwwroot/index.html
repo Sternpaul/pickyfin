@@ -781,7 +781,7 @@
             <div class="control"><div class="ends"><span>Watch history</span><span>Description</span></div><input type="range" id="BriefWeight" min="0" max="100" step="5"></div>
           </div>
           <div class="setting">
-            <div><h3>Tags or meaning</h3><p class="why">How titles are compared with each other and with a description: by their tags (subcategories, moods, themes…), or by what their whole description means. Only matters once titles are matched by meaning (AI page).</p></div>
+            <div><h3>Tags or meaning</h3><p class="why">How titles are compared with each other and with a description: by their tags (subcategories, moods, themes…), or by what their whole description means. Only matters once titles are matched by meaning (AI page). Checked against TMDB's "viewers also liked" and real Letterboxd ratings, 70% meaning ranked people's favourites highest; tags still decide what someone wants to avoid.</p></div>
             <div class="control"><div class="ends"><span>Tags</span><span>Meaning</span></div><input type="range" id="MeaningWeight" min="0" max="100" step="10"></div>
           </div>
           <div class="setting">
@@ -1096,7 +1096,7 @@ async function loadSettings() {
   $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdHours').value = settings.LetterboxdHours || 6; $('#LetterboxdToken').value = '';
   $('#lbtoken-state').innerHTML = stateText(settings.HasLetterboxdToken); checkLetterboxd(false);
   loadEmbeddingModels();
-  $('#MeaningWeight').value = settings.MeaningWeight ?? 50;
+  $('#MeaningWeight').value = settings.MeaningWeight ?? 70;
   $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
   seg($('#because-seg'), settings.BecauseRows);
   $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery; $('#SeriesWeight').value = settings.SeriesWeight ?? 50;
@@ -1122,7 +1122,7 @@ const sliderText = {
   Discovery: v => `${v} of 100${v == 40 ? ' · default' : ''}`,
   SeriesWeight: v => v == 0 ? 'Off: only films count' : `${v} of 100${v == 50 ? ' · default' : v == 100 ? ' · every series they watched counts like a film' : ''}`,
   FilmsForSeriesWeight: v => v == 0 ? 'Off: only series count' : `${v} of 100${v == 50 ? ' · default' : v == 100 ? ' · every film they watched counts like a series' : ''}`,
-  MeaningWeight: v => v == 50 ? 'Half and half · default' : v > 50 ? `${v}% meaning · ${100 - v}% tags` : `${100 - v}% tags · ${v}% meaning`,
+  MeaningWeight: v => v == 50 ? 'Half and half' : v > 50 ? `${v}% meaning · ${100 - v}% tags${v == 70 ? ' · default' : ''}` : `${100 - v}% tags · ${v}% meaning`,
   BecausePeople: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
   BecauseCountry: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
   BecauseEra: v => `${v} of 100${v == 50 ? ' · default' : ''}`,
@@ -1220,7 +1220,7 @@ const tuningValues = () => ({
 });
 $('#tuning-defaults').addEventListener('click', async () => {
   if (!confirm('Set all tuning back to the defaults?')) return;
-  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, MeaningWeight: 50, Discovery: 40, SeriesWeight: 50, FilmsForSeriesWeight: 50, SeriesRecommendations: true, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
+  if (await save({ BecauseRows: 2, BecausePeople: 50, BecauseCountry: 50, BecauseEra: 50, PicksPerRow: 20, RefreshHours: 24, BriefWeight: 65, MeaningWeight: 70, Discovery: 40, SeriesWeight: 50, FilmsForSeriesWeight: 50, SeriesRecommendations: true, Variety: 'medium', NewArrivals: 'some', Rotation: 'medium', MinRating: 0 }, $('#rows-note'))) toast('Back to defaults');
 });
 $('#test-ai').addEventListener('click', async e => {
   const note = $('#ai-note'); e.target.disabled = true; note.className = 'note'; note.textContent = 'Asking the model…';

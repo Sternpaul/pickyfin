@@ -143,7 +143,7 @@ public class SeriesTasteTests
         {
             new("m", films.Concat(series).ToDictionary(x => x.Key, x => x.Value), new(), series.Keys.ToHashSet()),
         });
-        Assert.Equal(0.7, snap.Score(show, twin)!.Value, 2);
+        Assert.Equal(1.0, snap.Score(show, twin)!.Value, 2);
         Assert.True(snap.Has(show));
     }
 

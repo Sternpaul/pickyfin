@@ -293,9 +293,9 @@ public static class BrowserApi
                 {
                     x.Movie.ItemId, x.Movie.Title, x.Movie.ReleaseYear, x.Movie.Kind,
                     Score = (int)Math.Round(x.Score * 100), Tags = (int)Math.Round(x.Tags * 100),
-                    Meaning = x.Near is { } near ? (int?)Math.Round(near / 0.7 * 100) : null,
+                    Meaning = x.Near is { } near ? (int?)Math.Round(near * 100) : null,
                     // each model's own view, to see where they agree
-                    By = weight > 0 ? snapshot.ScoreBy(id, x.Movie.ItemId).ToDictionary(b => Meaning.Short(b.Key), b => (int)Math.Round(b.Value / 0.7 * 100)) : new(),
+                    By = weight > 0 ? snapshot.ScoreBy(id, x.Movie.ItemId).ToDictionary(b => Meaning.Short(b.Key), b => (int)Math.Round(b.Value * 100)) : new(),
                     Crowd = SimilarityEngine.CrowdLinked(movie, x.Movie),
                     Series = movie.CollectionId is { } c && x.Movie.CollectionId == c,
                 })

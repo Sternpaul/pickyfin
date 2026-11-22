@@ -516,7 +516,7 @@ public sealed class Meaning
 
     /// <summary>
     /// One model's matrix. A score is where the target ranks among all films for the source
-    /// (the closest ones near 1, an average film 0), so models with different similarity
+    /// (see Spread: the closest 1, the farthest 0), so models with different similarity
     /// ranges can be averaged.
     /// Films and series are two matrices: a film is ranked among films only, a series among
     /// series only, whatever the source is. So series never shift a film's score, and "how close
@@ -562,16 +562,15 @@ public sealed class Meaning
                 {
                     var from = brief ? Briefs.GetValueOrDefault(source) : Films.GetValueOrDefault(source);
                     if (from is null) return null;
+                    // Closest first. The score falls with the log of the place, so the top is spread out
+                    // (closest 1, 10th about 0.7, 100th about 0.4 in a library of 2,000) instead of
+                    // dozens of films all near the top score.
                     var ordered = pool.Where(f => f.Key != source)
                         .Select(f => (Id: f.Key, Cos: Dot(from, f.Value)))
-                        .OrderBy(x => x.Cos).ToList();
+                        .OrderByDescending(x => x.Cos).ToList();
                     ranks = new Dictionary<Guid, double>(ordered.Count);
                     for (var i = 0; i < ordered.Count; i++)
-                    {
-                        var percentile = ordered.Count == 1 ? 1 : i / (double)(ordered.Count - 1);
-                        var above = Math.Max(0, (percentile - 0.5) / 0.5);
-                        ranks[ordered[i].Id] = 0.7 * above * above;
-                    }
+                        ranks[ordered[i].Id] = Spread(i, ordered.Count);
                     _ranks[(source, brief, inSeries)] = ranks;
                 }
             }
@@ -659,10 +658,10 @@ public sealed class Meaning
         public bool Has(Guid film) => Parts.Any(p => (p.IsSeries(film) ? p.AnySeries : p.Any) && p.Films.ContainsKey(film));
         public Part? For(string? model) => Parts.FirstOrDefault(p => string.Equals(p.Model, model, StringComparison.OrdinalIgnoreCase)) ?? Parts.FirstOrDefault();
 
-        /// <summary>How close a film is to another, 0..0.7 (as strong as a very good tag match at most); null when unknown.</summary>
+        /// <summary>How close a film is to another, 0..1 (1 = the closest of all); null when unknown.</summary>
         public double? Score(Guid source, Guid target) => Average(p => p.Rank(source, target, brief: false));
 
-        /// <summary>How close a film is to what this person wants, 0..0.7; null when unknown.</summary>
+        /// <summary>How close a film is to what this person wants, 0..1; null when unknown.</summary>
         public double? BriefScore(Guid userId, Guid target) => Average(p => p.Rank(userId, target, brief: true));
 
         /// <summary>Each model's own score, for showing how they agree.</summary>
@@ -679,6 +678,15 @@ public sealed class Meaning
 
         public Dictionary<Guid, (double X, double Y)> Map(string? model = null, string? kind = null) => For(model)?.Map(kind) ?? new();
     }
+
+    /// <summary>
+    /// The score of the title at this place (0 = closest) among count titles: 1 for the closest, 0 for
+    /// the farthest, falling with the log of the place. Checked against TMDB's "viewers also liked",
+    /// film series and real Letterboxd ratings (2026-11): with 70% meaning it ranked people's
+    /// favourites highest; the earlier score (0.7 at most, flat at the top) held meaning back.
+    /// </summary>
+    public static double Spread(int place, int count) =>
+        count <= 1 ? 1 : 1 - Math.Log(place + 1) / Math.Log(count);
 
     /// <summary>Tags and meaning together: weight 0 = tags only, 1 = meaning only.</summary>
     public static double Blend(double tags, double? meaning, double weight) =>

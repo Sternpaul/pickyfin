@@ -677,7 +677,7 @@ record SettingsView
     public bool MeaningOn { get; init; } = true;
     public List<string>? EmbeddingModels { get; init; }
     public bool? EmbeddingModelsAuto { get; init; }
-    public int MeaningWeight { get; init; } = 50;
+    public int MeaningWeight { get; init; } = 70;
     public int Discovery { get; init; }
     public int SeriesWeight { get; init; } = 50;
     public bool SeriesRecommendations { get; init; } = true;

@@ -98,9 +98,9 @@ public class MeaningTests
         for (var i = 0; i < 30; i++) films[Guid.NewGuid()] = Meaning.Normalize(new[] { (float)rnd.NextDouble() - 0.5f, (float)rnd.NextDouble() });
         var user = Guid.NewGuid();
         var snap = new Meaning.Snapshot("m", 1, films, new() { [user] = Meaning.Normalize(new[] { 1f, 0f }) });
-        Assert.Equal(0.7, snap.Score(seed, twin)!.Value, 2);
-        Assert.Equal(0.0, snap.Score(seed, far)!.Value, 2);
-        Assert.True(snap.BriefScore(user, twin) > 0.6);
+        Assert.Equal(1.0, snap.Score(seed, twin)!.Value, 2);  // the closest
+        Assert.Equal(0.0, snap.Score(seed, far)!.Value, 2);   // the farthest
+        Assert.True(snap.BriefScore(user, twin) > 0.75);       // second closest to what they want
         Assert.Equal(0.5 * 0.3 + 0.5 * 0.7, Meaning.Blend(0.3, 0.7, 0.5), 3);
         Assert.Equal(0.3, Meaning.Blend(0.3, null, 0.5), 3);
     }
@@ -136,5 +136,34 @@ public class MeaningTests
         Assert.Contains("Heat (1995)", doc);
         Assert.Contains("Michael Mann", doc);
         Assert.Contains("Critics loved it.", doc);
+    }
+
+    [Fact]
+    public void MeaningIsSpreadOutAtTheTop()
+    {
+        // In a library of 2,000: the closest 1, the 10th about 0.7, the 100th about 0.4, the farthest 0
+        Assert.Equal(1.0, Meaning.Spread(0, 2000), 3);
+        Assert.Equal(0.70, Meaning.Spread(9, 2000), 2);
+        Assert.Equal(0.39, Meaning.Spread(99, 2000), 2);
+        Assert.Equal(0.0, Meaning.Spread(1999, 2000), 3);
+        // the 2nd and the 30th closest are told apart (the old score gave both nearly the top)
+        Assert.True(Meaning.Spread(1, 2000) - Meaning.Spread(29, 2000) > 0.3);
+    }
+
+    [Fact]
+    public void AnUntouchedMeaningWeightMovesToTheNewDefaultOnce()
+    {
+        var old = new Pickyfin.Server.ServerSettings { MeaningWeight = 50, ScoringVersion = 0 };
+        Assert.True(Pickyfin.Server.ServerSettings.Upgrade(old));
+        Assert.Equal(70, old.MeaningWeight);
+        Assert.False(Pickyfin.Server.ServerSettings.Upgrade(old)); // once
+        old.MeaningWeight = 50;                                    // chosen again later: stays
+        Assert.False(Pickyfin.Server.ServerSettings.Upgrade(old));
+        Assert.Equal(50, old.MeaningWeight);
+
+        var chosen = new Pickyfin.Server.ServerSettings { MeaningWeight = 30, ScoringVersion = 0 };
+        Pickyfin.Server.ServerSettings.Upgrade(chosen);
+        Assert.Equal(30, chosen.MeaningWeight);
+        Assert.Equal(70, new Pickyfin.Server.ServerSettings().MeaningWeight);
     }
 }
