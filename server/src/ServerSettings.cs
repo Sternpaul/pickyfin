@@ -24,6 +24,10 @@ public sealed class ServerSettings
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public AIProviderType AIProvider { get; set; } = AIProviderType.OpenRouter;
     public string ApiKey { get; set; } = "";
+    /// <summary>NVIDIA NIM (build.nvidia.com): its models can sit in the same orders as OpenRouter's, written "nim:owner/model".</summary>
+    public string NimApiKey { get; set; } = "";
+    /// <summary>Some AI key is set: the provider's, or (with OpenRouter) an NVIDIA key for "nim:" models.</summary>
+    [JsonIgnore] public bool HasAiKey => !string.IsNullOrWhiteSpace(ApiKey) || (AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(NimApiKey));
     public string ClassificationModel { get; set; } = "google/gemini-2.5-flash";
     /// <summary>Model that picks the recommendations; it reads the brief, so a strong model pays off.</summary>
     public string ChatModel { get; set; } = "google/gemini-2.5-flash";

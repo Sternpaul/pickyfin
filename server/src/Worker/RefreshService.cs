@@ -202,7 +202,7 @@ public sealed class RefreshService : BackgroundService
 
         // Tagging that stopped on an error tries again on its own, not only at the next library sync;
         // films queued to be described again, and series not described yet, go 8 calls per round
-        if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey) && (MovieClassifier.RetryAt ?? DateTime.MinValue) <= DateTime.UtcNow)
+        if (ServerSettings.Current.HasAiKey && (MovieClassifier.RetryAt ?? DateTime.MinValue) <= DateTime.UtcNow)
         {
             var queued = await _store.CountRedoAsync(cancellationToken) + await _store.CountUntaggedSeriesAsync(cancellationToken);
             if (MovieClassifier.RetryAt is not null || queued > 0)
@@ -261,7 +261,7 @@ public sealed class RefreshService : BackgroundService
             }
         }
 
-        _logger.LogInformation(string.IsNullOrWhiteSpace(s.ApiKey)
+        _logger.LogInformation(!s.HasAiKey
             ? "AI: no key set yet (Settings → AI)"
             : $"AI: {s.AIProvider}, picking with {s.ChatModel}, tagging with {(s.ClassificationModelsAuto ? "the most used free models this week" : string.Join(" → ", ServerSettings.Chain(s.ClassificationModels, s.ClassificationModel)))}");
         _logger.LogInformation("TMDB keywords: {State}", string.IsNullOrWhiteSpace(s.TmdbApiKey) ? "off (no key)" : "on");

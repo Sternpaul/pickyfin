@@ -212,7 +212,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         seriesDetailed = counted.Count(r => r.Kind == MovieMetadata.SeriesKind && r.Detailed);
     }
     var (waitingFor, seconds) = Activity.Current;
-    var hasKey = !string.IsNullOrWhiteSpace(s.ApiKey);
+    var hasKey = s.HasAiKey;
     var anyRunning = Jobs.Snapshot().Any(j => j.Running);
     var lookupAll = Jobs.Get("lookupall");
 
@@ -360,8 +360,11 @@ api.MapGet("/tv/ratings", async (HttpContext http, JellyfinClient jellyfin, Data
     return Results.Ok(new { Hours = Math.Clamp(ServerSettings.Current.LetterboxdHours, 1, 168), Films = films });
 });
 
-admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, CancellationToken ct) =>
+admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
 {
+    // NVIDIA's embedding models (free with an NVIDIA key), after OpenRouter's
+    var nim = (await Nim.GetAsync(http.CreateClient(), logs.CreateLogger("NVIDIA"), ct) ?? new List<string>()).Where(Nim.IsEmbedding)
+        .Select(id => new { Id = id, Name = Meaning.Short(id), Free = true, PerMillion = 0.0, Nim = true }).ToList();
     try
     {
         var client = http.CreateClient();
@@ -371,10 +374,11 @@ admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, Cancellatio
         {
             var id = m.GetProperty("id").GetString() ?? "";
             var price = m.TryGetProperty("pricing", out var p) && p.TryGetProperty("prompt", out var pp) && double.TryParse(pp.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0;
-            return new { Id = id, Name = m.TryGetProperty("name", out var n) ? n.GetString() : id, Free = price == 0, PerMillion = Math.Round(price * 1_000_000, 3) };
+            return new { Id = id, Name = m.TryGetProperty("name", out var n) ? n.GetString() ?? id : id, Free = price == 0, PerMillion = Math.Round(price * 1_000_000, 3), Nim = false };
         }).Where(m => m.Id.Length > 0).OrderByDescending(m => m.Free).ToList();
-        return Results.Ok(list);
+        return Results.Ok(list.Concat(nim));
     }
+    catch (Exception error) when (nim.Count > 0) { logs.CreateLogger("OpenRouter").LogDebug("Couldn't reach OpenRouter: {Error}", error.Message); return Results.Ok(nim); }
     catch (Exception error) { return Results.Problem("Couldn't reach OpenRouter: " + error.Message, statusCode: 502); }
 });
 
@@ -382,9 +386,12 @@ admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, Cancellatio
 admin.MapGet("/ai/models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
 {
     var live = await OpenRouterModels.GetAsync(http.CreateClient(), logs.CreateLogger("OpenRouter"), ct);
+    var nim = await Nim.GetAsync(http.CreateClient(), logs.CreateLogger("NVIDIA"), ct);
     return Results.Ok(new
     {
         Known = live is not null,
+        // NVIDIA's models that can talk, "nim:owner/model"; null when the list couldn't be fetched
+        Nim = nim is null ? null : Nim.Chat,
         Free = OpenRouterModels.Free,
         Offered = live?.Keys.ToList() ?? new List<string>(),
         Stats = OpenRouterModels.Stats,
@@ -511,10 +518,12 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
         await db.Users.Where(u => u.Enabled).ExecuteUpdateAsync(u => u.SetProperty(x => x.RefreshRequested, true), ct);
     }
     // A new model or key deserves a try right away, not after the pause from the last error
-    if (before.CheckModel != settings.CheckModel || before.ApiKey != settings.ApiKey || before.CheckEnabled != settings.CheckEnabled
+    var keysChanged = before.ApiKey != settings.ApiKey || before.NimApiKey != settings.NimApiKey;
+    if (keysChanged) Nim.ResetRefused();
+    if (before.CheckModel != settings.CheckModel || keysChanged || before.CheckEnabled != settings.CheckEnabled
         || !before.CheckModels.SequenceEqual(settings.CheckModels) || before.CheckModelsAuto != settings.CheckModelsAuto)
         SecondOpinion.ResetPause();
-    if (!before.ClassificationModels.SequenceEqual(settings.ClassificationModels) || before.ClassificationModelsAuto != settings.ClassificationModelsAuto || before.ApiKey != settings.ApiKey)
+    if (!before.ClassificationModels.SequenceEqual(settings.ClassificationModels) || before.ClassificationModelsAuto != settings.ClassificationModelsAuto || keysChanged)
         MovieClassifier.RetryNow();
     // A library switched back on may have movies that were never classified
     if (before.OmdbApiKey != settings.OmdbApiKey || before.OmdbPerDay != settings.OmdbPerDay) OmdbScores.ResetPause();
@@ -523,9 +532,9 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
         || before.LetterboxdHours != settings.LetterboxdHours)
         LetterboxdRatings.ResetPause();
     if (before.MeaningOn != settings.MeaningOn || before.EmbeddingModelsAuto != settings.EmbeddingModelsAuto
-        || !before.EmbeddingModels.SequenceEqual(settings.EmbeddingModels) || before.ApiKey != settings.ApiKey) Meaning.ResetPause();
+        || !before.EmbeddingModels.SequenceEqual(settings.EmbeddingModels) || keysChanged) Meaning.ResetPause();
     var librariesChanged = !before.ExcludedLibraries.OrderBy(g => g).SequenceEqual(settings.ExcludedLibraries.OrderBy(g => g));
-    worker.Wake(syncLibrary: librariesChanged || before.ApiKey != settings.ApiKey || before.TmdbApiKey != settings.TmdbApiKey
+    worker.Wake(syncLibrary: librariesChanged || keysChanged || before.TmdbApiKey != settings.TmdbApiKey
         || (settings.CheckEnabled && (!before.CheckEnabled || before.CheckModel != settings.CheckModel)) || before.ExaApiKey != settings.ExaApiKey || before.UseExa != settings.UseExa || before.UseParallel != settings.UseParallel
         || System.Text.Json.JsonSerializer.Serialize(before.SearchEngines) != System.Text.Json.JsonSerializer.Serialize(settings.SearchEngines));
     return Results.Ok(SettingsView.From(settings));
@@ -551,7 +560,7 @@ admin.MapGet("/libraries", async (JellyfinClient jellyfin, MovieStore store, Can
 
 admin.MapPost("/settings/test-ai", async (AIProviderFactory ai, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Ok(new { Ok = false, Message = "No API key set." });
+    if (!ServerSettings.Current.HasAiKey) return Results.Ok(new { Ok = false, Message = "No API key set." });
     try
     {
         var answer = await ai.GetProvider().ChatAsync("Reply with the single word: ready", "You are a connection test.", ct);
@@ -653,6 +662,8 @@ record SettingsView
     public string AIProvider { get; init; } = "";
     public bool HasApiKey { get; init; }
     public string? ApiKey { get; init; }
+    public bool HasNimApiKey { get; init; }
+    public string? NimApiKey { get; init; }
     public string ClassificationModel { get; init; } = "";
     public string ChatModel { get; init; } = "";
     public string CustomEndpoint { get; init; } = "";
@@ -726,6 +737,7 @@ record SettingsView
         HasJellyfinApiKey = !string.IsNullOrWhiteSpace(s.JellyfinApiKey),
         AIProvider = s.AIProvider.ToString(),
         HasApiKey = !string.IsNullOrWhiteSpace(s.ApiKey),
+        HasNimApiKey = !string.IsNullOrWhiteSpace(s.NimApiKey),
         ClassificationModel = s.ClassificationModel,
         ChatModel = s.ChatModel,
         CustomEndpoint = s.CustomEndpoint,
@@ -798,6 +810,9 @@ record SettingsView
         }
         if (Enum.TryParse<AIProviderType>(AIProvider, out var provider)) s.AIProvider = provider;
         if (!string.IsNullOrWhiteSpace(ApiKey)) s.ApiKey = ApiKey.Trim();
+        // "-" takes the NVIDIA key out (it's optional)
+        if (NimApiKey?.Trim() == "-") s.NimApiKey = "";
+        else if (!string.IsNullOrWhiteSpace(NimApiKey)) s.NimApiKey = NimApiKey.Trim();
         s.ClassificationModel = ClassificationModel.Trim();
         s.ChatModel = ChatModel.Trim();
         s.CustomEndpoint = CustomEndpoint.Trim();

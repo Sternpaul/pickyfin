@@ -534,7 +534,7 @@ public sealed class Curator
     private async Task<List<Guid>> AskAiAsync(
         UserProfile user, BriefProfile? brief, List<MovieMetadata> history, List<SeriesWatch> series, LetterboxdTaste lb, List<MovieMetadata> shortlist, int count, bool forSeries, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(Settings.ApiKey)) throw new InvalidOperationException("no AI key set");
+        if (!Settings.HasAiKey) throw new InvalidOperationException("no AI key set");
 
         var prompt = new StringBuilder();
         var noun = forSeries ? "TV series" : "movies";

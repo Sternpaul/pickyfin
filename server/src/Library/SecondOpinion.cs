@@ -51,7 +51,7 @@ public sealed class SecondOpinion
     public async Task CheckPendingAsync(CancellationToken cancellationToken)
     {
         var settings = ServerSettings.Current;
-        if (!settings.CheckEnabled || string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.CheckModel))
+        if (!settings.CheckEnabled || !settings.HasAiKey || string.IsNullOrWhiteSpace(settings.CheckModel))
         {
             Jobs.Idle(Key, Title, "Off");
             return;

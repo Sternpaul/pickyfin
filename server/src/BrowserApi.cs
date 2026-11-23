@@ -344,7 +344,7 @@ public static class BrowserApi
 
         admin.MapPost("/movies/{id:guid}/retag", async (Guid id, Database database, MovieClassifier classifier, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Problem("No AI key set (Settings → AI).", statusCode: 400);
+            if (!ServerSettings.Current.HasAiKey) return Results.Problem("No AI key set (Settings → AI).", statusCode: 400);
             // Hand it back to the AI: from now on it may tag this movie again
             await using (var db = database.Open())
                 await db.Movies.Where(m => m.ItemId == id).ExecuteUpdateAsync(u => u.SetProperty(m => m.ManuallyEdited, false), ct);
@@ -435,7 +435,7 @@ public static class BrowserApi
 
         admin.MapPost("/movies/{id:guid}/lookup", async (Guid id, Database database, MovieClassifier classifier, WebLookup web, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Problem("No AI key set (AI page).", statusCode: 400);
+            if (!ServerSettings.Current.HasAiKey) return Results.Problem("No AI key set (AI page).", statusCode: 400);
             if (web.Blocked() is { } why) return Results.Problem(why, statusCode: 400);
             MovieMetadata? movie;
             await using (var db = database.Open())
@@ -452,7 +452,7 @@ public static class BrowserApi
         // Every open issue: look up on the web and tag again, in the background
         admin.MapPost("/issues/lookup-all", (MovieStore store, MovieClassifier classifier, AIProviderFactory ai, WebLookup web, IHostApplicationLifetime life, ILoggerFactory logs) =>
         {
-            if (string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey)) return Results.Problem("No AI key set (AI page).", statusCode: 400);
+            if (!ServerSettings.Current.HasAiKey) return Results.Problem("No AI key set (AI page).", statusCode: 400);
             if (web.Blocked() is { } why) return Results.Problem(why, statusCode: 400);
             if (Interlocked.Exchange(ref _lookupAllRunning, 1) == 1) return Results.Accepted();
             var log = logs.CreateLogger("Pickyfin.Server.Issues");

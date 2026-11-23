@@ -69,7 +69,7 @@ public sealed class Rescan
     {
         var s = ServerSettings.Current;
         if (s.RescanMonths <= 0 && s.RescanPassStarted is null) { Jobs.Idle(Key, Title, "Off"); return; }
-        if (string.IsNullOrWhiteSpace(s.ApiKey)) { Jobs.Idle(Key, Title, "Off: no AI key"); return; }
+        if (!s.HasAiKey) { Jobs.Idle(Key, Title, "Off: no AI key"); return; }
 
         var movies = (await _store.GetAllTitlesAsync(cancellationToken)).Where(Eligible).ToList();
         var cutoff = Cutoff(s);

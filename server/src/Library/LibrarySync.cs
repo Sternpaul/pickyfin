@@ -91,7 +91,7 @@ public sealed class LibrarySync
             if (missing.Count > 0) await _tmdb.EnrichKeywordsAsync(ServerSettings.Current.TmdbApiKey, missing, cancellationToken);
         }
 
-        if (!string.IsNullOrWhiteSpace(ServerSettings.Current.ApiKey))
+        if (ServerSettings.Current.HasAiKey)
         {
             await _classifier.ClassifyPendingMoviesAsync(cancellationToken, onlyNew: true);
             await GenreSweepAsync(cancellationToken);

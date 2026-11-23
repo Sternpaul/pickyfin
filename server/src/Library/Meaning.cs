@@ -59,7 +59,7 @@ public sealed class Meaning
     }
 
     public static bool On(ServerSettings s) =>
-        s.MeaningOn && s.AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(s.ApiKey);
+        s.MeaningOn && s.AIProvider == AIProviderType.OpenRouter && s.HasAiKey;
 
     /// <summary>The model being asked right now.</summary>
     public static string? ActiveModel { get; private set; }
@@ -156,7 +156,12 @@ public sealed class Meaning
         if (!On(s)) { Jobs.Idle(Key, Title, s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter"); return; }
         if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
         await RefreshFreeAsync(cancellationToken);
-        var models = Order(s).Where(m => !OpenRouterModels.IsGone(m)).ToList();
+        var models = Order(s).Where(m => !OpenRouterModels.IsGone(m) && Nim.HasKey(s, m)).ToList();
+        if (models.Count == 0 && Order(s).Any(m => !Nim.HasKey(s, m)))
+        {
+            Jobs.Idle(Key, Title, Order(s).Any(Nim.Is) && !Nim.HasKey(s, Order(s).First(Nim.Is)) ? "Off: the order needs an NVIDIA key" : "Off: the order needs an OpenRouter key", error: true);
+            return;
+        }
         if (models.Count == 0)
         {
             Pause(TimeSpan.FromHours(1), "Paused: no model in the order is available", "Meaning: no model in the order is available");
@@ -172,8 +177,7 @@ public sealed class Meaning
         foreach (var model in models)
         {
             if (todo[model].Count == 0) continue;
-            lock (Resting)
-                if (Resting.TryGetValue(model, out var rest) && rest.Until > DateTime.UtcNow) continue;
+            if (IsResting(model)) continue;
             ActiveModel = model;
             Jobs.Running(Key, Title, $"{Short(model)}: {todo[model].Count:N0} to match");
             var (count, outcome) = await RunWithAsync(s, model, todo[model], cancellationToken);
@@ -198,12 +202,14 @@ public sealed class Meaning
 
     private static bool IsResting(string model)
     {
+        if (Nim.RefusedWhy(model) is not null) return true;
         lock (Resting) return Resting.TryGetValue(model, out var r) && r.Until > DateTime.UtcNow;
     }
 
     /// <summary>Why a model is skipped right now, for Status; null when it's working.</summary>
     public static string? RestingWhy(string model)
     {
+        if (Nim.RefusedWhy(model) is { } refused) return $"{refused}; tried again within the hour";
         lock (Resting) return Resting.TryGetValue(model, out var r) && r.Until > DateTime.UtcNow ? r.Why : null;
     }
 
@@ -260,10 +266,10 @@ public sealed class Meaning
     {
         var round = todo.Take(PerRequest * RequestsPerRound).ToList();
         var done = 0;
-        foreach (var chunk in round.Chunk(PerRequest))
+        foreach (var chunk in round.GroupBy(c => c.Kind).SelectMany(g => g.Chunk(PerRequest)))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var (vectors, outcome, error) = await EmbedWithTriesAsync(s, model, chunk.Select(c => Sendable(c.Text)).ToList(), cancellationToken);
+            var (vectors, outcome, error) = await EmbedWithTriesAsync(s, model, chunk[0].Kind, chunk.Select(c => Sendable(c.Text)).ToList(), cancellationToken);
             if (outcome == Outcome.Gone) return (done, Outcome.Gone);
             var items = chunk.ToList();
             if (outcome == Outcome.Refused)
@@ -322,7 +328,7 @@ public sealed class Meaning
             {
                 using (Activity.Begin($"Matching by meaning: {model}, one text at a time"))
                 {
-                    var one = await EmbedAsync(s, model, new List<string> { Sendable(item.Text, limit) }, cancellationToken);
+                    var one = await EmbedAsync(s, model, item.Kind, new List<string> { Sendable(item.Text, limit) }, cancellationToken);
                     if (one.Vectors is { Count: 1 }) { vector = one.Vectors[0]; break; }
                     if (one.Code is not 400) break; // busy or down: leave it for the next round
                 }
@@ -345,16 +351,21 @@ public sealed class Meaning
         return (kept, vectors, refused);
     }
 
-    public static string Short(string model) => model.Contains('/') ? model[(model.IndexOf('/') + 1)..].Replace(":free", "") : model;
+    public static string Short(string model)
+    {
+        var id = Nim.ApiModel(model);
+        var name = id.Contains('/') ? id[(id.IndexOf('/') + 1)..].Replace(":free", "") : id;
+        return Nim.Is(model) ? name + " (NVIDIA)" : name;
+    }
 
     /// <summary>Three tries on the same model when it's busy or slow; a model that's gone hands over to the next.</summary>
-    private async Task<(List<float[]>? Vectors, Outcome Outcome, string? Error)> EmbedWithTriesAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
+    private async Task<(List<float[]>? Vectors, Outcome Outcome, string? Error)> EmbedWithTriesAsync(ServerSettings s, string model, string kind, List<string> texts, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
             (List<float[]>? Vectors, int Code, string? Error) result;
             using (Activity.Begin($"Matching by meaning: waiting for {model}" + (attempt > 1 ? $" (try {attempt} of 3)" : "")))
-                result = await EmbedAsync(s, model, texts, cancellationToken);
+                result = await EmbedAsync(s, model, kind, texts, cancellationToken);
             if (result.Vectors is not null) { OpenRouterModels.Record(model, null); return (result.Vectors, Outcome.Done, null); }
             OpenRouterModels.Record(model, result.Error);
             OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
@@ -365,7 +376,9 @@ public sealed class Meaning
             if (result.Code is 400) return (null, Outcome.Refused, result.Error);
             if (result.Code is 401 or 402 or 403)
             {
-                Pause(TimeSpan.FromHours(1), $"Paused: OpenRouter answered HTTP {result.Code}", $"Meaning: {result.Error}");
+                // that provider's models wait an hour; the other provider's carry on
+                Nim.Refuse(model, $"{Nim.ProviderName(model)} refused the key (HTTP {result.Code})");
+                _logger.LogWarning("Meaning: {Provider} refused the key ({Error}); its models wait an hour, the others carry on", Nim.ProviderName(model), result.Error);
                 return (null, Outcome.Paused, result.Error);
             }
             if (attempt >= 3)
@@ -379,18 +392,25 @@ public sealed class Meaning
         }
     }
 
-    /// <summary>One request to OpenRouter's embeddings endpoint.</summary>
-    private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedAsync(ServerSettings s, string model, List<string> texts, CancellationToken cancellationToken)
+    /// <summary>
+    /// What is sent to the embeddings endpoint. NVIDIA's models want to know whether a text is
+    /// something searched for (a person's wishes) or something found (a film), and cut texts
+    /// longer than their window instead of refusing them.
+    /// </summary>
+    public static string Body(string model, string kind, List<string> texts) => Nim.Is(model)
+        ? JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts, input_type = kind == "brief" ? "query" : "passage", truncate = "END", encoding_format = "float" })
+        : JsonSerializer.Serialize(new { model, input = texts });
+
+    /// <summary>One request to the model's embeddings endpoint (OpenRouter or NVIDIA).</summary>
+    private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedAsync(ServerSettings s, string model, string kind, List<string> texts, CancellationToken cancellationToken)
     {
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(2);
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/embeddings")
+        using var request = new HttpRequestMessage(HttpMethod.Post, Nim.EmbedUrl(model))
         {
-            Content = new StringContent(JsonSerializer.Serialize(new { model, input = texts }), Encoding.UTF8, "application/json"),
+            Content = new StringContent(Body(model, kind, texts), Encoding.UTF8, "application/json"),
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", s.ApiKey.Trim());
-        request.Headers.Add("HTTP-Referer", "https://github.com/Sternpaul/pickyfin");
-        request.Headers.Add("X-Title", "Pickyfin");
+        Nim.Authorize(request, s, model);
         try
         {
             using var response = await client.SendAsync(request, cancellationToken);
@@ -449,9 +469,14 @@ public sealed class Meaning
         try
         {
             using var doc = JsonDocument.Parse(body);
-            return doc.RootElement.TryGetProperty("error", out var e) && e.TryGetProperty("message", out var m) ? m.GetString() : null;
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out var e))
+                return e.ValueKind == JsonValueKind.String ? e.GetString() : e.TryGetProperty("message", out var m) ? m.GetString() : null;
+            // NVIDIA answers {"title": …, "detail": …}
+            if (root.TryGetProperty("detail", out var d)) return d.ValueKind == JsonValueKind.String ? d.GetString() : d.ToString();
+            return root.TryGetProperty("title", out var t) ? t.GetString() : null;
         }
-        catch (Exception) { return null; }
+        catch (Exception) { return body.Length > 0 && body.Length < 300 ? body.Trim() : null; }
     }
 
     private void Pause(TimeSpan howLong, string status, string log)

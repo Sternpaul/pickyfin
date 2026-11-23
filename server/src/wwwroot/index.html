@@ -100,6 +100,7 @@
   .chain .stat { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .chain .stat.bad { color: var(--err); }
   .chain .acts { display: flex; gap: 4px; }
+  .chain .prov { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--muted); vertical-align: 1px; }
   .chain .acts .btn, .chain ul .btn { height: 28px; padding: 0 9px; font-size: 13px; }
   .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 4px 0 28px; }
   .step { border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -616,6 +617,10 @@
           <div><h3>API key <span class="state" id="key-state"></span></h3><p class="why">Stored on this server only. Leave the field empty to keep the saved key.</p></div>
           <div class="control"><input type="password" id="ApiKey" placeholder="Paste a new key" autocomplete="off"></div>
         </div>
+        <div class="setting openrouter-only">
+          <div><h3>NVIDIA key <span class="state" id="nim-state"></span></h3><p class="why">Optional. NVIDIA hosts free models too (<a href="https://build.nvidia.com/settings/api-keys" target="_blank" rel="noopener">get a key</a>). With a key, its models can sit in every model order next to OpenRouter's, in any mix. NVIDIA's free use is meant for trying things out, allows about 40 requests a minute, and NVIDIA keeps what is sent.</p></div>
+          <div class="control"><div class="inline"><input type="password" id="NimApiKey" placeholder="Paste a new key (nvapi-…)" autocomplete="off"><button type="button" class="btn quiet hidden" id="nim-remove">Remove</button></div></div>
+        </div>
         <div class="setting">
           <div><h3>Model for picking</h3><p class="why">Reads what you wrote about each person and picks their "Recommended for you" row. It deserves a capable model; if it fails, the describing order below takes over.</p></div>
           <div class="control"><input type="text" id="ChatModel" list="models"></div>
@@ -1018,7 +1023,20 @@ function fillModels(provider) {
 // ---- model order (OpenRouter) ----
 const chains = { describe: [], check: [], lookup: [], embed: [] }, openOff = {}, chainsAuto = { describe: true, check: true, lookup: true, embed: true };
 // The free models a step chooses from, most used this week first
-const freeFor = key => key === 'embed' ? (embeddingModels || []).filter(m => m.Free).map(m => m.Id) : (modelInfo?.Free || []);
+const freeFor = key => key === 'embed' ? (embeddingModels || []).filter(m => m.Free && !m.Nim).map(m => m.Id) : (modelInfo?.Free || []);
+// NVIDIA's models for a step ("nim:owner/model"); they're added by hand, never automatically
+const nimFor = key => key === 'embed' ? (embeddingModels || []).filter(m => m.Nim).map(m => m.Id) : (modelInfo?.Nim || []);
+const isNim = id => id.toLowerCase().startsWith('nim:');
+const modelLabel = id => isNim(id) ? `${esc(id.slice(4))}<span class="prov">NVIDIA</span>` : esc(id);
+function nimState() {
+  $('#nim-state').innerHTML = stateText(settings.HasNimApiKey);
+  $('#nim-remove').classList.toggle('hidden', !settings.HasNimApiKey);
+  renderChains();
+}
+$('#nim-remove').onclick = async () => {
+  if (!confirm('Remove the NVIDIA key? NVIDIA models in your orders are then skipped.')) return;
+  $('#NimApiKey').value = '-'; await saveNow('ai-form'); $('#NimApiKey').value = '';
+};
 // Automatic order: the most used free models on OpenRouter this week (the second opinion moves describing's first to the end)
 function autoChain(key) {
   if (key === 'lookup') return [...chains.describe]; // step 3 follows step 1 unless set apart
@@ -1031,13 +1049,16 @@ function autoChain(key) {
 let modelInfo = null;
 async function loadModelInfo() {
   try { modelInfo = await call('GET', '/api/ai/models'); } catch { modelInfo = null; }
-  $('#models-all').innerHTML = (modelInfo?.Offered || []).map(m => `<option value="${esc(m)}">`).join('');
+  $('#models-all').innerHTML = [...(modelInfo?.Offered || []), ...(modelInfo?.Nim || [])].map(m => `<option value="${esc(m)}">`).join('');
   renderChains();
 }
 function modelStat(id, key) {
   const st = modelInfo?.Stats?.[id];
-  const offered = key === 'embed' ? (embeddingModels ? embeddingModels.some(m => m.Id === id) : true) : !(modelInfo?.Known && !modelInfo.Offered.includes(id));
-  if (!offered) return { text: 'Not offered by OpenRouter right now; skipped', bad: true };
+  const nim = isNim(id), same = m => m.toLowerCase() === id.toLowerCase();
+  if (settings && !(nim ? settings.HasNimApiKey : settings.HasApiKey)) return { text: `Needs ${nim ? 'an NVIDIA' : 'an OpenRouter'} key (top of the AI page); skipped`, bad: true };
+  const offered = key === 'embed' ? (embeddingModels ? embeddingModels.some(m => same(m.Id)) : true)
+    : nim ? !(modelInfo?.Nim && !modelInfo.Nim.some(same)) : !(modelInfo?.Known && !modelInfo.Offered.includes(id));
+  if (!offered) return { text: `Not offered by ${nim ? 'NVIDIA' : 'OpenRouter'} right now; skipped`, bad: true };
   const rank = freeFor(key).indexOf(id);
   const pop = rank >= 0 ? `#${rank + 1} most used free ${key === 'embed' ? 'embedding ' : ''}model this week · ` : '';
   if (!st) return { text: `${pop}not used since the server started`, bad: false };
@@ -1055,17 +1076,19 @@ function renderChain(key) {
   // Any change by hand makes it the admin's own order
   const mine = fn => (...args) => { chainsAuto[key] = false; fn(...args); autoSave(chainForms[key]); };
   const off = freeFor(key).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
+  const offNim = nimFor(key).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
   const statHtml = m => { const s = modelStat(m, key); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
   const head = key === 'lookup' ? (chainsAuto[key]
     ? `<p class="note" style="margin:0">Same as step 1, describing. Changing anything gives step 3 its own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Its own order.</span><button type="button" class="btn quiet" data-auto>Back to the same as describing</button></div>`)
     : chainsAuto[key]
-    ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter this week, most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. Changing anything makes it your own order.</p>`
+    ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter this week, most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. NVIDIA's models are only used when you add them. Changing anything makes it your own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Your own order.</span><button type="button" class="btn quiet" data-auto>Back to most used this week</button></div>`;
-  box.innerHTML = head + `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${esc(m)}</b>${statHtml(m)}</div>
+  box.innerHTML = head + `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${modelLabel(m)}</b>${statHtml(m)}</div>
       <div class="acts"><button type="button" class="btn quiet" data-up="${i}" title="Try earlier" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn quiet" data-down="${i}" title="Try later" ${i === on.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="btn quiet" data-off="${i}" ${on.length === 1 ? 'disabled title="At least one model is needed"' : ''}>Turn off</button></div></li>`).join('')}</ol>
     ${off.length ? `<details${openOff[key] ? ' open' : ''}><summary class="note" style="cursor:pointer">Other free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter (${off.length}), turned off</summary><ul style="margin-top:6px">${off.map(m => `<li><div class="m">${esc(m)}${statHtml(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`
       : (key === 'embed' ? embeddingModels : modelInfo) ? '' : '<p class="note">Loading the models OpenRouter offers…</p>'}
+    ${offNim.length ? `<details data-nim${openOff[key + 'nim'] ? ' open' : ''}><summary class="note" style="cursor:pointer">${key === 'embed' ? 'Embedding models' : 'Models'} on NVIDIA (${offNim.length}), turned off${settings?.HasNimApiKey ? '' : ': add an NVIDIA key to use them'}</summary><ul style="margin-top:6px">${offNim.map(m => `<li><div class="m">${modelLabel(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>` : ''}
     <div class="inline"><input type="text" placeholder="Add another model, e.g. ${key === 'embed' ? 'baai/bge-m3' : 'google/gemini-2.5-flash'}" list="${key === 'embed' ? 'embed-all' : 'models-all'}"><button type="button" class="btn" data-add>Add</button></div>`;
   const move = mine((i, d) => { const [m] = on.splice(i, 1); on.splice(i + d, 0, m); renderChains(); });
   $$('[data-up]', box).forEach(b => b.onclick = () => move(Number(b.dataset.up), -1));
@@ -1073,7 +1096,7 @@ function renderChain(key) {
   $$('[data-off]', box).forEach(b => b.onclick = mine(() => { on.splice(Number(b.dataset.off), 1); renderChains(); }));
   $$('[data-on]', box).forEach(b => b.onclick = mine(() => { on.push(b.dataset.on); renderChains(); }));
   const back = $('[data-auto]', box); if (back) back.onclick = () => { chainsAuto[key] = true; renderChains(); autoSave(chainForms[key]); };
-  const details = $('details', box); if (details) details.ontoggle = () => { openOff[key] = details.open; };
+  $$('details', box).forEach(d => d.ontoggle = () => { openOff[key + (d.hasAttribute('data-nim') ? 'nim' : '')] = d.open; });
   const input = $('input', box);
   const add = () => { const v = input.value.trim(); if (v && !on.some(x => x.toLowerCase() === v.toLowerCase())) { chainsAuto[key] = false; on.push(v); renderChains(); autoSave(chainForms[key]); } };
   $('[data-add]', box).onclick = add;
@@ -1091,13 +1114,13 @@ async function loadSettings() {
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
-  $('#ApiKey').value = ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
+  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
   $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdHours').value = settings.LetterboxdHours || 6; $('#LetterboxdToken').value = '';
   $('#lbtoken-state').innerHTML = stateText(settings.HasLetterboxdToken); checkLetterboxd(false);
   loadEmbeddingModels();
   $('#MeaningWeight').value = settings.MeaningWeight ?? 70;
-  $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
+  $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); nimState();
   seg($('#because-seg'), settings.BecauseRows);
   $('#BriefWeight').value = settings.BriefWeight; $('#Discovery').value = settings.Discovery; $('#SeriesWeight').value = settings.SeriesWeight ?? 50;
   $('#FilmsForSeriesWeight').value = settings.FilmsForSeriesWeight ?? 50; $('#SeriesRecommendations').checked = settings.SeriesRecommendations !== false;
@@ -1149,14 +1172,14 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', NimApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
 // Settings save on their own: a change is sent half a second later (a typed field when you leave it)
 const formValues = {
   'ai-form': () => ({
-    AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value,
+    AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value, NimApiKey: $('#NimApiKey').value,
     ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }) }),
   'check-form': () => ({
@@ -1191,11 +1214,11 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
-    $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey);
+    for (const k of ['ApiKey', 'NimApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); nimState();
     if (form === 'lookup-form') { engines = (settings.SearchEngines || []).map(e => ({ ...e })); renderEngines(); }
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
     if (form === 'lb-form') { $('#lbtoken-state').innerHTML = stateText(settings.HasLetterboxdToken); checkLetterboxd(true); }
