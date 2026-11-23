@@ -12,7 +12,9 @@ namespace Pickyfin.Server.Ai;
 public static class Providers
 {
     /// <summary>One source of models besides OpenRouter.</summary>
-    public sealed record Source(string Prefix, string Name, string KeyUrl, int Batch, string[] Embedding);
+    /// <param name="Batch">Texts per request.</param>
+    /// <param name="PerRound">Requests per model per round (every few minutes); low for sources with tight per-minute limits.</param>
+    public sealed record Source(string Prefix, string Name, string KeyUrl, int Batch, string[] Embedding, int PerRound = 8);
 
     public static readonly Source Nvidia = new("nim:", "NVIDIA", Nim.KeyUrl, 16, Array.Empty<string>());
     public static readonly Source Cloudflare = new("cf:", "Cloudflare", "https://dash.cloudflare.com/profile/api-tokens", 16, new[]
@@ -25,9 +27,12 @@ public static class Providers
     // Mistral counts tokens per request, not per text: smaller batches
     public static readonly Source Mistral = new("mistral:", "Mistral", "https://console.mistral.ai/api-keys", 8, new[] { "mistral-embed" });
 
-    public static readonly Source[] All = { Nvidia, Cloudflare, Gemini, Jina, Mistral };
+    // Without a card on file Voyage allows 3 requests and 10,000 tokens a minute: few films per request, three requests a round
+    public static readonly Source Voyage = new("voyage:", "Voyage", "https://dashboard.voyageai.com/organization/api-keys", 5, new[] { "voyage-4-large", "voyage-4", "voyage-4-lite" }, PerRound: 3);
+
+    public static readonly Source[] All = { Nvidia, Cloudflare, Gemini, Jina, Mistral, Voyage };
     /// <summary>The sources that only make vectors here (NVIDIA also talks; its list comes from NVIDIA).</summary>
-    public static readonly Source[] EmbeddingOnly = { Cloudflare, Gemini, Jina, Mistral };
+    public static readonly Source[] EmbeddingOnly = { Cloudflare, Gemini, Jina, Mistral, Voyage };
 
     public static Source? Of(string model) => All.FirstOrDefault(p => model.StartsWith(p.Prefix, StringComparison.OrdinalIgnoreCase));
     public static bool IsOpenRouter(string model) => Of(model) is null;
@@ -35,6 +40,7 @@ public static class Providers
     /// <summary>The model's id at its source (the prefix taken off).</summary>
     public static string ApiModel(string model) => Of(model) is { } p ? model[p.Prefix.Length..] : model;
     public static int Batch(string model) => Of(model)?.Batch ?? 16;
+    public static int PerRound(string model) => Of(model)?.PerRound ?? 8;
 
     /// <summary>The key for this model's source; empty when none is set (Cloudflare also needs its account id).</summary>
     public static string Key(ServerSettings s, string model)
@@ -42,7 +48,7 @@ public static class Providers
         var p = Of(model);
         if (p == Cloudflare && string.IsNullOrWhiteSpace(s.CloudflareAccountId)) return "";
         return (p == Nvidia ? s.NimApiKey : p == Cloudflare ? s.CloudflareApiToken : p == Gemini ? s.GeminiApiKey
-            : p == Jina ? s.JinaApiKey : p == Mistral ? s.MistralApiKey : s.ApiKey).Trim();
+            : p == Jina ? s.JinaApiKey : p == Mistral ? s.MistralApiKey : p == Voyage ? s.VoyageApiKey : s.ApiKey).Trim();
     }
     public static bool HasKey(ServerSettings s, string model) => Key(s, model).Length > 0;
     public static bool HasKey(ServerSettings s, Source source) => HasKey(s, source.Prefix + "x");
@@ -59,6 +65,7 @@ public static class Providers
         if (p == Gemini) return "https://generativelanguage.googleapis.com/v1beta/openai";
         if (p == Jina) return "https://api.jina.ai/v1";
         if (p == Mistral) return "https://api.mistral.ai/v1";
+        if (p == Voyage) return "https://api.voyageai.com/v1";
         return "https://openrouter.ai/api/v1";
     }
 
@@ -89,7 +96,7 @@ public static class Providers
     public static async Task<List<string>> EmbeddingModelsAsync(HttpClient http, ServerSettings s, Source source, ILogger logger, CancellationToken ct)
     {
         var fallback = source.Embedding.Select(m => source.Prefix + m).ToList();
-        if (!HasKey(s, source) || source == Jina) return fallback; // Jina has no list to read
+        if (!HasKey(s, source) || source == Jina || source == Voyage) return fallback; // Jina and Voyage have no list to read
         if (Lists.TryGetValue(source.Name, out var cached) && DateTime.UtcNow - cached.At < TimeSpan.FromHours(6)) return cached.Models;
         try
         {

@@ -786,6 +786,9 @@
             <div class="source"><div class="src-head"><b>Mistral</b> <span class="state" id="mistral-state"></span><a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">get a key</a></div>
               <p class="note">Free within a monthly allowance shown in Mistral's console.</p>
               <div class="inline"><input type="password" id="MistralApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="MistralApiKey">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Voyage</b> <span class="state" id="voyage-state"></span><a href="https://dashboard.voyageai.com/organization/api-keys" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note">200 million free tokens once for each voyage-4 model. Without a card on file it allows only 3 requests a minute, so it fills up slowly; adding a card makes it fast and the free tokens still count first.</p>
+              <div class="inline"><input type="password" id="VoyageApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="VoyageApiKey">Remove</button></div></div>
           </div></div>
         </div>
         <div class="setting">
@@ -1056,6 +1059,7 @@ const sources = {
   'cf:': { name: 'Cloudflare', has: () => settings?.HasCloudflareApiToken && !!settings?.CloudflareAccountId, where: 'under "More free sources" above' },
   'gemini:': { name: 'Gemini', has: () => settings?.HasGeminiApiKey, where: 'under "More free sources" above' },
   'jina:': { name: 'Jina', has: () => settings?.HasJinaApiKey, where: 'under "More free sources" above' },
+  'voyage:': { name: 'Voyage', has: () => settings?.HasVoyageApiKey, where: 'under "More free sources" above' },
   'mistral:': { name: 'Mistral', has: () => settings?.HasMistralApiKey, where: 'under "More free sources" above' },
 };
 const sourceOf = id => Object.keys(sources).find(p => id.toLowerCase().startsWith(p));
@@ -1067,14 +1071,14 @@ const extraFor = key => {
   return Object.keys(sources).map(prefix => ({ prefix, ids: (embeddingModels || []).filter(m => m.Nim && sourceOf(m.Id) === prefix).map(m => m.Id) }));
 };
 let sourceKeysSeen = '';
-const sourceKeysNow = () => JSON.stringify([settings?.HasCloudflareApiToken, settings?.CloudflareAccountId, settings?.HasGeminiApiKey, settings?.HasJinaApiKey, settings?.HasMistralApiKey]);
+const sourceKeysNow = () => JSON.stringify([settings?.HasCloudflareApiToken, settings?.CloudflareAccountId, settings?.HasGeminiApiKey, settings?.HasJinaApiKey, settings?.HasMistralApiKey, settings?.HasVoyageApiKey]);
 const sourceKeysChanged = () => { const now = sourceKeysNow(), changed = now !== sourceKeysSeen; sourceKeysSeen = now; return changed; };
 function nimState() {
   $('#nim-state').innerHTML = stateText(settings.HasNimApiKey);
   $('#nim-remove').classList.toggle('hidden', !settings.HasNimApiKey);
-  const has = { CloudflareApiToken: settings.HasCloudflareApiToken, GeminiApiKey: settings.HasGeminiApiKey, JinaApiKey: settings.HasJinaApiKey, MistralApiKey: settings.HasMistralApiKey };
+  const has = { CloudflareApiToken: settings.HasCloudflareApiToken, GeminiApiKey: settings.HasGeminiApiKey, JinaApiKey: settings.HasJinaApiKey, MistralApiKey: settings.HasMistralApiKey, VoyageApiKey: settings.HasVoyageApiKey };
   $('#cf-state').innerHTML = stateText(sources['cf:'].has(), 'saved', settings.HasCloudflareApiToken ? 'needs the account ID' : 'not set');
-  $('#gemini-state').innerHTML = stateText(has.GeminiApiKey); $('#jina-state').innerHTML = stateText(has.JinaApiKey); $('#mistral-state').innerHTML = stateText(has.MistralApiKey);
+  $('#gemini-state').innerHTML = stateText(has.GeminiApiKey); $('#jina-state').innerHTML = stateText(has.JinaApiKey); $('#mistral-state').innerHTML = stateText(has.MistralApiKey); $('#voyage-state').innerHTML = stateText(has.VoyageApiKey);
   $$('[data-remove]').forEach(b => b.classList.toggle('hidden', !has[b.dataset.remove]));
   if (!sourceKeysSeen) sourceKeysSeen = sourceKeysNow();
   renderChains();
@@ -1166,7 +1170,7 @@ async function loadSettings() {
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
-  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey']) $('#' + k).value = '';
+  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey', 'VoyageApiKey']) $('#' + k).value = '';
   $('#CloudflareAccountId').value = settings.CloudflareAccountId || ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
   $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdHours').value = settings.LetterboxdHours || 6; $('#LetterboxdToken').value = '';
@@ -1225,7 +1229,7 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
@@ -1249,7 +1253,7 @@ const formValues = {
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
   'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed,
     CloudflareAccountId: $('#CloudflareAccountId').value.trim(), CloudflareApiToken: $('#CloudflareApiToken').value,
-    GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, MistralApiKey: $('#MistralApiKey').value }),
+    GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, MistralApiKey: $('#MistralApiKey').value, VoyageApiKey: $('#VoyageApiKey').value }),
   'lb-form': () => ({ LetterboxdOn: $('#LetterboxdOn').checked, LetterboxdUrl: $('#LetterboxdUrl').value.trim(), LetterboxdHours: Math.min(168, Math.max(1, Number($('#LetterboxdHours').value) || 6)), LetterboxdToken: $('#LetterboxdToken').value }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
@@ -1269,10 +1273,10 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'NimApiKey', 'CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    for (const k of ['ApiKey', 'NimApiKey', 'CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey', 'VoyageApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
     $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); nimState();
     if (form === 'lookup-form') { engines = (settings.SearchEngines || []).map(e => ({ ...e })); renderEngines(); }
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();

@@ -528,7 +528,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A new model or key deserves a try right away, not after the pause from the last error
     var keysChanged = before.ApiKey != settings.ApiKey || before.NimApiKey != settings.NimApiKey
         || before.CloudflareAccountId != settings.CloudflareAccountId || before.CloudflareApiToken != settings.CloudflareApiToken
-        || before.GeminiApiKey != settings.GeminiApiKey || before.JinaApiKey != settings.JinaApiKey || before.MistralApiKey != settings.MistralApiKey;
+        || before.GeminiApiKey != settings.GeminiApiKey || before.JinaApiKey != settings.JinaApiKey || before.MistralApiKey != settings.MistralApiKey || before.VoyageApiKey != settings.VoyageApiKey;
     if (keysChanged) Providers.ResetRefused();
     if (before.CheckModel != settings.CheckModel || keysChanged || before.CheckEnabled != settings.CheckEnabled
         || !before.CheckModels.SequenceEqual(settings.CheckModels) || before.CheckModelsAuto != settings.CheckModelsAuto)
@@ -683,6 +683,8 @@ record SettingsView
     public string? JinaApiKey { get; init; }
     public bool HasMistralApiKey { get; init; }
     public string? MistralApiKey { get; init; }
+    public bool HasVoyageApiKey { get; init; }
+    public string? VoyageApiKey { get; init; }
     public string ClassificationModel { get; init; } = "";
     public string ChatModel { get; init; } = "";
     public string CustomEndpoint { get; init; } = "";
@@ -762,6 +764,7 @@ record SettingsView
         HasGeminiApiKey = !string.IsNullOrWhiteSpace(s.GeminiApiKey),
         HasJinaApiKey = !string.IsNullOrWhiteSpace(s.JinaApiKey),
         HasMistralApiKey = !string.IsNullOrWhiteSpace(s.MistralApiKey),
+        HasVoyageApiKey = !string.IsNullOrWhiteSpace(s.VoyageApiKey),
         ClassificationModel = s.ClassificationModel,
         ChatModel = s.ChatModel,
         CustomEndpoint = s.CustomEndpoint,
@@ -843,6 +846,7 @@ record SettingsView
         s.GeminiApiKey = Key(GeminiApiKey, s.GeminiApiKey);
         s.JinaApiKey = Key(JinaApiKey, s.JinaApiKey);
         s.MistralApiKey = Key(MistralApiKey, s.MistralApiKey);
+        s.VoyageApiKey = Key(VoyageApiKey, s.VoyageApiKey);
         if (CloudflareAccountId is not null) s.CloudflareAccountId = CloudflareAccountId.Trim();
         s.ClassificationModel = ClassificationModel.Trim();
         s.ChatModel = ChatModel.Trim();

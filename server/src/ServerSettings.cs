@@ -32,6 +32,7 @@ public sealed class ServerSettings
     public string GeminiApiKey { get; set; } = "";
     public string JinaApiKey { get; set; } = "";
     public string MistralApiKey { get; set; } = "";
+    public string VoyageApiKey { get; set; } = "";
     /// <summary>Some AI key is set: the provider's, or (with OpenRouter) an NVIDIA key for "nim:" models.</summary>
     [JsonIgnore] public bool HasAiKey => !string.IsNullOrWhiteSpace(ApiKey) || (AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(NimApiKey));
     public string ClassificationModel { get; set; } = "google/gemini-2.5-flash";

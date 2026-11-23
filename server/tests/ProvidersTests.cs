@@ -15,7 +15,7 @@ public class ProvidersTests
 {
     private static ServerSettings Keys() => new()
     {
-        ApiKey = "or", NimApiKey = "nv", CloudflareAccountId = "acc1", CloudflareApiToken = "cf", GeminiApiKey = "ge", JinaApiKey = "ji", MistralApiKey = "mi",
+        ApiKey = "or", NimApiKey = "nv", CloudflareAccountId = "acc1", CloudflareApiToken = "cf", GeminiApiKey = "ge", JinaApiKey = "ji", MistralApiKey = "mi", VoyageApiKey = "vo",
     };
 
     [Fact]
@@ -27,6 +27,8 @@ public class ProvidersTests
         Assert.Equal("https://api.jina.ai/v1/embeddings", Providers.EmbedUrl(s, "jina:jina-embeddings-v5-text-small"));
         Assert.Equal("https://api.mistral.ai/v1/embeddings", Providers.EmbedUrl(s, "mistral:mistral-embed"));
         Assert.Equal("https://openrouter.ai/api/v1/embeddings", Providers.EmbedUrl(s, "nvidia/nemotron-3.5-embed-8b:free"));
+        Assert.Equal("https://api.voyageai.com/v1/embeddings", Providers.EmbedUrl(s, "voyage:voyage-4-large"));
+        Assert.Equal("vo", Providers.Key(s, "voyage:voyage-4"));
         Assert.Equal(new[] { "cf", "ge", "ji", "mi", "nv", "or" },
             new[] { "cf:x", "gemini:x", "jina:x", "mistral:x", "nim:x", "x/y" }.Select(m => Providers.Key(s, m)));
         Assert.Equal("@cf/baai/bge-m3", Providers.ApiModel("cf:@cf/baai/bge-m3"));
@@ -46,6 +48,9 @@ public class ProvidersTests
         Assert.Equal("retrieval.query", jina.RootElement.GetProperty("task").GetString());
         using var plain = JsonDocument.Parse(Meaning.Body("jina:jina-embeddings-v5-text-small", "film", new() { "Heat" }, variant: 1));
         Assert.False(plain.RootElement.TryGetProperty("task", out _));
+        using var voyage = JsonDocument.Parse(Meaning.Body("voyage:voyage-4-large", "film", new() { "Heat" }));
+        Assert.Equal("document", voyage.RootElement.GetProperty("input_type").GetString());
+        Assert.True(voyage.RootElement.GetProperty("truncation").GetBoolean());
         using var cf = JsonDocument.Parse(Meaning.Body("cf:@cf/baai/bge-m3", "film", new() { "Heat" }));
         Assert.Equal("@cf/baai/bge-m3", cf.RootElement.GetProperty("model").GetString());
         Assert.Equal(2, cf.RootElement.EnumerateObject().Count());
@@ -98,14 +103,19 @@ public class ProvidersTests
             // no OpenRouter key at all: the other sources are enough
             (s.MeaningOn, s.AIProvider, s.ApiKey, s.NimApiKey, s.CloudflareAccountId, s.CloudflareApiToken, s.GeminiApiKey, s.MistralApiKey, s.EmbeddingModelsAuto) =
                 (true, AIProviderType.OpenRouter, "", "", "acc1", "cf-token", "gemini-key", "mistral-key", false);
-            s.EmbeddingModels = new List<string> { "cf:@cf/baai/bge-m3", "gemini:gemini-embedding-001", "mistral:mistral-embed" };
+            s.VoyageApiKey = "voyage-key";
+            s.EmbeddingModels = new List<string> { "cf:@cf/baai/bge-m3", "gemini:gemini-embedding-001", "mistral:mistral-embed", "voyage:voyage-4-lite" };
             Meaning.ResetPause(); Providers.ResetRefused();
             var fake = new ThreeSources();
             await new Meaning(new Factory(fake), database, NullLogger<Meaning>.Instance).RunAsync(default);
 
             await using var check = database.Open();
-            foreach (var model in s.EmbeddingModels)
+            foreach (var model in s.EmbeddingModels.Where(m => !m.StartsWith("voyage:")))
                 Assert.Equal(20, await check.Embeddings.CountAsync(e => e.Model == model));
+            // Voyage without a card allows 3 requests a minute: 3 requests of 5 films this round, the rest next round
+            Assert.Equal(15, await check.Embeddings.CountAsync(e => e.Model == "voyage:voyage-4-lite"));
+            Assert.Equal(new[] { 5, 5, 5 }, fake.Calls.Where(c => c.Host == "api.voyageai.com").Select(c => c.Texts));
+            Assert.All(fake.Calls.Where(c => c.Host == "api.voyageai.com"), c => Assert.Equal("voyage-key", c.Key));
             Assert.All(fake.Calls.Where(c => c.Host == "api.cloudflare.com"), c => Assert.Equal(("@cf/baai/bge-m3", "cf-token"), (c.Model, c.Key)));
             Assert.All(fake.Calls.Where(c => c.Host == "generativelanguage.googleapis.com"), c => Assert.Equal(("gemini-embedding-001", "gemini-key"), (c.Model, c.Key)));
             // Mistral gets smaller batches
@@ -116,6 +126,7 @@ public class ProvidersTests
         {
             (s.MeaningOn, s.AIProvider, s.ApiKey, s.NimApiKey, s.CloudflareAccountId, s.CloudflareApiToken, s.GeminiApiKey, s.MistralApiKey, var models, s.EmbeddingModelsAuto) = before;
             s.EmbeddingModels = models;
+            s.VoyageApiKey = "";
             Providers.ResetRefused();
             try { Directory.Delete(dir, true); } catch { }
         }

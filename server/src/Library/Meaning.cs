@@ -33,7 +33,7 @@ public sealed class Embedding
 public sealed class Meaning
 {
     public const string Key = "meaning", Title = "Related by meaning";
-    private const int RequestsPerRound = 8, MaxChars = 6000;
+    private const int MaxChars = 6000;
 
     private readonly IHttpClientFactory _http;
     private readonly Database _database;
@@ -265,7 +265,7 @@ public sealed class Meaning
 
     private async Task<(int Done, Outcome Outcome)> RunWithAsync(ServerSettings s, string model, List<(Guid Id, string Kind, string Text, string Hash)> todo, CancellationToken cancellationToken)
     {
-        var round = todo.Take(Providers.Batch(model) * RequestsPerRound).ToList();
+        var round = todo.Take(Providers.Batch(model) * Providers.PerRound(model)).ToList();
         var done = 0;
         foreach (var chunk in round.GroupBy(c => c.Kind).SelectMany(g => g.Chunk(Providers.Batch(model))))
         {
@@ -397,7 +397,7 @@ public sealed class Meaning
     }
 
     /// <summary>
-    /// What is sent to the embeddings endpoint. NVIDIA's and Jina's models want to know whether a
+    /// What is sent to the embeddings endpoint. NVIDIA's, Jina's and Voyage's models want to know whether a
     /// text is something searched for (a person's wishes) or something found (a film), and cut
     /// texts longer than their window instead of refusing them. The others get the plain request.
     /// </summary>
@@ -415,11 +415,13 @@ public sealed class Meaning
             };
         if (source == Providers.Jina && variant == 0)
             return JsonSerializer.Serialize(new { model = id, input = texts, task = query ? "retrieval.query" : "retrieval.passage", truncate = true });
+        if (source == Providers.Voyage && variant == 0)
+            return JsonSerializer.Serialize(new { model = id, input = texts, input_type = query ? "query" : "document", truncation = true });
         return JsonSerializer.Serialize(new { model = id, input = texts });
     }
 
     /// <summary>How many request shapes a model's source has (see Body), most fields first.</summary>
-    private static int Variants(string model) => Providers.Of(model) == Providers.Nvidia ? 3 : Providers.Of(model) == Providers.Jina ? 2 : 1;
+    private static int Variants(string model) => Providers.Of(model) == Providers.Nvidia ? 3 : Providers.Of(model) == Providers.Jina || Providers.Of(model) == Providers.Voyage ? 2 : 1;
 
     /// <summary>
     /// Not every model takes the extra fields: some need input_type, some refuse it or truncate.
