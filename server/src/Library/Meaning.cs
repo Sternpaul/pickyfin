@@ -42,6 +42,7 @@ public sealed class Meaning
     private static string _pauseReason = "";
     private static long _version;
     private Snapshot? _snapshot;
+    private string _snapshotKey = "";
     private readonly object _gate = new();
 
     public Meaning(IHttpClientFactory http, Database database, ILogger<Meaning> logger)
@@ -357,7 +358,8 @@ public sealed class Meaning
             if (result.Vectors is not null) { OpenRouterModels.Record(model, null); return (result.Vectors, Outcome.Done, null); }
             OpenRouterModels.Record(model, result.Error);
             OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
-            if (result.Code is 404 || (result.Code is 400 && (result.Error ?? "").Contains("model", StringComparison.OrdinalIgnoreCase)))
+            // 404 or 410 (end of life): the model is gone; no need to try again
+            if (result.Code is 404 or 410 || (result.Code is 400 && (result.Error ?? "").Contains("model", StringComparison.OrdinalIgnoreCase)))
                 return (null, Outcome.Gone, result.Error);
             // Any other 400: something in this request is refused; trying the same again won't help
             if (result.Code is 400) return (null, Outcome.Refused, result.Error);
@@ -468,7 +470,7 @@ public sealed class Meaning
         return v.Select(x => (float)(x / length)).ToArray();
     }
 
-    private static byte[] Pack(float[] v)
+    internal static byte[] Pack(float[] v)
     {
         var bytes = new byte[v.Length * 4];
         Buffer.BlockCopy(v, 0, bytes, 0, bytes.Length);
@@ -488,10 +490,13 @@ public sealed class Meaning
         var s = ServerSettings.Current;
         if (!On(s)) return Snapshot.Empty;
         var version = Interlocked.Read(ref _version);
-        lock (_gate)
-            if (_snapshot is { } cached && cached.Version == version) return cached;
-        // Models that dropped out of the order no longer count
+        // Models in use right now. Every model's stored vectors keep counting, also when it was
+        // switched off or retired by OpenRouter: films never change, so old vectors stay right.
+        // Only a person's wishes change, so a model that no longer updates them leaves them out.
         var order = Order(s).Where(m => !OpenRouterModels.IsGone(m)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var key = string.Join("|", order.OrderBy(m => m, StringComparer.OrdinalIgnoreCase));
+        lock (_gate)
+            if (_snapshot is { } cached && cached.Version == version && _snapshotKey == key) return cached;
         List<Embedding> rows;
         HashSet<Guid> visible, series;
         await using (var db = _database.Open())
@@ -503,14 +508,14 @@ public sealed class Meaning
         }
         rows = rows.Where(r => r.Kind != "film" || visible.Contains(r.ItemId)).ToList();
         var parts = rows.GroupBy(r => r.Model)
-            .Where(g => order.Count == 0 || order.Contains(g.Key))
             .Select(g => new Part(g.Key,
                 g.Where(r => r.Kind == "film").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)),
-                g.Where(r => r.Kind == "brief").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)),
-                series))
+                (order.Count == 0 || order.Contains(g.Key)) ? g.Where(r => r.Kind == "brief").ToDictionary(r => r.ItemId, r => Unpack(r.Vector)) : new(),
+                series) { Active = order.Count == 0 || order.Contains(g.Key) })
+            .Where(p => p.Films.Count > 0)
             .OrderByDescending(p => p.Films.Count).ToList();
         var snapshot = new Snapshot(version, parts);
-        lock (_gate) _snapshot = snapshot;
+        lock (_gate) { _snapshot = snapshot; _snapshotKey = key; }
         return snapshot;
     }
 
@@ -529,6 +534,8 @@ public sealed class Meaning
         /// <summary>Every title with a vector: films and series.</summary>
         public Dictionary<Guid, float[]> Films { get; }
         public Dictionary<Guid, float[]> Briefs { get; }
+        /// <summary>False when the model is switched off or retired: its films still count, nothing new is added.</summary>
+        public bool Active { get; init; } = true;
         private readonly Dictionary<Guid, float[]> _movies, _series;
         private readonly Dictionary<(Guid, bool, bool), Dictionary<Guid, double>> _ranks = new();
         private readonly Dictionary<string, Dictionary<Guid, (double X, double Y)>> _maps = new();

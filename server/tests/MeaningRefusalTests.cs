@@ -10,6 +10,7 @@ using Pickyfin.Server.Data.Models;
 using Pickyfin.Server.Library;
 using Xunit;
 
+[Collection("ServerSettings")]
 public class MeaningRefusalTests
 {
     [Fact]

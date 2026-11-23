@@ -256,7 +256,7 @@ public static class BrowserApi
                 On = Meaning.On(s),
                 Kind = wanted,
                 Model = part?.Model,
-                Models = snapshot.Parts.Select(x => new { Id = x.Model, Name = Meaning.Short(x.Model), Films = films.Count(f => x.Films.ContainsKey(f.ItemId)) }),
+                Models = snapshot.Parts.Select(x => new { Id = x.Model, Name = Meaning.Short(x.Model), Films = films.Count(f => x.Films.ContainsKey(f.ItemId)), x.Active }),
                 Matched = points.Count,
                 Films = films.Count,
                 Weight = s.MeaningWeight,

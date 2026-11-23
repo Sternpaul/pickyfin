@@ -185,7 +185,7 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         if (shown.Count > 0) lines.Add("Each model builds its own matrix:\n" + string.Join("\n", shown.Select(m =>
         {
             var films = byModel.FirstOrDefault(b => string.Equals(b.Model, m, StringComparison.OrdinalIgnoreCase))?.Films ?? 0;
-            var state = OpenRouterModels.IsGone(m) ? "gone from OpenRouter" : !order.Contains(m, StringComparer.OrdinalIgnoreCase) ? "not in the order, not used"
+            var state = OpenRouterModels.IsGone(m) ? "gone from OpenRouter, the films it matched still count" : !order.Contains(m, StringComparer.OrdinalIgnoreCase) ? "switched off, the films it matched still count"
                 : Meaning.RestingWhy(m) is { } why ? (why.Contains("tried again") ? why : $"{why}, tried again next round") : Meaning.Left.TryGetValue(m, out var left) && left > 0 ? $"{left:N0} to match" : "up to date";
             var refused = Meaning.RefusedCount(m);
             return $"  {Meaning.Short(m)}: {films:N0} film{(films == 1 ? "" : "s")} · {state}" + (refused > 0 ? $" · {refused} text{(refused == 1 ? "" : "s")} it refused, set aside (see the log)" : "");

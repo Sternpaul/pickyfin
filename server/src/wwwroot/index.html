@@ -1309,7 +1309,7 @@ async function loadMatrix() {
   const model = d.Model ? d.Model.replace(/^[^/]+\//, '').replace(':free', '') : null;
   // one map per model: switch between them
   const models = (d.Models || []).filter(m => m.Films > 0);
-  $('#matrix-facts').innerHTML = models.map(m => `<button type="button" class="${m.Id === d.Model ? 'on' : ''}" data-model="${esc(m.Id)}" title="${esc(m.Id)}">${esc(m.Name)} <span>${m.Films.toLocaleString()}</span></button>`).join('');
+  $('#matrix-facts').innerHTML = models.map(m => `<button type="button" class="${m.Id === d.Model ? 'on' : ''}" data-model="${esc(m.Id)}" title="${esc(m.Id)}${m.Active === false ? ' · switched off or retired: its films still count, no new ones are added' : ''}">${esc(m.Name)}${m.Active === false ? ' <i>(no new films)</i>' : ''} <span>${m.Films.toLocaleString()}</span></button>`).join('');
   $('#matrix-facts').classList.toggle('glass', models.length > 0);
   $$('#matrix-facts button').forEach(b => b.onclick = () => { if (b.dataset.model !== d.Model) { mx.model = b.dataset.model; loadMatrix(); } });
   $('#matrix-about').innerHTML = !d.On
