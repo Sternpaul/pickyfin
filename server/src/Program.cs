@@ -363,7 +363,9 @@ api.MapGet("/tv/ratings", async (HttpContext http, JellyfinClient jellyfin, Data
 admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
 {
     // NVIDIA's embedding models (free with an NVIDIA key), after OpenRouter's
-    var nim = (await Nim.GetAsync(http.CreateClient(), logs.CreateLogger("NVIDIA"), ct) ?? new List<string>()).Where(Nim.IsEmbedding)
+    await Nim.GetAsync(http.CreateClient(), logs.CreateLogger("NVIDIA"), ct);
+    await Nim.CheckServedAsync(http.CreateClient(), ServerSettings.Current, logs.CreateLogger("NVIDIA")).WaitAsync(ct);
+    var nim = Nim.Embedding
         .Select(id => new { Id = id, Name = Meaning.Short(id), Free = true, PerMillion = 0.0, Nim = true }).ToList();
     try
     {
@@ -387,11 +389,14 @@ admin.MapGet("/ai/models", async (IHttpClientFactory http, ILoggerFactory logs, 
 {
     var live = await OpenRouterModels.GetAsync(http.CreateClient(), logs.CreateLogger("OpenRouter"), ct);
     var nim = await Nim.GetAsync(http.CreateClient(), logs.CreateLogger("NVIDIA"), ct);
+    await Nim.CheckServedAsync(http.CreateClient(), ServerSettings.Current, logs.CreateLogger("NVIDIA")).WaitAsync(ct);
     return Results.Ok(new
     {
         Known = live is not null,
         // NVIDIA's models that can talk, "nim:owner/model"; null when the list couldn't be fetched
         Nim = nim is null ? null : Nim.Chat,
+        // listed by NVIDIA, but not served for this key
+        NimNotServed = Nim.NotServedList,
         Free = OpenRouterModels.Free,
         Offered = live?.Keys.ToList() ?? new List<string>(),
         Stats = OpenRouterModels.Stats,

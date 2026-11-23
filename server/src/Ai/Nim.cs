@@ -43,7 +43,62 @@ public static class Nim
     public static void Refuse(string model, string why) => Refused[ProviderName(model)] = (DateTime.UtcNow.AddHours(1), why);
     public static string? RefusedWhy(string model) =>
         Refused.TryGetValue(ProviderName(model), out var r) && r.Until > DateTime.UtcNow ? r.Why : null;
-    public static void ResetRefused() => Refused.Clear();
+    public static void ResetRefused() { Refused.Clear(); _checkedFor = ""; NotServed.Clear(); }
+
+    // ---- models NVIDIA lists but doesn't serve for this key (404 "Function …: Not found for account") ----
+    private static readonly ConcurrentDictionary<string, DateTime> NotServed = new(StringComparer.OrdinalIgnoreCase);
+    private static string _checkedFor = "";
+    private static DateTime _checkedAt;
+    private static Task? _check;
+    private static readonly object CheckGate = new();
+
+    public static bool IsNotServed(string model) => NotServed.ContainsKey(model);
+    public static List<string> NotServedList => NotServed.Keys.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).ToList();
+    public static bool SaysNotServed(int code, string? error) =>
+        code == 404 && error is not null && error.Contains("not found for account", StringComparison.OrdinalIgnoreCase);
+    public static void MarkNotServed(string model) => NotServed[model] = DateTime.UtcNow;
+
+    /// <summary>
+    /// Once per key and day: one tiny request to each listed model, so the lists only offer what
+    /// answers for this key. Only a clear "not found for account" counts; a slow or busy model stays.
+    /// </summary>
+    public static Task CheckServedAsync(HttpClient http, ServerSettings s, ILogger logger)
+    {
+        var key = s.NimApiKey.Trim();
+        if (key.Length == 0 || _models is null) return Task.CompletedTask;
+        lock (CheckGate)
+        {
+            var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];
+            if (_check is not null && _checkedFor == fingerprint && (!_check.IsCompleted || DateTime.UtcNow - _checkedAt < TimeSpan.FromDays(1))) return _check;
+            _checkedFor = fingerprint;
+            _checkedAt = DateTime.UtcNow;
+            var models = _models.Where(m => IsChat(m) || IsEmbedding(m)).ToList();
+            return _check = Task.Run(async () =>
+            {
+                var gone = 0;
+                await Task.WhenAll(models.Select(async model =>
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    var body = IsEmbedding(model)
+                        ? JsonSerializer.Serialize(new { model = ApiModel(model), input = new[] { "test" }, input_type = "passage" })
+                        : JsonSerializer.Serialize(new { model = ApiModel(model), messages = new[] { new { role = "user", content = "Reply with: ok" } }, max_tokens = 1 });
+                    using var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl + (IsEmbedding(model) ? "/embeddings" : "/chat/completions"))
+                    { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+                    try
+                    {
+                        using var response = await http.SendAsync(request, timeout.Token);
+                        var text = await response.Content.ReadAsStringAsync(timeout.Token);
+                        if (SaysNotServed((int)response.StatusCode, text)) { MarkNotServed(model); Interlocked.Increment(ref gone); }
+                        else NotServed.TryRemove(model, out _);
+                    }
+                    catch (Exception) { /* slow or unreachable: not a sign it isn't served */ }
+                }));
+                logger.LogInformation("NVIDIA: {Served} of {Count} listed models answer for this key; not served: {Missing}",
+                    models.Count - gone, models.Count, gone == 0 ? "none" : string.Join(", ", NotServedList.Select(ApiModel)));
+            });
+        }
+    }
 
     // ---- the models NVIDIA hosts (public list, no key needed), cached for six hours ----
     private static readonly SemaphoreSlim Gate = new(1, 1);
@@ -64,8 +119,8 @@ public static class Nim
     }
 
     public static IReadOnlyList<string>? Models => _models;
-    public static List<string> Chat => (_models ?? new()).Where(IsChat).ToList();
-    public static List<string> Embedding => (_models ?? new()).Where(IsEmbedding).ToList();
+    public static List<string> Chat => (_models ?? new()).Where(m => IsChat(m) && !IsNotServed(m)).ToList();
+    public static List<string> Embedding => (_models ?? new()).Where(m => IsEmbedding(m) && !IsNotServed(m)).ToList();
 
     /// <summary>Null when the list couldn't be fetched yet; then nothing is filtered.</summary>
     public static async Task<IReadOnlyList<string>?> GetAsync(HttpClient http, ILogger logger, CancellationToken ct)

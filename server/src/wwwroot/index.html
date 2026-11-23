@@ -1058,6 +1058,7 @@ function modelStat(id, key) {
   if (settings && !(nim ? settings.HasNimApiKey : settings.HasApiKey)) return { text: `Needs ${nim ? 'an NVIDIA' : 'an OpenRouter'} key (top of the AI page); skipped`, bad: true };
   const offered = key === 'embed' ? (embeddingModels ? embeddingModels.some(m => same(m.Id)) : true)
     : nim ? !(modelInfo?.Nim && !modelInfo.Nim.some(same)) : !(modelInfo?.Known && !modelInfo.Offered.includes(id));
+  if (nim && (modelInfo?.NimNotServed || []).some(same)) return { text: 'NVIDIA lists it but doesn\'t serve it for your key; skipped', bad: true };
   if (!offered) return { text: `Not offered by ${nim ? 'NVIDIA' : 'OpenRouter'} right now; skipped`, bad: true };
   const rank = freeFor(key).indexOf(id);
   const pop = rank >= 0 ? `#${rank + 1} most used free ${key === 'embed' ? 'embedding ' : ''}model this week · ` : '';

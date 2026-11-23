@@ -372,7 +372,10 @@ public sealed class Meaning
             OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
             // 404 or 410 (end of life): the model is gone; no need to try again
             if (result.Code is 404 or 410 || (result.Code is 400 && LooksGone(result.Error)))
+            {
+                if (Nim.Is(model) && Nim.SaysNotServed(result.Code, result.Error)) Nim.MarkNotServed(model);
                 return (null, Outcome.Gone, result.Error);
+            }
             // Any other 400 (or 422): something in this request is refused; trying the same again won't help
             if (result.Code is 400 or 422) return (null, Outcome.Refused, result.Error);
             if (result.Code is 401 or 402 or 403)

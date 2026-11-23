@@ -191,6 +191,7 @@ namespace Pickyfin.Server.Ai
 
                     if (status is 401 or 402 or 403)
                         return new OpenRouterCallResult { AbortChain = true, Error = $"the API key was refused (HTTP {status}): {errorBody}" };
+                    if (Nim.Is(model) && Nim.SaysNotServed(status, errorBody)) Nim.MarkNotServed(model);
                     if (status is 404 or 410)
                         return new OpenRouterCallResult { Gone = true, Error = $"not offered anymore (HTTP {status})" };
                     if (status == 400)
