@@ -186,7 +186,8 @@ public sealed class Meaning
             if (outcome == Outcome.Gone)
             {
                 OpenRouterModels.MarkGone(model);
-                _logger.LogWarning("Meaning: {Model} isn't available any more; the other models carry on", model);
+                _logger.LogWarning("Meaning: {Model} isn't available any more ({Error}); the other models carry on",
+                    model, OpenRouterModels.Stats.TryGetValue(model, out var st) ? st.LastError : "no details");
             }
             if (_pausedUntil > DateTime.UtcNow) break; // the key itself was refused
         }
@@ -370,10 +371,10 @@ public sealed class Meaning
             OpenRouterModels.Record(model, result.Error);
             OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
             // 404 or 410 (end of life): the model is gone; no need to try again
-            if (result.Code is 404 or 410 || (result.Code is 400 && (result.Error ?? "").Contains("model", StringComparison.OrdinalIgnoreCase)))
+            if (result.Code is 404 or 410 || (result.Code is 400 && LooksGone(result.Error)))
                 return (null, Outcome.Gone, result.Error);
-            // Any other 400: something in this request is refused; trying the same again won't help
-            if (result.Code is 400) return (null, Outcome.Refused, result.Error);
+            // Any other 400 (or 422): something in this request is refused; trying the same again won't help
+            if (result.Code is 400 or 422) return (null, Outcome.Refused, result.Error);
             if (result.Code is 401 or 402 or 403)
             {
                 // that provider's models wait an hour; the other provider's carry on
@@ -397,18 +398,57 @@ public sealed class Meaning
     /// something searched for (a person's wishes) or something found (a film), and cut texts
     /// longer than their window instead of refusing them.
     /// </summary>
-    public static string Body(string model, string kind, List<string> texts) => Nim.Is(model)
-        ? JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts, input_type = kind == "brief" ? "query" : "passage", truncate = "END", encoding_format = "float" })
-        : JsonSerializer.Serialize(new { model, input = texts });
+    public static string Body(string model, string kind, List<string> texts, int variant = 0) => !Nim.Is(model)
+        ? JsonSerializer.Serialize(new { model, input = texts })
+        : variant switch
+        {
+            0 => JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts, input_type = kind == "brief" ? "query" : "passage", truncate = "END", encoding_format = "float" }),
+            1 => JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts, input_type = kind == "brief" ? "query" : "passage" }),
+            _ => JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts }),
+        };
+
+    /// <summary>
+    /// NVIDIA's models don't all take the same fields: some need input_type, some refuse it or
+    /// truncate. A refused request is sent again with fewer fields; what worked is kept per model.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> NimVariant = new(StringComparer.OrdinalIgnoreCase);
+    private const int NimVariants = 3;
+
+    /// <summary>Whether an error says the model itself doesn't exist, not that the request was wrong.</summary>
+    public static bool LooksGone(string? error) =>
+        error is not null && System.Text.RegularExpressions.Regex.IsMatch(error,
+            @"not a valid model|model .*(not found|does not exist|unknown|no longer)|(unknown|invalid|no such) model|no endpoints|end of life|deprecated|function .*not found",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>One request to the model's embeddings endpoint (OpenRouter or NVIDIA).</summary>
     private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedAsync(ServerSettings s, string model, string kind, List<string> texts, CancellationToken cancellationToken)
+    {
+        if (!Nim.Is(model)) return await EmbedOnceAsync(s, model, kind, texts, 0, cancellationToken);
+        var known = NimVariant.TryGetValue(model, out var v) ? v : 0;
+        var first = await EmbedOnceAsync(s, model, kind, texts, known, cancellationToken);
+        if (first.Vectors is not null || first.Code is not (400 or 422) || known > 0) return first;
+        // refused with every field: try with fewer, and remember what worked
+        for (var variant = 1; variant < NimVariants; variant++)
+        {
+            var next = await EmbedOnceAsync(s, model, kind, texts, variant, cancellationToken);
+            if (next.Vectors is not null)
+            {
+                NimVariant[model] = variant;
+                _logger.LogInformation("Meaning: {Model} refused some request fields ({Error}); it gets fewer from now on", model, first.Error);
+                return next;
+            }
+            if (next.Code is not (400 or 422)) return next;
+        }
+        return first;
+    }
+
+    private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedOnceAsync(ServerSettings s, string model, string kind, List<string> texts, int variant, CancellationToken cancellationToken)
     {
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(2);
         using var request = new HttpRequestMessage(HttpMethod.Post, Nim.EmbedUrl(model))
         {
-            Content = new StringContent(Body(model, kind, texts), Encoding.UTF8, "application/json"),
+            Content = new StringContent(Body(model, kind, texts, variant), Encoding.UTF8, "application/json"),
         };
         Nim.Authorize(request, s, model);
         try
