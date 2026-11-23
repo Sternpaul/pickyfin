@@ -6,7 +6,7 @@ namespace Pickyfin.Server.Ai;
 
 /// <summary>
 /// Where a model is asked. Model orders can mix sources: a model is written "prefix:model"
-/// ("nim:nvidia/…", "cf:@cf/baai/bge-m3", "gemini:gemini-embedding-001", "jina:…", "mistral:…");
+/// ("nim:nvidia/…", "cf:@cf/baai/bge-m3", "gemini:gemini-embedding-001", "jina:…", "voyage:…");
 /// a model without a known prefix goes to OpenRouter. Every source speaks the OpenAI format.
 /// </summary>
 public static class Providers
@@ -24,15 +24,13 @@ public static class Providers
     });
     public static readonly Source Gemini = new("gemini:", "Gemini", "https://aistudio.google.com/apikey", 16, new[] { "gemini-embedding-001", "gemini-embedding-2" });
     public static readonly Source Jina = new("jina:", "Jina", "https://jina.ai/api-dashboard", 16, new[] { "jina-embeddings-v5-text-small", "jina-embeddings-v5-text-nano" });
-    // Mistral counts tokens per request, not per text: smaller batches
-    public static readonly Source Mistral = new("mistral:", "Mistral", "https://console.mistral.ai/api-keys", 8, new[] { "mistral-embed" });
 
     // Without a card on file Voyage allows 3 requests and 10,000 tokens a minute: few films per request, three requests a round
     public static readonly Source Voyage = new("voyage:", "Voyage", "https://dashboard.voyageai.com/organization/api-keys", 5, new[] { "voyage-4-large", "voyage-4", "voyage-4-lite" }, PerRound: 3);
 
-    public static readonly Source[] All = { Nvidia, Cloudflare, Gemini, Jina, Mistral, Voyage };
+    public static readonly Source[] All = { Nvidia, Cloudflare, Gemini, Jina, Voyage };
     /// <summary>The sources that only make vectors here (NVIDIA also talks; its list comes from NVIDIA).</summary>
-    public static readonly Source[] EmbeddingOnly = { Cloudflare, Gemini, Jina, Mistral, Voyage };
+    public static readonly Source[] EmbeddingOnly = { Cloudflare, Gemini, Jina, Voyage };
 
     public static Source? Of(string model) => All.FirstOrDefault(p => model.StartsWith(p.Prefix, StringComparison.OrdinalIgnoreCase));
     public static bool IsOpenRouter(string model) => Of(model) is null;
@@ -42,13 +40,22 @@ public static class Providers
     public static int Batch(string model) => Of(model)?.Batch ?? 16;
     public static int PerRound(string model) => Of(model)?.PerRound ?? 8;
 
+    /// <summary>
+    /// Whether a model may be asked. With "Free only" on, OpenRouter's models must be its free
+    /// ones (":free"); the other sources are free until their allowance ends, which FreeCaps
+    /// watches. A self-hosted endpoint is the admin's own and always allowed.
+    /// </summary>
+    public static bool IsFree(ServerSettings s, string model) =>
+        !s.FreeOnly || !IsOpenRouter(model) || !string.IsNullOrWhiteSpace(s.CustomEndpoint)
+        || model.EndsWith(":free", StringComparison.OrdinalIgnoreCase) || model.Equals("openrouter/free", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The key for this model's source; empty when none is set (Cloudflare also needs its account id).</summary>
     public static string Key(ServerSettings s, string model)
     {
         var p = Of(model);
         if (p == Cloudflare && string.IsNullOrWhiteSpace(s.CloudflareAccountId)) return "";
         return (p == Nvidia ? s.NimApiKey : p == Cloudflare ? s.CloudflareApiToken : p == Gemini ? s.GeminiApiKey
-            : p == Jina ? s.JinaApiKey : p == Mistral ? s.MistralApiKey : p == Voyage ? s.VoyageApiKey : s.ApiKey).Trim();
+            : p == Jina ? s.JinaApiKey : p == Voyage ? s.VoyageApiKey : s.ApiKey).Trim();
     }
     public static bool HasKey(ServerSettings s, string model) => Key(s, model).Length > 0;
     public static bool HasKey(ServerSettings s, Source source) => HasKey(s, source.Prefix + "x");
@@ -64,7 +71,6 @@ public static class Providers
         if (p == Cloudflare) return $"https://api.cloudflare.com/client/v4/accounts/{Uri.EscapeDataString(s.CloudflareAccountId.Trim())}/ai/v1";
         if (p == Gemini) return "https://generativelanguage.googleapis.com/v1beta/openai";
         if (p == Jina) return "https://api.jina.ai/v1";
-        if (p == Mistral) return "https://api.mistral.ai/v1";
         if (p == Voyage) return "https://api.voyageai.com/v1";
         return "https://openrouter.ai/api/v1";
     }
@@ -105,8 +111,7 @@ public static class Providers
             var key = Key(s, source.Prefix + "x");
             using var request = new HttpRequestMessage(HttpMethod.Get,
                 source == Cloudflare ? $"https://api.cloudflare.com/client/v4/accounts/{Uri.EscapeDataString(s.CloudflareAccountId.Trim())}/ai/models/search?task=Text%20Embeddings&per_page=100"
-                : source == Gemini ? "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"
-                : "https://api.mistral.ai/v1/models");
+                : "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000");
             if (source == Gemini) request.Headers.Add("x-goog-api-key", key);
             else request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             using var response = await http.SendAsync(request, timeout.Token);
@@ -139,9 +144,7 @@ public static class Providers
             ids = root.GetProperty("models").EnumerateArray()
                 .Where(m => m.TryGetProperty("supportedGenerationMethods", out var g) && g.EnumerateArray().Any(x => x.GetString() is "embedContent" or "batchEmbedContents"))
                 .Select(m => m.GetProperty("name").GetString()?.Replace("models/", ""));
-        else
-            ids = root.GetProperty("data").EnumerateArray().Select(m => m.TryGetProperty("id", out var n) ? n.GetString() : null)
-                .Where(id => id is not null && id.Contains("embed", StringComparison.OrdinalIgnoreCase));
+        else ids = Array.Empty<string>();
         return ids.Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => source.Prefix + id)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToList();
     }

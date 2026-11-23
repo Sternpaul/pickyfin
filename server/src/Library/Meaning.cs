@@ -50,6 +50,8 @@ public sealed class Meaning
         _http = http;
         _database = database;
         _logger = logger;
+        CloudflareBudget.Open(database.Folder);
+        FreeCaps.Open(database.Folder);
     }
 
     public static void ResetPause()
@@ -156,7 +158,9 @@ public sealed class Meaning
         if (!On(s)) { Jobs.Idle(Key, Title, s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter"); return; }
         if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
         await RefreshFreeAsync(cancellationToken);
-        var models = Order(s).Where(m => !OpenRouterModels.IsGone(m) && Providers.HasKey(s, m)).ToList();
+        foreach (var paid in Order(s).Where(m => !Providers.IsFree(s, m)))
+            if (WarnedPaid.TryAdd(paid, true)) _logger.LogInformation("Meaning: {Model} isn't a free model; skipped while \"Free only\" is on", paid);
+        var models = Order(s).Where(m => !OpenRouterModels.IsGone(m) && Providers.HasKey(s, m) && Providers.IsFree(s, m)).ToList();
         if (models.Count == 0 && Order(s).Any(m => !Providers.HasKey(s, m)))
         {
             Jobs.Idle(Key, Title, $"Off: the order needs a key for {string.Join(" or ", Order(s).Where(m => !Providers.HasKey(s, m)).Select(Providers.Name).Distinct())}", error: true);
@@ -200,6 +204,16 @@ public sealed class Meaning
             left > 0 ? $"{left:N0} to match (new films, or descriptions that changed) · {working} of {models.Count} models working right now" : $"Up to date · {models.Count} models",
             left > 0 ? DateTime.UtcNow.AddMinutes(5) : null, error: working == 0);
     }
+
+    /// <summary>A model whose free allowance is used up waits until it comes back (or a new key is set).</summary>
+    private void RestForToday(string model, string why)
+    {
+        var until = FreeCaps.RetryAt(model);
+        lock (Resting) Resting[model] = (until, $"{why}; goes on at {until.ToLocalTime():HH:mm}");
+        _logger.LogInformation("Meaning: {Model} waits until {Time}: {Why}", model, until.ToLocalTime().ToString("HH:mm"), why);
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> WarnedPaid = new(StringComparer.OrdinalIgnoreCase);
 
     private static bool IsResting(string model)
     {
@@ -270,7 +284,13 @@ public sealed class Meaning
         foreach (var chunk in round.GroupBy(c => c.Kind).SelectMany(g => g.Chunk(Providers.Batch(model))))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var (vectors, outcome, error) = await EmbedWithTriesAsync(s, model, chunk[0].Kind, chunk.Select(c => Sendable(c.Text)).ToList(), cancellationToken);
+            var texts = chunk.Select(c => Sendable(c.Text)).ToList();
+            if (s.FreeOnly && FreeCaps.Blocked(s, model, texts) is { } capped)
+            {
+                RestForToday(model, capped);
+                return (done, Outcome.Paused);
+            }
+            var (vectors, outcome, error) = await EmbedWithTriesAsync(s, model, chunk[0].Kind, texts, cancellationToken);
             if (outcome == Outcome.Gone) return (done, Outcome.Gone);
             var items = chunk.ToList();
             if (outcome == Outcome.Refused)
@@ -370,6 +390,11 @@ public sealed class Meaning
             if (result.Vectors is not null) { OpenRouterModels.Record(model, null); return (result.Vectors, Outcome.Done, null); }
             OpenRouterModels.Record(model, result.Error);
             OpenRouterModels.StepFailures.AddOrUpdate($"meaning|{model}", 1, (_, n) => n + 1);
+            if (Providers.Of(model) == Providers.Cloudflare && (result.Error ?? "").Contains("free allocation", StringComparison.OrdinalIgnoreCase))
+            {
+                RestForToday(model, "Cloudflare says today's free neurons are used up");
+                return (null, Outcome.Paused, result.Error);
+            }
             // 404 or 410 (end of life): the model is gone; no need to try again
             if (result.Code is 404 or 410 || (result.Code is 400 && LooksGone(result.Error)))
             {
@@ -459,6 +484,7 @@ public sealed class Meaning
 
     private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedOnceAsync(ServerSettings s, string model, string kind, List<string> texts, int variant, CancellationToken cancellationToken)
     {
+        if (s.FreeOnly && FreeCaps.Blocked(s, model, texts) is { } capped) return (null, 429, $"HTTP 429: {capped}");
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(2);
         using var request = new HttpRequestMessage(HttpMethod.Post, Providers.EmbedUrl(s, model))
@@ -479,6 +505,7 @@ public sealed class Meaning
             var vectors = Parse(body, texts.Count);
             // OpenRouter sometimes answers 200 with an error inside
             if (vectors is null) return (null, ErrorCode(body) ?? 0, $"odd answer: {(body.Length > 200 ? body[..200] : body)}");
+            FreeCaps.Spend(s, model, texts, UsedTokens(body));
             return (vectors, code, null);
         }
         catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -505,6 +532,17 @@ public sealed class Meaning
             }
             if (result.Any(v => v is null || v.Length == 0) || result.Select(v => v.Length).Distinct().Count() != 1) return null;
             return result.ToList();
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>The tokens an answer says it used ("usage": {"prompt_tokens": …}), when it says.</summary>
+    public static int? UsedTokens(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("usage", out var u) && (u.TryGetProperty("prompt_tokens", out var t) || u.TryGetProperty("total_tokens", out t)) && t.TryGetInt32(out var n) && n > 0 ? n : null;
         }
         catch (Exception) { return null; }
     }

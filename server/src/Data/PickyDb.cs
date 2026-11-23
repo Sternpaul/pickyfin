@@ -133,6 +133,8 @@ public sealed class PickyDb : DbContext
 public sealed class Database
 {
     private readonly string _path;
+    /// <summary>The data folder the database lives in.</summary>
+    public string Folder => Path.GetDirectoryName(_path)!;
 
     public Database(string dataDirectory)
     {

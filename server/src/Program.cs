@@ -387,6 +387,9 @@ admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, ILoggerFact
     catch (Exception error) { return Results.Problem("Couldn't reach OpenRouter: " + error.Message, statusCode: 502); }
 });
 
+// How much of each source's free allowance Pickyfin has used, for the AI page
+admin.MapGet("/ai/free-usage", () => Results.Ok(FreeCaps.Report(ServerSettings.Current, Meaning.Order(ServerSettings.Current))));
+
 // Models OpenRouter offers right now, and how each did since the server started, for the model order
 admin.MapGet("/ai/models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
 {
@@ -526,9 +529,9 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
         await db.Users.Where(u => u.Enabled).ExecuteUpdateAsync(u => u.SetProperty(x => x.RefreshRequested, true), ct);
     }
     // A new model or key deserves a try right away, not after the pause from the last error
-    var keysChanged = before.ApiKey != settings.ApiKey || before.NimApiKey != settings.NimApiKey
+    var keysChanged = before.FreeOnly != settings.FreeOnly || before.ApiKey != settings.ApiKey || before.NimApiKey != settings.NimApiKey
         || before.CloudflareAccountId != settings.CloudflareAccountId || before.CloudflareApiToken != settings.CloudflareApiToken
-        || before.GeminiApiKey != settings.GeminiApiKey || before.JinaApiKey != settings.JinaApiKey || before.MistralApiKey != settings.MistralApiKey || before.VoyageApiKey != settings.VoyageApiKey;
+        || before.GeminiApiKey != settings.GeminiApiKey || before.JinaApiKey != settings.JinaApiKey || before.VoyageApiKey != settings.VoyageApiKey;
     if (keysChanged) Providers.ResetRefused();
     if (before.CheckModel != settings.CheckModel || keysChanged || before.CheckEnabled != settings.CheckEnabled
         || !before.CheckModels.SequenceEqual(settings.CheckModels) || before.CheckModelsAuto != settings.CheckModelsAuto)
@@ -681,8 +684,7 @@ record SettingsView
     public string? GeminiApiKey { get; init; }
     public bool HasJinaApiKey { get; init; }
     public string? JinaApiKey { get; init; }
-    public bool HasMistralApiKey { get; init; }
-    public string? MistralApiKey { get; init; }
+    public bool? FreeOnly { get; init; }
     public bool HasVoyageApiKey { get; init; }
     public string? VoyageApiKey { get; init; }
     public string ClassificationModel { get; init; } = "";
@@ -763,8 +765,8 @@ record SettingsView
         HasCloudflareApiToken = !string.IsNullOrWhiteSpace(s.CloudflareApiToken),
         HasGeminiApiKey = !string.IsNullOrWhiteSpace(s.GeminiApiKey),
         HasJinaApiKey = !string.IsNullOrWhiteSpace(s.JinaApiKey),
-        HasMistralApiKey = !string.IsNullOrWhiteSpace(s.MistralApiKey),
         HasVoyageApiKey = !string.IsNullOrWhiteSpace(s.VoyageApiKey),
+        FreeOnly = s.FreeOnly,
         ClassificationModel = s.ClassificationModel,
         ChatModel = s.ChatModel,
         CustomEndpoint = s.CustomEndpoint,
@@ -845,8 +847,8 @@ record SettingsView
         s.CloudflareApiToken = Key(CloudflareApiToken, s.CloudflareApiToken);
         s.GeminiApiKey = Key(GeminiApiKey, s.GeminiApiKey);
         s.JinaApiKey = Key(JinaApiKey, s.JinaApiKey);
-        s.MistralApiKey = Key(MistralApiKey, s.MistralApiKey);
         s.VoyageApiKey = Key(VoyageApiKey, s.VoyageApiKey);
+        if (FreeOnly is { } freeOnly) s.FreeOnly = freeOnly;
         if (CloudflareAccountId is not null) s.CloudflareAccountId = CloudflareAccountId.Trim();
         s.ClassificationModel = ClassificationModel.Trim();
         s.ChatModel = ChatModel.Trim();

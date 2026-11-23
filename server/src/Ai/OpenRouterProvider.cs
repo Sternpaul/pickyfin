@@ -63,6 +63,7 @@ namespace Pickyfin.Server.Ai
 
 
         public const int TriesPerModel = 3;
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> WarnedPaid = new(StringComparer.OrdinalIgnoreCase);
 
         // Goes down the model order set on the AI page. Each model gets three tries, then the next one:
         // - 429 (busy), 5xx, network trouble, an unreadable answer: wait a little, try again
@@ -80,6 +81,10 @@ namespace Pickyfin.Server.Ai
             var nim = models.Any(Nim.Is) ? await Nim.GetAsync(_httpClient, _logger, cancellationToken) : null;
             // Models of a provider with no key are left out quietly: it's the admin's choice which keys to set
             var keyed = models.Where(m => Providers.HasKey(Config, m)).ToList();
+            // "Free only": paid models are left out, said once per model
+            foreach (var paid in keyed.Where(m => !Providers.IsFree(Config, m)))
+                if (WarnedPaid.TryAdd(paid, true)) _logger.LogInformation("{Provider}: '{Model}' isn't a free model; skipped while \"Free only\" is on.", Providers.Name(paid), paid);
+            keyed = keyed.Where(m => Providers.IsFree(Config, m)).ToList();
             var usable = keyed.Where(m => (Nim.Is(m) ? nim is null || nim.Contains(m, StringComparer.OrdinalIgnoreCase) : !Providers.IsOpenRouter(m) || live is null || live.ContainsKey(m))
                 && !OpenRouterModels.IsGone(m) && Providers.RefusedWhy(m) is null).ToList();
             foreach (var skipped in keyed.Except(usable))
@@ -87,7 +92,7 @@ namespace Pickyfin.Server.Ai
                     Providers.RefusedWhy(skipped) is { } why ? $"waits: {why}" : "isn't offered right now. Take it out of the model order on the AI page");
             if (usable.Count == 0)
                 throw new InvalidOperationException(keyed.Count == 0
-                    ? "No model in your order has a key: add the missing OpenRouter or NVIDIA key, or change the order on the AI page."
+                    ? "No free model in your order has a key: add the missing OpenRouter or NVIDIA key, or change the order on the AI page (\"Free only\" skips paid models)."
                     : models.Select(Providers.RefusedWhy).FirstOrDefault(w => w is not null) is { } refused ? $"Stopped: {refused}"
                     : "None of the models in your order is offered right now; change the order on the AI page.");
 

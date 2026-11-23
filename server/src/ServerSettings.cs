@@ -26,12 +26,16 @@ public sealed class ServerSettings
     public string ApiKey { get; set; } = "";
     /// <summary>NVIDIA NIM (build.nvidia.com): its models can sit in the same orders as OpenRouter's, written "nim:owner/model".</summary>
     public string NimApiKey { get; set; } = "";
-    /// <summary>More sources of embedding models, each optional: Cloudflare Workers AI (account id + token), Gemini, Jina, Mistral.</summary>
+    /// <summary>
+    /// Only free use, never a cent (the default): OpenRouter's paid models are skipped and every
+    /// source stops before its free allowance ends (see Ai/FreeCaps). Off: anything goes.
+    /// </summary>
+    public bool FreeOnly { get; set; } = true;
+    /// <summary>More sources of embedding models, each optional: Cloudflare Workers AI (account id + token), Gemini, Jina, Voyage.</summary>
     public string CloudflareAccountId { get; set; } = "";
     public string CloudflareApiToken { get; set; } = "";
     public string GeminiApiKey { get; set; } = "";
     public string JinaApiKey { get; set; } = "";
-    public string MistralApiKey { get; set; } = "";
     public string VoyageApiKey { get; set; } = "";
     /// <summary>Some AI key is set: the provider's, or (with OpenRouter) an NVIDIA key for "nim:" models.</summary>
     [JsonIgnore] public bool HasAiKey => !string.IsNullOrWhiteSpace(ApiKey) || (AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(NimApiKey));
@@ -189,6 +193,8 @@ public sealed class ServerSettings
                 ? JsonSerializer.Deserialize<ServerSettings>(File.ReadAllText(_path), JsonOptions) ?? new()
                 : new ServerSettings();
             settings.ApplyEnvironment();
+            // Mistral was a source for a day: it isn't free, so it's gone, and so are its models
+            settings.EmbeddingModels.RemoveAll(m => m.StartsWith("mistral:", StringComparison.OrdinalIgnoreCase));
             // Meaning was held back before (capped, flat at the top) and 50% was the default: an
             // untouched 50 becomes the new default 70 once. Any other value is the admin's own choice.
             if (Upgrade(settings) && File.Exists(_path))

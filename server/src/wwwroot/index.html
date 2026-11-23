@@ -106,6 +106,8 @@
   .src-head { display: flex; align-items: center; gap: 8px; }
   .src-head a { margin-left: auto; font-size: 13px; }
   .source .note { margin: 4px 0 8px; }
+  .source .usage { color: var(--text); font-variant-numeric: tabular-nums; }
+  .source .usage:empty { display: none; }
   .source .inline input { flex: 1; min-width: 0; }
   .chain .prov { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--muted); vertical-align: 1px; }
   .chain .acts .btn, .chain ul .btn { height: 28px; padding: 0 9px; font-size: 13px; }
@@ -617,6 +619,10 @@
       </div></div>
       <form id="ai-form" class="settings">
         <div class="setting">
+          <div><h3>Free only</h3><p class="why">Never a cent: only OpenRouter's free models are used, and every other source stops before its free allowance ends (each shows what it has used). Turn it off to allow paid models and use past the free limits.</p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="FreeOnly"><span></span></label></div>
+        </div>
+        <div class="setting">
           <div><h3>Provider</h3><p class="why">Any of these works. OpenRouter reaches most models with a single key.</p></div>
           <div class="control"><div><div class="seg" id="provider-seg"><button type="button" data-v="OpenRouter">OpenRouter</button><button type="button" data-v="GoogleAI">Google</button><button type="button" data-v="OpenAI">OpenAI</button><button type="button" data-v="Anthropic">Anthropic</button></div></div></div>
         </div>
@@ -772,22 +778,23 @@
           <div class="control"><label class="switch"><input type="checkbox" id="MeaningOn"><span></span></label></div>
         </div>
         <div class="setting">
-          <div><h3>More free sources</h3><p class="why">Each is optional. With a key, its embedding models appear in the model order below, next to OpenRouter's and NVIDIA's (NVIDIA's key is on the AI page). Keys are stored on this server only; leave a field empty to keep the saved key.</p></div>
+          <div><h3>More sources</h3><p class="why">Each is optional. With a key, its embedding models appear in the model order below, next to OpenRouter's and NVIDIA's (NVIDIA's key is on the AI page). Each note says when it stays free. Keys are stored on this server only; leave a field empty to keep the saved key.</p></div>
           <div class="control"><div class="sources">
             <div class="source"><div class="src-head"><b>Cloudflare</b> <span class="state" id="cf-state"></span><a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">get a token</a></div>
-              <p class="note">10,000 free "neurons" a day, about 9 million tokens with BGE-M3. Doesn't keep what is sent. The token needs the "Workers AI" permission; the account ID is on the Workers AI page.</p>
+              <p class="note">Free up to 10,000 "neurons" a day for the whole account (about 9 million tokens with BGE-M3); on the Workers Paid plan, more is billed. Pickyfin stops at 9,000 a day and goes on after 00:00 UTC, so it stays free either way. Doesn't keep what is sent. The token needs the "Workers AI" permission; the account ID is on the Workers AI page.</p>
+              <p class="note usage" data-usage="cf:"></p>
               <div class="inline"><input type="text" id="CloudflareAccountId" placeholder="Account ID" autocomplete="off"><input type="password" id="CloudflareApiToken" placeholder="API token" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="CloudflareApiToken">Remove</button></div></div>
             <div class="source"><div class="src-head"><b>Gemini</b> <span class="state" id="gemini-state"></span><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note">Google's embedding models, free within about 1,000 requests a day. Outside the EU, UK and Switzerland, Google may use free-tier text to improve its products.</p>
+              <p class="note">Free only while the key's Google project has no billing account: AI Studio's Projects page should say "Free" under Billing Tier. With billing linked, every request is charged. Free use allows about 1,000 requests a day. Outside the EU, UK and Switzerland, Google may use free-tier text to improve its products.</p>
+              <p class="note usage" data-usage="gemini:"></p>
               <div class="inline"><input type="password" id="GeminiApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="GeminiApiKey">Remove</button></div></div>
             <div class="source"><div class="src-head"><b>Jina</b> <span class="state" id="jina-state"></span><a href="https://jina.ai/api-dashboard" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note">10 million free tokens once, then paid. Its free models are for non-commercial use.</p>
+              <p class="note">10 million free tokens once (a few passes over a library); after that it stops unless you buy more. Its free models are for non-commercial use.</p>
+              <p class="note usage" data-usage="jina:"></p>
               <div class="inline"><input type="password" id="JinaApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="JinaApiKey">Remove</button></div></div>
-            <div class="source"><div class="src-head"><b>Mistral</b> <span class="state" id="mistral-state"></span><a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note">Free within a monthly allowance shown in Mistral's console.</p>
-              <div class="inline"><input type="password" id="MistralApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="MistralApiKey">Remove</button></div></div>
             <div class="source"><div class="src-head"><b>Voyage</b> <span class="state" id="voyage-state"></span><a href="https://dashboard.voyageai.com/organization/api-keys" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note">200 million free tokens once for each voyage-4 model. Without a card on file it allows only 3 requests a minute, so it fills up slowly; adding a card makes it fast and the free tokens still count first.</p>
+              <p class="note">200 million free tokens once for each voyage-4 model. Without a card on file it allows only 3 requests a minute and simply stops when the free tokens are used up. With a card it's fast, the free tokens count first, and after them the card is charged.</p>
+              <p class="note usage" data-usage="voyage:"></p>
               <div class="inline"><input type="password" id="VoyageApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="VoyageApiKey">Remove</button></div></div>
           </div></div>
         </div>
@@ -1056,11 +1063,10 @@ const freeFor = key => key === 'embed' ? (embeddingModels || []).filter(m => m.F
 // Sources besides OpenRouter: a model is written "prefix:model"
 const sources = {
   'nim:': { name: 'NVIDIA', has: () => settings?.HasNimApiKey, where: 'top of the AI page' },
-  'cf:': { name: 'Cloudflare', has: () => settings?.HasCloudflareApiToken && !!settings?.CloudflareAccountId, where: 'under "More free sources" above' },
-  'gemini:': { name: 'Gemini', has: () => settings?.HasGeminiApiKey, where: 'under "More free sources" above' },
-  'jina:': { name: 'Jina', has: () => settings?.HasJinaApiKey, where: 'under "More free sources" above' },
-  'voyage:': { name: 'Voyage', has: () => settings?.HasVoyageApiKey, where: 'under "More free sources" above' },
-  'mistral:': { name: 'Mistral', has: () => settings?.HasMistralApiKey, where: 'under "More free sources" above' },
+  'cf:': { name: 'Cloudflare', has: () => settings?.HasCloudflareApiToken && !!settings?.CloudflareAccountId, where: 'under "More sources" above' },
+  'gemini:': { name: 'Gemini', has: () => settings?.HasGeminiApiKey, where: 'under "More sources" above' },
+  'jina:': { name: 'Jina', has: () => settings?.HasJinaApiKey, where: 'under "More sources" above' },
+  'voyage:': { name: 'Voyage', has: () => settings?.HasVoyageApiKey, where: 'under "More sources" above' },
 };
 const sourceOf = id => Object.keys(sources).find(p => id.toLowerCase().startsWith(p));
 const isNim = id => sourceOf(id) === 'nim:';
@@ -1071,17 +1077,22 @@ const extraFor = key => {
   return Object.keys(sources).map(prefix => ({ prefix, ids: (embeddingModels || []).filter(m => m.Nim && sourceOf(m.Id) === prefix).map(m => m.Id) }));
 };
 let sourceKeysSeen = '';
-const sourceKeysNow = () => JSON.stringify([settings?.HasCloudflareApiToken, settings?.CloudflareAccountId, settings?.HasGeminiApiKey, settings?.HasJinaApiKey, settings?.HasMistralApiKey, settings?.HasVoyageApiKey]);
+const sourceKeysNow = () => JSON.stringify([settings?.HasCloudflareApiToken, settings?.CloudflareAccountId, settings?.HasGeminiApiKey, settings?.HasJinaApiKey, settings?.HasVoyageApiKey]);
 const sourceKeysChanged = () => { const now = sourceKeysNow(), changed = now !== sourceKeysSeen; sourceKeysSeen = now; return changed; };
 function nimState() {
   $('#nim-state').innerHTML = stateText(settings.HasNimApiKey);
   $('#nim-remove').classList.toggle('hidden', !settings.HasNimApiKey);
-  const has = { CloudflareApiToken: settings.HasCloudflareApiToken, GeminiApiKey: settings.HasGeminiApiKey, JinaApiKey: settings.HasJinaApiKey, MistralApiKey: settings.HasMistralApiKey, VoyageApiKey: settings.HasVoyageApiKey };
+  const has = { CloudflareApiToken: settings.HasCloudflareApiToken, GeminiApiKey: settings.HasGeminiApiKey, JinaApiKey: settings.HasJinaApiKey, VoyageApiKey: settings.HasVoyageApiKey };
   $('#cf-state').innerHTML = stateText(sources['cf:'].has(), 'saved', settings.HasCloudflareApiToken ? 'needs the account ID' : 'not set');
-  $('#gemini-state').innerHTML = stateText(has.GeminiApiKey); $('#jina-state').innerHTML = stateText(has.JinaApiKey); $('#mistral-state').innerHTML = stateText(has.MistralApiKey); $('#voyage-state').innerHTML = stateText(has.VoyageApiKey);
+  $('#gemini-state').innerHTML = stateText(has.GeminiApiKey); $('#jina-state').innerHTML = stateText(has.JinaApiKey); $('#voyage-state').innerHTML = stateText(has.VoyageApiKey);
   $$('[data-remove]').forEach(b => b.classList.toggle('hidden', !has[b.dataset.remove]));
   if (!sourceKeysSeen) sourceKeysSeen = sourceKeysNow();
+  loadFreeUsage();
   renderChains();
+}
+async function loadFreeUsage() {
+  let used = {}; try { used = await call('GET', '/api/ai/free-usage'); } catch { }
+  $$('[data-usage]').forEach(el => { el.textContent = used[el.dataset.usage] || ''; });
 }
 $$('[data-remove]').forEach(b => b.onclick = async () => {
   if (!confirm('Remove this key? Its models in the order are then skipped.')) return;
@@ -1110,6 +1121,8 @@ function modelStat(id, key) {
   const st = modelInfo?.Stats?.[id];
   const nim = isNim(id), same = m => m.toLowerCase() === id.toLowerCase(), src = sources[sourceOf(id)];
   if (settings && !(src ? src.has() : settings.HasApiKey)) return { text: `Needs the ${src ? src.name : 'OpenRouter'} key (${src ? src.where : 'top of the AI page'}); skipped`, bad: true };
+  const paid = settings?.FreeOnly !== false && !src && !settings?.CustomEndpoint && !/:free$/i.test(id) && id.toLowerCase() !== 'openrouter/free';
+  if (paid) return { text: 'Paid model: skipped while "Free only" is on (top of the AI page)', bad: true };
   const listed = src && !nim ? true : embeddingModels ? embeddingModels.some(m => same(m.Id)) : true;
   const offered = key === 'embed' ? listed
     : nim ? !(modelInfo?.Nim && !modelInfo.Nim.some(same)) : !(modelInfo?.Known && !modelInfo.Offered.includes(id));
@@ -1167,10 +1180,11 @@ async function loadSettings() {
   chains.lookup = [...(settings.LookupModels || [])]; chainsAuto.lookup = settings.LookupModelsAuto !== false;
   chains.embed = [...(settings.EmbeddingModels || [])]; chainsAuto.embed = settings.EmbeddingModelsAuto !== false;
   $('#MeaningOn').checked = settings.MeaningOn !== false;
+  $('#FreeOnly').checked = settings.FreeOnly !== false;
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
-  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey', 'VoyageApiKey']) $('#' + k).value = '';
+  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'VoyageApiKey']) $('#' + k).value = '';
   $('#CloudflareAccountId').value = settings.CloudflareAccountId || ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
   $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdHours').value = settings.LetterboxdHours || 6; $('#LetterboxdToken').value = '';
@@ -1229,14 +1243,14 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
 // Settings save on their own: a change is sent half a second later (a typed field when you leave it)
 const formValues = {
   'ai-form': () => ({
-    AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value, NimApiKey: $('#NimApiKey').value,
+    FreeOnly: $('#FreeOnly').checked, AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value, NimApiKey: $('#NimApiKey').value,
     ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }) }),
   'check-form': () => ({
@@ -1253,7 +1267,7 @@ const formValues = {
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
   'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed,
     CloudflareAccountId: $('#CloudflareAccountId').value.trim(), CloudflareApiToken: $('#CloudflareApiToken').value,
-    GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, MistralApiKey: $('#MistralApiKey').value, VoyageApiKey: $('#VoyageApiKey').value }),
+    GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, VoyageApiKey: $('#VoyageApiKey').value }),
   'lb-form': () => ({ LetterboxdOn: $('#LetterboxdOn').checked, LetterboxdUrl: $('#LetterboxdUrl').value.trim(), LetterboxdHours: Math.min(168, Math.max(1, Number($('#LetterboxdHours').value) || 6)), LetterboxdToken: $('#LetterboxdToken').value }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
@@ -1273,10 +1287,10 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'NimApiKey', 'CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey', 'VoyageApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    for (const k of ['ApiKey', 'NimApiKey', 'CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'VoyageApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
     $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); nimState();
     if (form === 'lookup-form') { engines = (settings.SearchEngines || []).map(e => ({ ...e })); renderEngines(); }
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
