@@ -72,23 +72,23 @@ namespace Pickyfin.Server.Ai
         // - 401/403: the key is wrong; stop
         private async Task<string> CallApiWithFallbackAsync(Func<List<string>> order, string prompt, bool forceJson, string step, CancellationToken cancellationToken)
         {
-            if (!Nim.AnyKey(Config))
+            if (!Providers.AnyKey(Config))
                 throw new InvalidOperationException("No API key is set: add an OpenRouter or NVIDIA key on the AI page.");
 
             var live = string.IsNullOrWhiteSpace(Config.CustomEndpoint) ? await OpenRouterModels.GetAsync(_httpClient, _logger, cancellationToken) : null;
             var models = order(); // after the live list, so an automatic order is current
             var nim = models.Any(Nim.Is) ? await Nim.GetAsync(_httpClient, _logger, cancellationToken) : null;
             // Models of a provider with no key are left out quietly: it's the admin's choice which keys to set
-            var keyed = models.Where(m => Nim.HasKey(Config, m)).ToList();
-            var usable = keyed.Where(m => (Nim.Is(m) ? nim is null || nim.Contains(m, StringComparer.OrdinalIgnoreCase) : live is null || live.ContainsKey(m))
-                && !OpenRouterModels.IsGone(m) && Nim.RefusedWhy(m) is null).ToList();
+            var keyed = models.Where(m => Providers.HasKey(Config, m)).ToList();
+            var usable = keyed.Where(m => (Nim.Is(m) ? nim is null || nim.Contains(m, StringComparer.OrdinalIgnoreCase) : !Providers.IsOpenRouter(m) || live is null || live.ContainsKey(m))
+                && !OpenRouterModels.IsGone(m) && Providers.RefusedWhy(m) is null).ToList();
             foreach (var skipped in keyed.Except(usable))
-                _logger.LogWarning("{Provider}: '{Model}' {Why}; skipped.", Nim.ProviderName(skipped), skipped,
-                    Nim.RefusedWhy(skipped) is { } why ? $"waits: {why}" : "isn't offered right now. Take it out of the model order on the AI page");
+                _logger.LogWarning("{Provider}: '{Model}' {Why}; skipped.", Providers.Name(skipped), skipped,
+                    Providers.RefusedWhy(skipped) is { } why ? $"waits: {why}" : "isn't offered right now. Take it out of the model order on the AI page");
             if (usable.Count == 0)
                 throw new InvalidOperationException(keyed.Count == 0
                     ? "No model in your order has a key: add the missing OpenRouter or NVIDIA key, or change the order on the AI page."
-                    : models.Select(Nim.RefusedWhy).FirstOrDefault(w => w is not null) is { } refused ? $"Stopped: {refused}"
+                    : models.Select(Providers.RefusedWhy).FirstOrDefault(w => w is not null) is { } refused ? $"Stopped: {refused}"
                     : "None of the models in your order is offered right now; change the order on the AI page.");
 
             var lastError = "No models available.";
@@ -103,7 +103,7 @@ namespace Pickyfin.Server.Ai
                     {
                         OpenRouterModels.Record(model, null);
                         OpenRouterModels.LastAnswered[step] = (model, DateTime.UtcNow);
-                        if (i > 0) _logger.LogWarning(Nim.ProviderName(model) + ": answered by '{Model}' (number {Index} in your order).", model, i + 1);
+                        if (i > 0) _logger.LogWarning(Providers.Name(model) + ": answered by '{Model}' (number {Index} in your order).", model, i + 1);
                         return result.Content;
                     }
                     OpenRouterModels.Record(model, result.Error);
@@ -111,16 +111,16 @@ namespace Pickyfin.Server.Ai
                     if (result.AbortChain)
                     {
                         // The key was refused: that provider's models wait an hour, the other provider's carry on
-                        Nim.Refuse(model, $"{Nim.ProviderName(model)} refused the key ({result.Error})");
-                        var rest = usable.Skip(i + 1).Where(m => Nim.ProviderName(m) != Nim.ProviderName(model)).ToList();
-                        if (rest.Count == 0) throw new InvalidOperationException($"{Nim.ProviderName(model)} stopped: {result.Error}");
-                        _logger.LogWarning("{Provider}: {Error}; its models wait an hour, '{Next}' takes over.", Nim.ProviderName(model), result.Error, rest[0]);
+                        Providers.Refuse(model, $"{Providers.Name(model)} refused the key ({result.Error})");
+                        var rest = usable.Skip(i + 1).Where(m => Providers.Name(m) != Providers.Name(model)).ToList();
+                        if (rest.Count == 0) throw new InvalidOperationException($"{Providers.Name(model)} stopped: {result.Error}");
+                        _logger.LogWarning("{Provider}: {Error}; its models wait an hour, '{Next}' takes over.", Providers.Name(model), result.Error, rest[0]);
                         usable = usable.Take(i + 1).Concat(rest).ToList();
                         continue;
                     }
                     lastError = $"{model}: {result.Error}";
                     if (result.Gone) OpenRouterModels.MarkGone(model);
-                    _logger.LogWarning(Nim.ProviderName(model) + ": '{Model}' failed ({Error}){Next}", model, result.Error,
+                    _logger.LogWarning(Providers.Name(model) + ": '{Model}' failed ({Error}){Next}", model, result.Error,
                         i + 1 < usable.Count ? $"; trying '{usable[i + 1]}' next." : "; no more models in your order.");
                 }
             }
@@ -130,20 +130,20 @@ namespace Pickyfin.Server.Ai
 
         private async Task<OpenRouterCallResult> TryCallModelAsync(string model, string prompt, bool forceJson, string position, CancellationToken cancellationToken)
         {
-            var url = Nim.ChatUrl(Config, model);
+            var url = Providers.ChatUrl(Config, model);
 
             var error = "no answer";
             for (var attempt = 1; attempt <= TriesPerModel; attempt++)
             {
                 Activity.Detail = $"model {position}: {model}, try {attempt} of {TriesPerModel}";
                 if (attempt > 1)
-                    _logger.LogInformation(Nim.ProviderName(model) + ": '{Model}' try {Attempt} of {Max} ({Error})", model, attempt, TriesPerModel, error);
+                    _logger.LogInformation(Providers.Name(model) + ": '{Model}' try {Attempt} of {Max} ({Error})", model, attempt, TriesPerModel, error);
 
                 using var request = new HttpRequestMessage(HttpMethod.Post, url);
-                Nim.Authorize(request, Config, model);
+                Providers.Authorize(request, Config, model);
                 var requestBody = new
                 {
-                    model = Nim.ApiModel(model),
+                    model = Providers.ApiModel(model),
                     messages = new[] { new { role = "user", content = prompt } },
                     response_format = forceJson ? new { type = "json_object" } : null
                 };

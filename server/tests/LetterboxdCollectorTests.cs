@@ -8,6 +8,7 @@ using Pickyfin.Server.Data.Models;
 using Pickyfin.Server.Library;
 using Xunit;
 
+[Collection("ServerSettings")]
 public class LetterboxdCollectorTests
 {
     private const string Fellowship = """

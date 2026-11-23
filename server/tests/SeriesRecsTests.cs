@@ -13,6 +13,7 @@ using Pickyfin.Server.Library;
 using Xunit;
 
 /// <summary>Series-only tags, and series recommended like films (rows kept here, not in Jellyfin).</summary>
+[Collection("ServerSettings")]
 public class SeriesRecsTests
 {
     private static MovieMetadata Series(string title, string? kinds = null, string subs = """["Crime Drama"]""") => new()

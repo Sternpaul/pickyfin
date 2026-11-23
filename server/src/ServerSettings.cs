@@ -26,6 +26,12 @@ public sealed class ServerSettings
     public string ApiKey { get; set; } = "";
     /// <summary>NVIDIA NIM (build.nvidia.com): its models can sit in the same orders as OpenRouter's, written "nim:owner/model".</summary>
     public string NimApiKey { get; set; } = "";
+    /// <summary>More sources of embedding models, each optional: Cloudflare Workers AI (account id + token), Gemini, Jina, Mistral.</summary>
+    public string CloudflareAccountId { get; set; } = "";
+    public string CloudflareApiToken { get; set; } = "";
+    public string GeminiApiKey { get; set; } = "";
+    public string JinaApiKey { get; set; } = "";
+    public string MistralApiKey { get; set; } = "";
     /// <summary>Some AI key is set: the provider's, or (with OpenRouter) an NVIDIA key for "nim:" models.</summary>
     [JsonIgnore] public bool HasAiKey => !string.IsNullOrWhiteSpace(ApiKey) || (AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(NimApiKey));
     public string ClassificationModel { get; set; } = "google/gemini-2.5-flash";

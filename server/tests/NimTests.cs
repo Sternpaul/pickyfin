@@ -14,11 +14,11 @@ public class NimTests
     public void ModelsAreRoutedByTheirPrefix()
     {
         var s = new ServerSettings { ApiKey = "or-key", NimApiKey = "nvapi-key" };
-        Assert.Equal("https://integrate.api.nvidia.com/v1/chat/completions", Nim.ChatUrl(s, "nim:moonshotai/kimi-k3.1-pro"));
-        Assert.Equal("https://openrouter.ai/api/v1/chat/completions", Nim.ChatUrl(s, "google/gemma-4-31b-it:free"));
-        Assert.Equal("moonshotai/kimi-k3.1-pro", Nim.ApiModel("nim:moonshotai/kimi-k3.1-pro"));
-        Assert.Equal("nvapi-key", Nim.Key(s, "nim:x/y"));
-        Assert.Equal("or-key", Nim.Key(s, "x/y"));
+        Assert.Equal("https://integrate.api.nvidia.com/v1/chat/completions", Providers.ChatUrl(s, "nim:moonshotai/kimi-k3.1-pro"));
+        Assert.Equal("https://openrouter.ai/api/v1/chat/completions", Providers.ChatUrl(s, "google/gemma-4-31b-it:free"));
+        Assert.Equal("moonshotai/kimi-k3.1-pro", Providers.ApiModel("nim:moonshotai/kimi-k3.1-pro"));
+        Assert.Equal("nvapi-key", Providers.Key(s, "nim:x/y"));
+        Assert.Equal("or-key", Providers.Key(s, "x/y"));
         Assert.Equal("nemotron-3.5-embed-8b (NVIDIA)", Meaning.Short("nim:nvidia/nemotron-3.5-embed-8b"));
         Assert.Equal("nemotron-3.5-embed-8b", Meaning.Short("nvidia/nemotron-3.5-embed-8b:free"));
         Assert.True(new ServerSettings { NimApiKey = "k" }.HasAiKey);
@@ -76,7 +76,7 @@ public class NimTests
         {
             (s.ApiKey, s.NimApiKey, s.ClassificationModelsAuto, s.CustomEndpoint) = ("or-key", "nvapi-key", false, "");
             s.ClassificationModels = new() { "google/gemma-4-31b-it:free", "nim:moonshotai/kimi-k3.1-pro" };
-            Nim.ResetRefused();
+            Providers.ResetRefused();
             Nim.SetModels(null);
             var fake = new TwoProviders();
             var provider = new OpenRouterProvider(new HttpClient(fake), NullLogger<OpenRouterProvider>.Instance);
@@ -85,14 +85,14 @@ public class NimTests
             Assert.Equal(("openrouter.ai", "google/gemma-4-31b-it:free", "or-key"), fake.Calls[0]);
             Assert.Equal(("integrate.api.nvidia.com", "moonshotai/kimi-k3.1-pro", "nvapi-key"), fake.Calls[^1]);
             // OpenRouter's models now wait; NVIDIA's go straight on
-            Assert.NotNull(Nim.RefusedWhy("google/gemma-4-31b-it:free"));
-            Assert.Null(Nim.RefusedWhy("nim:moonshotai/kimi-k3.1-pro"));
+            Assert.NotNull(Providers.RefusedWhy("google/gemma-4-31b-it:free"));
+            Assert.Null(Providers.RefusedWhy("nim:moonshotai/kimi-k3.1-pro"));
         }
         finally
         {
             (s.ApiKey, s.NimApiKey, var models, s.ClassificationModelsAuto, s.CustomEndpoint) = before;
             s.ClassificationModels = models;
-            Nim.ResetRefused();
+            Providers.ResetRefused();
             Nim.SetModels(null);
         }
     }

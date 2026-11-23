@@ -62,7 +62,7 @@ public class NimEmbedTests
             }
             (s.MeaningOn, s.AIProvider, s.ApiKey, s.NimApiKey, s.EmbeddingModelsAuto) = (true, AIProviderType.OpenRouter, "", "nvapi-test", false);
             s.EmbeddingModels = new List<string> { "nim:nvidia/nvclip-test" };
-            Meaning.ResetPause(); Nim.ResetRefused();
+            Meaning.ResetPause(); Providers.ResetRefused();
             var fake = new NoExtraFields();
             await new Meaning(new Factory(fake), database, NullLogger<Meaning>.Instance).RunAsync(default);
 

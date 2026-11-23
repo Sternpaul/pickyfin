@@ -33,7 +33,7 @@ public sealed class Embedding
 public sealed class Meaning
 {
     public const string Key = "meaning", Title = "Related by meaning";
-    private const int PerRequest = 16, RequestsPerRound = 8, MaxChars = 6000;
+    private const int RequestsPerRound = 8, MaxChars = 6000;
 
     private readonly IHttpClientFactory _http;
     private readonly Database _database;
@@ -59,7 +59,7 @@ public sealed class Meaning
     }
 
     public static bool On(ServerSettings s) =>
-        s.MeaningOn && s.AIProvider == AIProviderType.OpenRouter && s.HasAiKey;
+        s.MeaningOn && s.AIProvider == AIProviderType.OpenRouter && Providers.AnyEmbeddingKey(s);
 
     /// <summary>The model being asked right now.</summary>
     public static string? ActiveModel { get; private set; }
@@ -156,10 +156,10 @@ public sealed class Meaning
         if (!On(s)) { Jobs.Idle(Key, Title, s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter"); return; }
         if (_pausedUntil > DateTime.UtcNow) { Jobs.Idle(Key, Title, _pauseReason, _pausedUntil, error: true); return; }
         await RefreshFreeAsync(cancellationToken);
-        var models = Order(s).Where(m => !OpenRouterModels.IsGone(m) && Nim.HasKey(s, m)).ToList();
-        if (models.Count == 0 && Order(s).Any(m => !Nim.HasKey(s, m)))
+        var models = Order(s).Where(m => !OpenRouterModels.IsGone(m) && Providers.HasKey(s, m)).ToList();
+        if (models.Count == 0 && Order(s).Any(m => !Providers.HasKey(s, m)))
         {
-            Jobs.Idle(Key, Title, Order(s).Any(Nim.Is) && !Nim.HasKey(s, Order(s).First(Nim.Is)) ? "Off: the order needs an NVIDIA key" : "Off: the order needs an OpenRouter key", error: true);
+            Jobs.Idle(Key, Title, $"Off: the order needs a key for {string.Join(" or ", Order(s).Where(m => !Providers.HasKey(s, m)).Select(Providers.Name).Distinct())}", error: true);
             return;
         }
         if (models.Count == 0)
@@ -203,14 +203,14 @@ public sealed class Meaning
 
     private static bool IsResting(string model)
     {
-        if (Nim.RefusedWhy(model) is not null) return true;
+        if (Providers.RefusedWhy(model) is not null) return true;
         lock (Resting) return Resting.TryGetValue(model, out var r) && r.Until > DateTime.UtcNow;
     }
 
     /// <summary>Why a model is skipped right now, for Status; null when it's working.</summary>
     public static string? RestingWhy(string model)
     {
-        if (Nim.RefusedWhy(model) is { } refused) return $"{refused}; tried again within the hour";
+        if (Providers.RefusedWhy(model) is { } refused) return $"{refused}; tried again within the hour";
         lock (Resting) return Resting.TryGetValue(model, out var r) && r.Until > DateTime.UtcNow ? r.Why : null;
     }
 
@@ -265,9 +265,9 @@ public sealed class Meaning
 
     private async Task<(int Done, Outcome Outcome)> RunWithAsync(ServerSettings s, string model, List<(Guid Id, string Kind, string Text, string Hash)> todo, CancellationToken cancellationToken)
     {
-        var round = todo.Take(PerRequest * RequestsPerRound).ToList();
+        var round = todo.Take(Providers.Batch(model) * RequestsPerRound).ToList();
         var done = 0;
-        foreach (var chunk in round.GroupBy(c => c.Kind).SelectMany(g => g.Chunk(PerRequest)))
+        foreach (var chunk in round.GroupBy(c => c.Kind).SelectMany(g => g.Chunk(Providers.Batch(model))))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var (vectors, outcome, error) = await EmbedWithTriesAsync(s, model, chunk[0].Kind, chunk.Select(c => Sendable(c.Text)).ToList(), cancellationToken);
@@ -354,9 +354,9 @@ public sealed class Meaning
 
     public static string Short(string model)
     {
-        var id = Nim.ApiModel(model);
-        var name = id.Contains('/') ? id[(id.IndexOf('/') + 1)..].Replace(":free", "") : id;
-        return Nim.Is(model) ? name + " (NVIDIA)" : name;
+        var id = Providers.ApiModel(model);
+        var name = id[(id.LastIndexOf('/') + 1)..].Replace(":free", "");
+        return Providers.IsOpenRouter(model) ? name : $"{name} ({Providers.Name(model)})";
     }
 
     /// <summary>Three tries on the same model when it's busy or slow; a model that's gone hands over to the next.</summary>
@@ -381,8 +381,8 @@ public sealed class Meaning
             if (result.Code is 401 or 402 or 403)
             {
                 // that provider's models wait an hour; the other provider's carry on
-                Nim.Refuse(model, $"{Nim.ProviderName(model)} refused the key (HTTP {result.Code})");
-                _logger.LogWarning("Meaning: {Provider} refused the key ({Error}); its models wait an hour, the others carry on", Nim.ProviderName(model), result.Error);
+                Providers.Refuse(model, $"{Providers.Name(model)} refused the key (HTTP {result.Code})");
+                _logger.LogWarning("Meaning: {Provider} refused the key ({Error}); its models wait an hour, the others carry on", Providers.Name(model), result.Error);
                 return (null, Outcome.Paused, result.Error);
             }
             if (attempt >= 3)
@@ -397,25 +397,35 @@ public sealed class Meaning
     }
 
     /// <summary>
-    /// What is sent to the embeddings endpoint. NVIDIA's models want to know whether a text is
-    /// something searched for (a person's wishes) or something found (a film), and cut texts
-    /// longer than their window instead of refusing them.
+    /// What is sent to the embeddings endpoint. NVIDIA's and Jina's models want to know whether a
+    /// text is something searched for (a person's wishes) or something found (a film), and cut
+    /// texts longer than their window instead of refusing them. The others get the plain request.
     /// </summary>
-    public static string Body(string model, string kind, List<string> texts, int variant = 0) => !Nim.Is(model)
-        ? JsonSerializer.Serialize(new { model, input = texts })
-        : variant switch
-        {
-            0 => JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts, input_type = kind == "brief" ? "query" : "passage", truncate = "END", encoding_format = "float" }),
-            1 => JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts, input_type = kind == "brief" ? "query" : "passage" }),
-            _ => JsonSerializer.Serialize(new { model = Nim.ApiModel(model), input = texts }),
-        };
+    public static string Body(string model, string kind, List<string> texts, int variant = 0)
+    {
+        var id = Providers.ApiModel(model);
+        var query = kind == "brief";
+        var source = Providers.Of(model);
+        if (source == Providers.Nvidia)
+            return variant switch
+            {
+                0 => JsonSerializer.Serialize(new { model = id, input = texts, input_type = query ? "query" : "passage", truncate = "END", encoding_format = "float" }),
+                1 => JsonSerializer.Serialize(new { model = id, input = texts, input_type = query ? "query" : "passage" }),
+                _ => JsonSerializer.Serialize(new { model = id, input = texts }),
+            };
+        if (source == Providers.Jina && variant == 0)
+            return JsonSerializer.Serialize(new { model = id, input = texts, task = query ? "retrieval.query" : "retrieval.passage", truncate = true });
+        return JsonSerializer.Serialize(new { model = id, input = texts });
+    }
+
+    /// <summary>How many request shapes a model's source has (see Body), most fields first.</summary>
+    private static int Variants(string model) => Providers.Of(model) == Providers.Nvidia ? 3 : Providers.Of(model) == Providers.Jina ? 2 : 1;
 
     /// <summary>
-    /// NVIDIA's models don't all take the same fields: some need input_type, some refuse it or
-    /// truncate. A refused request is sent again with fewer fields; what worked is kept per model.
+    /// Not every model takes the extra fields: some need input_type, some refuse it or truncate.
+    /// A refused request is sent again with fewer fields; what worked is kept per model.
     /// </summary>
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> NimVariant = new(StringComparer.OrdinalIgnoreCase);
-    private const int NimVariants = 3;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> FieldVariant = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Whether an error says the model itself doesn't exist, not that the request was wrong.</summary>
     public static bool LooksGone(string? error) =>
@@ -423,20 +433,20 @@ public sealed class Meaning
             @"not a valid model|model .*(not found|does not exist|unknown|no longer)|(unknown|invalid|no such) model|no endpoints|end of life|deprecated|function .*not found",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-    /// <summary>One request to the model's embeddings endpoint (OpenRouter or NVIDIA).</summary>
+    /// <summary>One request to the model's embeddings endpoint, at its own source.</summary>
     private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedAsync(ServerSettings s, string model, string kind, List<string> texts, CancellationToken cancellationToken)
     {
-        if (!Nim.Is(model)) return await EmbedOnceAsync(s, model, kind, texts, 0, cancellationToken);
-        var known = NimVariant.TryGetValue(model, out var v) ? v : 0;
+        if (Variants(model) == 1) return await EmbedOnceAsync(s, model, kind, texts, 0, cancellationToken);
+        var known = FieldVariant.TryGetValue(model, out var v) ? v : 0;
         var first = await EmbedOnceAsync(s, model, kind, texts, known, cancellationToken);
         if (first.Vectors is not null || first.Code is not (400 or 422) || known > 0) return first;
         // refused with every field: try with fewer, and remember what worked
-        for (var variant = 1; variant < NimVariants; variant++)
+        for (var variant = 1; variant < Variants(model); variant++)
         {
             var next = await EmbedOnceAsync(s, model, kind, texts, variant, cancellationToken);
             if (next.Vectors is not null)
             {
-                NimVariant[model] = variant;
+                FieldVariant[model] = variant;
                 _logger.LogInformation("Meaning: {Model} refused some request fields ({Error}); it gets fewer from now on", model, first.Error);
                 return next;
             }
@@ -449,11 +459,11 @@ public sealed class Meaning
     {
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(2);
-        using var request = new HttpRequestMessage(HttpMethod.Post, Nim.EmbedUrl(model))
+        using var request = new HttpRequestMessage(HttpMethod.Post, Providers.EmbedUrl(s, model))
         {
             Content = new StringContent(Body(model, kind, texts, variant), Encoding.UTF8, "application/json"),
         };
-        Nim.Authorize(request, s, model);
+        Providers.Authorize(request, s, model);
         try
         {
             using var response = await client.SendAsync(request, cancellationToken);

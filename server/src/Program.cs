@@ -365,8 +365,11 @@ admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, ILoggerFact
     // NVIDIA's embedding models (free with an NVIDIA key), after OpenRouter's
     await Nim.GetAsync(http.CreateClient(), logs.CreateLogger("NVIDIA"), ct);
     await Nim.CheckServedAsync(http.CreateClient(), ServerSettings.Current, logs.CreateLogger("NVIDIA")).WaitAsync(ct);
-    var nim = Nim.Embedding
-        .Select(id => new { Id = id, Name = Meaning.Short(id), Free = true, PerMillion = 0.0, Nim = true }).ToList();
+    var others = new List<string>();
+    foreach (var source in Providers.EmbeddingOnly)
+        others.AddRange(await Providers.EmbeddingModelsAsync(http.CreateClient(), ServerSettings.Current, source, logs.CreateLogger(source.Name), ct));
+    var nim = Nim.Embedding.Concat(others)
+        .Select(id => new { Id = id, Name = Meaning.Short(id), Free = true, PerMillion = 0.0, Nim = true, Provider = Providers.Name(id) }).ToList();
     try
     {
         var client = http.CreateClient();
@@ -376,7 +379,7 @@ admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, ILoggerFact
         {
             var id = m.GetProperty("id").GetString() ?? "";
             var price = m.TryGetProperty("pricing", out var p) && p.TryGetProperty("prompt", out var pp) && double.TryParse(pp.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0;
-            return new { Id = id, Name = m.TryGetProperty("name", out var n) ? n.GetString() ?? id : id, Free = price == 0, PerMillion = Math.Round(price * 1_000_000, 3), Nim = false };
+            return new { Id = id, Name = m.TryGetProperty("name", out var n) ? n.GetString() ?? id : id, Free = price == 0, PerMillion = Math.Round(price * 1_000_000, 3), Nim = false, Provider = "OpenRouter" };
         }).Where(m => m.Id.Length > 0).OrderByDescending(m => m.Free).ToList();
         return Results.Ok(list.Concat(nim));
     }
@@ -523,8 +526,10 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
         await db.Users.Where(u => u.Enabled).ExecuteUpdateAsync(u => u.SetProperty(x => x.RefreshRequested, true), ct);
     }
     // A new model or key deserves a try right away, not after the pause from the last error
-    var keysChanged = before.ApiKey != settings.ApiKey || before.NimApiKey != settings.NimApiKey;
-    if (keysChanged) Nim.ResetRefused();
+    var keysChanged = before.ApiKey != settings.ApiKey || before.NimApiKey != settings.NimApiKey
+        || before.CloudflareAccountId != settings.CloudflareAccountId || before.CloudflareApiToken != settings.CloudflareApiToken
+        || before.GeminiApiKey != settings.GeminiApiKey || before.JinaApiKey != settings.JinaApiKey || before.MistralApiKey != settings.MistralApiKey;
+    if (keysChanged) Providers.ResetRefused();
     if (before.CheckModel != settings.CheckModel || keysChanged || before.CheckEnabled != settings.CheckEnabled
         || !before.CheckModels.SequenceEqual(settings.CheckModels) || before.CheckModelsAuto != settings.CheckModelsAuto)
         SecondOpinion.ResetPause();
@@ -669,6 +674,15 @@ record SettingsView
     public string? ApiKey { get; init; }
     public bool HasNimApiKey { get; init; }
     public string? NimApiKey { get; init; }
+    public string? CloudflareAccountId { get; init; }
+    public bool HasCloudflareApiToken { get; init; }
+    public string? CloudflareApiToken { get; init; }
+    public bool HasGeminiApiKey { get; init; }
+    public string? GeminiApiKey { get; init; }
+    public bool HasJinaApiKey { get; init; }
+    public string? JinaApiKey { get; init; }
+    public bool HasMistralApiKey { get; init; }
+    public string? MistralApiKey { get; init; }
     public string ClassificationModel { get; init; } = "";
     public string ChatModel { get; init; } = "";
     public string CustomEndpoint { get; init; } = "";
@@ -743,6 +757,11 @@ record SettingsView
         AIProvider = s.AIProvider.ToString(),
         HasApiKey = !string.IsNullOrWhiteSpace(s.ApiKey),
         HasNimApiKey = !string.IsNullOrWhiteSpace(s.NimApiKey),
+        CloudflareAccountId = s.CloudflareAccountId,
+        HasCloudflareApiToken = !string.IsNullOrWhiteSpace(s.CloudflareApiToken),
+        HasGeminiApiKey = !string.IsNullOrWhiteSpace(s.GeminiApiKey),
+        HasJinaApiKey = !string.IsNullOrWhiteSpace(s.JinaApiKey),
+        HasMistralApiKey = !string.IsNullOrWhiteSpace(s.MistralApiKey),
         ClassificationModel = s.ClassificationModel,
         ChatModel = s.ChatModel,
         CustomEndpoint = s.CustomEndpoint,
@@ -818,6 +837,13 @@ record SettingsView
         // "-" takes the NVIDIA key out (it's optional)
         if (NimApiKey?.Trim() == "-") s.NimApiKey = "";
         else if (!string.IsNullOrWhiteSpace(NimApiKey)) s.NimApiKey = NimApiKey.Trim();
+        // the other optional keys work the same way: empty keeps it, "-" takes it out
+        static string Key(string? sent, string kept) => sent?.Trim() == "-" ? "" : string.IsNullOrWhiteSpace(sent) ? kept : sent.Trim();
+        s.CloudflareApiToken = Key(CloudflareApiToken, s.CloudflareApiToken);
+        s.GeminiApiKey = Key(GeminiApiKey, s.GeminiApiKey);
+        s.JinaApiKey = Key(JinaApiKey, s.JinaApiKey);
+        s.MistralApiKey = Key(MistralApiKey, s.MistralApiKey);
+        if (CloudflareAccountId is not null) s.CloudflareAccountId = CloudflareAccountId.Trim();
         s.ClassificationModel = ClassificationModel.Trim();
         s.ChatModel = ChatModel.Trim();
         s.CustomEndpoint = CustomEndpoint.Trim();

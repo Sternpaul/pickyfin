@@ -4,10 +4,7 @@ using System.Text.Json;
 
 namespace Pickyfin.Server.Ai;
 
-/// <summary>
-/// Where a model is asked. Model orders can mix OpenRouter and NVIDIA NIM (build.nvidia.com):
-/// an NVIDIA model is written "nim:owner/model", anything else goes to OpenRouter.
-/// </summary>
+/// <summary>NVIDIA NIM (build.nvidia.com): its model list, and which models it serves for the key. Routing is in Providers.</summary>
 public static class Nim
 {
     public const string Prefix = "nim:";
@@ -15,35 +12,7 @@ public static class Nim
     public const string KeyUrl = "https://build.nvidia.com/settings/api-keys";
 
     public static bool Is(string model) => model.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase);
-    /// <summary>The model's id at its provider ("nim:" taken off).</summary>
-    public static string ApiModel(string model) => Is(model) ? model[Prefix.Length..] : model;
-    public static string ProviderName(string model) => Is(model) ? "NVIDIA" : "OpenRouter";
-
-    /// <summary>The key for this model's provider; empty when none is set.</summary>
-    public static string Key(ServerSettings s, string model) => (Is(model) ? s.NimApiKey : s.ApiKey).Trim();
-    public static bool HasKey(ServerSettings s, string model) => Key(s, model).Length > 0;
-    public static bool AnyKey(ServerSettings s) => !string.IsNullOrWhiteSpace(s.ApiKey) || !string.IsNullOrWhiteSpace(s.NimApiKey);
-
-    public static string ChatUrl(ServerSettings s, string model) =>
-        Is(model) ? BaseUrl + "/chat/completions"
-        : string.IsNullOrWhiteSpace(s.CustomEndpoint) ? "https://openrouter.ai/api/v1/chat/completions" : s.CustomEndpoint;
-
-    public static string EmbedUrl(string model) => Is(model) ? BaseUrl + "/embeddings" : "https://openrouter.ai/api/v1/embeddings";
-
-    public static void Authorize(HttpRequestMessage request, ServerSettings s, string model)
-    {
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Key(s, model));
-        if (Is(model)) return;
-        request.Headers.Add("HTTP-Referer", "https://github.com/Sternpaul/pickyfin");
-        request.Headers.Add("X-Title", "Pickyfin");
-    }
-
-    // ---- a key that was refused: that provider's models wait, the others carry on ----
-    private static readonly ConcurrentDictionary<string, (DateTime Until, string Why)> Refused = new();
-    public static void Refuse(string model, string why) => Refused[ProviderName(model)] = (DateTime.UtcNow.AddHours(1), why);
-    public static string? RefusedWhy(string model) =>
-        Refused.TryGetValue(ProviderName(model), out var r) && r.Until > DateTime.UtcNow ? r.Why : null;
-    public static void ResetRefused() { Refused.Clear(); _checkedFor = ""; NotServed.Clear(); }
+    public static void ResetCheck() { _checkedFor = ""; NotServed.Clear(); }
 
     // ---- models NVIDIA lists but doesn't serve for this key (404 "Function …: Not found for account") ----
     private static readonly ConcurrentDictionary<string, DateTime> NotServed = new(StringComparer.OrdinalIgnoreCase);
@@ -80,8 +49,8 @@ public static class Nim
                 {
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                     var body = IsEmbedding(model)
-                        ? JsonSerializer.Serialize(new { model = ApiModel(model), input = new[] { "test" }, input_type = "passage" })
-                        : JsonSerializer.Serialize(new { model = ApiModel(model), messages = new[] { new { role = "user", content = "Reply with: ok" } }, max_tokens = 1 });
+                        ? JsonSerializer.Serialize(new { model = Providers.ApiModel(model), input = new[] { "test" }, input_type = "passage" })
+                        : JsonSerializer.Serialize(new { model = Providers.ApiModel(model), messages = new[] { new { role = "user", content = "Reply with: ok" } }, max_tokens = 1 });
                     using var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl + (IsEmbedding(model) ? "/embeddings" : "/chat/completions"))
                     { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
@@ -95,7 +64,7 @@ public static class Nim
                     catch (Exception) { /* slow or unreachable: not a sign it isn't served */ }
                 }));
                 logger.LogInformation("NVIDIA: {Served} of {Count} listed models answer for this key; not served: {Missing}",
-                    models.Count - gone, models.Count, gone == 0 ? "none" : string.Join(", ", NotServedList.Select(ApiModel)));
+                    models.Count - gone, models.Count, gone == 0 ? "none" : string.Join(", ", NotServedList.Select(Providers.ApiModel)));
             });
         }
     }
@@ -108,13 +77,13 @@ public static class Nim
     /// <summary>Models that make vectors; everything else that isn't a filter or detector can talk.</summary>
     public static bool IsEmbedding(string model)
     {
-        var id = ApiModel(model).ToLowerInvariant();
+        var id = Providers.ApiModel(model).ToLowerInvariant();
         return id.Contains("embed") || id.EndsWith("/nvclip");
     }
     private static readonly string[] NotChat = { "safety", "guard", "pii", "detector", "gliner", "calibration", "starcoder", "translate", "reward", "parse", "rerank" };
     public static bool IsChat(string model)
     {
-        var id = ApiModel(model).ToLowerInvariant();
+        var id = Providers.ApiModel(model).ToLowerInvariant();
         return !IsEmbedding(model) && !NotChat.Any(id.Contains);
     }
 

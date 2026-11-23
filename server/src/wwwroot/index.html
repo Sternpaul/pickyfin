@@ -100,6 +100,13 @@
   .chain .stat { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .chain .stat.bad { color: var(--err); }
   .chain .acts { display: flex; gap: 4px; }
+  .sources { display: flex; flex-direction: column; gap: 14px; }
+  .source { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .source:last-child { border-bottom: 0; padding-bottom: 0; }
+  .src-head { display: flex; align-items: center; gap: 8px; }
+  .src-head a { margin-left: auto; font-size: 13px; }
+  .source .note { margin: 4px 0 8px; }
+  .source .inline input { flex: 1; min-width: 0; }
   .chain .prov { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--muted); vertical-align: 1px; }
   .chain .acts .btn, .chain ul .btn { height: 28px; padding: 0 9px; font-size: 13px; }
   .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 4px 0 28px; }
@@ -761,8 +768,25 @@
       <h2 class="group-title">Matching by meaning</h2>
       <form id="meaning-form" class="settings">
         <div class="setting">
-          <div><h3>Match titles by meaning</h3><p class="why">Turns each title's whole description (plot, tags, what the web says) and each person's description into a "meaning". Titles that mean similar things are related even without shared tags. Runs on your OpenRouter key; free models cost nothing. Explore the result on the Matrix page.</p></div>
+          <div><h3>Match titles by meaning</h3><p class="why">Turns each title's whole description (plot, tags, what the web says) and each person's description into a "meaning". Titles that mean similar things are related even without shared tags. Runs on your OpenRouter key, and on any of the sources below you add a key for; free models cost nothing. Explore the result on the Matrix page.</p></div>
           <div class="control"><label class="switch"><input type="checkbox" id="MeaningOn"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>More free sources</h3><p class="why">Each is optional. With a key, its embedding models appear in the model order below, next to OpenRouter's and NVIDIA's (NVIDIA's key is on the AI page). Keys are stored on this server only; leave a field empty to keep the saved key.</p></div>
+          <div class="control"><div class="sources">
+            <div class="source"><div class="src-head"><b>Cloudflare</b> <span class="state" id="cf-state"></span><a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">get a token</a></div>
+              <p class="note">10,000 free "neurons" a day, about 9 million tokens with BGE-M3. Doesn't keep what is sent. The token needs the "Workers AI" permission; the account ID is on the Workers AI page.</p>
+              <div class="inline"><input type="text" id="CloudflareAccountId" placeholder="Account ID" autocomplete="off"><input type="password" id="CloudflareApiToken" placeholder="API token" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="CloudflareApiToken">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Gemini</b> <span class="state" id="gemini-state"></span><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note">Google's embedding models, free within about 1,000 requests a day. Outside the EU, UK and Switzerland, Google may use free-tier text to improve its products.</p>
+              <div class="inline"><input type="password" id="GeminiApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="GeminiApiKey">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Jina</b> <span class="state" id="jina-state"></span><a href="https://jina.ai/api-dashboard" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note">10 million free tokens once, then paid. Its free models are for non-commercial use.</p>
+              <div class="inline"><input type="password" id="JinaApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="JinaApiKey">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Mistral</b> <span class="state" id="mistral-state"></span><a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note">Free within a monthly allowance shown in Mistral's console.</p>
+              <div class="inline"><input type="password" id="MistralApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="MistralApiKey">Remove</button></div></div>
+          </div></div>
         </div>
         <div class="setting">
           <div><h3>Model order</h3><p class="why">Every model in the order matches all titles and builds its own matrix (meanings from different models can't be mixed, so each keeps its own). How close two titles are is the average over the models that know both, which is steadier than any one model. A busy model is tried three times, then skipped for that round while the others carry on; a model OpenRouter no longer offers drops out. More models means more requests, so the first ones fill up first. <span id="meaning-models-note"></span></p></div>
@@ -1024,15 +1048,41 @@ function fillModels(provider) {
 const chains = { describe: [], check: [], lookup: [], embed: [] }, openOff = {}, chainsAuto = { describe: true, check: true, lookup: true, embed: true };
 // The free models a step chooses from, most used this week first
 const freeFor = key => key === 'embed' ? (embeddingModels || []).filter(m => m.Free && !m.Nim).map(m => m.Id) : (modelInfo?.Free || []);
+// (models from other sources carry Nim: true in the embedding list: they're added by hand, never automatically)
 // NVIDIA's models for a step ("nim:owner/model"); they're added by hand, never automatically
-const nimFor = key => key === 'embed' ? (embeddingModels || []).filter(m => m.Nim).map(m => m.Id) : (modelInfo?.Nim || []);
-const isNim = id => id.toLowerCase().startsWith('nim:');
-const modelLabel = id => isNim(id) ? `${esc(id.slice(4))}<span class="prov">NVIDIA</span>` : esc(id);
+// Sources besides OpenRouter: a model is written "prefix:model"
+const sources = {
+  'nim:': { name: 'NVIDIA', has: () => settings?.HasNimApiKey, where: 'top of the AI page' },
+  'cf:': { name: 'Cloudflare', has: () => settings?.HasCloudflareApiToken && !!settings?.CloudflareAccountId, where: 'under "More free sources" above' },
+  'gemini:': { name: 'Gemini', has: () => settings?.HasGeminiApiKey, where: 'under "More free sources" above' },
+  'jina:': { name: 'Jina', has: () => settings?.HasJinaApiKey, where: 'under "More free sources" above' },
+  'mistral:': { name: 'Mistral', has: () => settings?.HasMistralApiKey, where: 'under "More free sources" above' },
+};
+const sourceOf = id => Object.keys(sources).find(p => id.toLowerCase().startsWith(p));
+const isNim = id => sourceOf(id) === 'nim:';
+const modelLabel = id => { const p = sourceOf(id); return p ? `${esc(id.slice(p.length))}<span class="prov">${sources[p].name}</span>` : esc(id); };
+// The other sources' models for a step, by source: embedding models from every source, talking models from NVIDIA only
+const extraFor = key => {
+  if (key !== 'embed') return [{ prefix: 'nim:', ids: modelInfo?.Nim || [] }];
+  return Object.keys(sources).map(prefix => ({ prefix, ids: (embeddingModels || []).filter(m => m.Nim && sourceOf(m.Id) === prefix).map(m => m.Id) }));
+};
+let sourceKeysSeen = '';
+const sourceKeysNow = () => JSON.stringify([settings?.HasCloudflareApiToken, settings?.CloudflareAccountId, settings?.HasGeminiApiKey, settings?.HasJinaApiKey, settings?.HasMistralApiKey]);
+const sourceKeysChanged = () => { const now = sourceKeysNow(), changed = now !== sourceKeysSeen; sourceKeysSeen = now; return changed; };
 function nimState() {
   $('#nim-state').innerHTML = stateText(settings.HasNimApiKey);
   $('#nim-remove').classList.toggle('hidden', !settings.HasNimApiKey);
+  const has = { CloudflareApiToken: settings.HasCloudflareApiToken, GeminiApiKey: settings.HasGeminiApiKey, JinaApiKey: settings.HasJinaApiKey, MistralApiKey: settings.HasMistralApiKey };
+  $('#cf-state').innerHTML = stateText(sources['cf:'].has(), 'saved', settings.HasCloudflareApiToken ? 'needs the account ID' : 'not set');
+  $('#gemini-state').innerHTML = stateText(has.GeminiApiKey); $('#jina-state').innerHTML = stateText(has.JinaApiKey); $('#mistral-state').innerHTML = stateText(has.MistralApiKey);
+  $$('[data-remove]').forEach(b => b.classList.toggle('hidden', !has[b.dataset.remove]));
+  if (!sourceKeysSeen) sourceKeysSeen = sourceKeysNow();
   renderChains();
 }
+$$('[data-remove]').forEach(b => b.onclick = async () => {
+  if (!confirm('Remove this key? Its models in the order are then skipped.')) return;
+  $('#' + b.dataset.remove).value = '-'; await saveNow('meaning-form'); $('#' + b.dataset.remove).value = '';
+});
 $('#nim-remove').onclick = async () => {
   if (!confirm('Remove the NVIDIA key? NVIDIA models in your orders are then skipped.')) return;
   $('#NimApiKey').value = '-'; await saveNow('ai-form'); $('#NimApiKey').value = '';
@@ -1054,12 +1104,13 @@ async function loadModelInfo() {
 }
 function modelStat(id, key) {
   const st = modelInfo?.Stats?.[id];
-  const nim = isNim(id), same = m => m.toLowerCase() === id.toLowerCase();
-  if (settings && !(nim ? settings.HasNimApiKey : settings.HasApiKey)) return { text: `Needs ${nim ? 'an NVIDIA' : 'an OpenRouter'} key (top of the AI page); skipped`, bad: true };
-  const offered = key === 'embed' ? (embeddingModels ? embeddingModels.some(m => same(m.Id)) : true)
+  const nim = isNim(id), same = m => m.toLowerCase() === id.toLowerCase(), src = sources[sourceOf(id)];
+  if (settings && !(src ? src.has() : settings.HasApiKey)) return { text: `Needs the ${src ? src.name : 'OpenRouter'} key (${src ? src.where : 'top of the AI page'}); skipped`, bad: true };
+  const listed = src && !nim ? true : embeddingModels ? embeddingModels.some(m => same(m.Id)) : true;
+  const offered = key === 'embed' ? listed
     : nim ? !(modelInfo?.Nim && !modelInfo.Nim.some(same)) : !(modelInfo?.Known && !modelInfo.Offered.includes(id));
   if (nim && (modelInfo?.NimNotServed || []).some(same)) return { text: 'NVIDIA lists it but doesn\'t serve it for your key; skipped', bad: true };
-  if (!offered) return { text: `Not offered by ${nim ? 'NVIDIA' : 'OpenRouter'} right now; skipped`, bad: true };
+  if (!offered) return { text: `Not offered by ${src ? src.name : 'OpenRouter'} right now; skipped`, bad: true };
   const rank = freeFor(key).indexOf(id);
   const pop = rank >= 0 ? `#${rank + 1} most used free ${key === 'embed' ? 'embedding ' : ''}model this week · ` : '';
   if (!st) return { text: `${pop}not used since the server started`, bad: false };
@@ -1077,19 +1128,19 @@ function renderChain(key) {
   // Any change by hand makes it the admin's own order
   const mine = fn => (...args) => { chainsAuto[key] = false; fn(...args); autoSave(chainForms[key]); };
   const off = freeFor(key).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
-  const offNim = nimFor(key).filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase()));
+  const extra = extraFor(key).map(g => ({ ...g, ids: g.ids.filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase())) })).filter(g => g.ids.length);
   const statHtml = m => { const s = modelStat(m, key); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
   const head = key === 'lookup' ? (chainsAuto[key]
     ? `<p class="note" style="margin:0">Same as step 1, describing. Changing anything gives step 3 its own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Its own order.</span><button type="button" class="btn quiet" data-auto>Back to the same as describing</button></div>`)
     : chainsAuto[key]
-    ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter this week, most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. NVIDIA's models are only used when you add them. Changing anything makes it your own order.</p>`
+    ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter this week, most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. Other sources' models are only used when you add them. Changing anything makes it your own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Your own order.</span><button type="button" class="btn quiet" data-auto>Back to most used this week</button></div>`;
   box.innerHTML = head + `<ol>${on.map((m, i) => `<li><span class="pos">${i + 1}</span><div class="m"><b>${modelLabel(m)}</b>${statHtml(m)}</div>
       <div class="acts"><button type="button" class="btn quiet" data-up="${i}" title="Try earlier" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn quiet" data-down="${i}" title="Try later" ${i === on.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="btn quiet" data-off="${i}" ${on.length === 1 ? 'disabled title="At least one model is needed"' : ''}>Turn off</button></div></li>`).join('')}</ol>
     ${off.length ? `<details${openOff[key] ? ' open' : ''}><summary class="note" style="cursor:pointer">Other free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter (${off.length}), turned off</summary><ul style="margin-top:6px">${off.map(m => `<li><div class="m">${esc(m)}${statHtml(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`
       : (key === 'embed' ? embeddingModels : modelInfo) ? '' : '<p class="note">Loading the models OpenRouter offers…</p>'}
-    ${offNim.length ? `<details data-nim${openOff[key + 'nim'] ? ' open' : ''}><summary class="note" style="cursor:pointer">${key === 'embed' ? 'Embedding models' : 'Models'} on NVIDIA (${offNim.length}), turned off${settings?.HasNimApiKey ? '' : ': add an NVIDIA key to use them'}</summary><ul style="margin-top:6px">${offNim.map(m => `<li><div class="m">${modelLabel(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>` : ''}
+    ${extra.map(g => `<details data-src="${g.prefix}"${openOff[key + g.prefix] ? ' open' : ''}><summary class="note" style="cursor:pointer">${key === 'embed' ? 'Embedding models' : 'Models'} on ${sources[g.prefix].name} (${g.ids.length}), turned off${sources[g.prefix].has() ? '' : `: add the ${sources[g.prefix].name} key (${sources[g.prefix].where}) to use them`}</summary><ul style="margin-top:6px">${g.ids.map(m => `<li><div class="m">${modelLabel(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`).join('')}
     <div class="inline"><input type="text" placeholder="Add another model, e.g. ${key === 'embed' ? 'baai/bge-m3' : 'google/gemini-2.5-flash'}" list="${key === 'embed' ? 'embed-all' : 'models-all'}"><button type="button" class="btn" data-add>Add</button></div>`;
   const move = mine((i, d) => { const [m] = on.splice(i, 1); on.splice(i + d, 0, m); renderChains(); });
   $$('[data-up]', box).forEach(b => b.onclick = () => move(Number(b.dataset.up), -1));
@@ -1097,7 +1148,7 @@ function renderChain(key) {
   $$('[data-off]', box).forEach(b => b.onclick = mine(() => { on.splice(Number(b.dataset.off), 1); renderChains(); }));
   $$('[data-on]', box).forEach(b => b.onclick = mine(() => { on.push(b.dataset.on); renderChains(); }));
   const back = $('[data-auto]', box); if (back) back.onclick = () => { chainsAuto[key] = true; renderChains(); autoSave(chainForms[key]); };
-  $$('details', box).forEach(d => d.ontoggle = () => { openOff[key + (d.hasAttribute('data-nim') ? 'nim' : '')] = d.open; });
+  $$('details', box).forEach(d => d.ontoggle = () => { openOff[key + (d.dataset.src || '')] = d.open; });
   const input = $('input', box);
   const add = () => { const v = input.value.trim(); if (v && !on.some(x => x.toLowerCase() === v.toLowerCase())) { chainsAuto[key] = false; on.push(v); renderChains(); autoSave(chainForms[key]); } };
   $('[data-add]', box).onclick = add;
@@ -1115,7 +1166,8 @@ async function loadSettings() {
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
-  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
+  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey']) $('#' + k).value = '';
+  $('#CloudflareAccountId').value = settings.CloudflareAccountId || ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
   $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdHours').value = settings.LetterboxdHours || 6; $('#LetterboxdToken').value = '';
   $('#lbtoken-state').innerHTML = stateText(settings.HasLetterboxdToken); checkLetterboxd(false);
@@ -1173,7 +1225,7 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', NimApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
@@ -1195,7 +1247,9 @@ const formValues = {
     WebLookupAuto: $('#WebLookupAuto').checked, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
-  'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed }),
+  'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed,
+    CloudflareAccountId: $('#CloudflareAccountId').value.trim(), CloudflareApiToken: $('#CloudflareApiToken').value,
+    GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, MistralApiKey: $('#MistralApiKey').value }),
   'lb-form': () => ({ LetterboxdOn: $('#LetterboxdOn').checked, LetterboxdUrl: $('#LetterboxdUrl').value.trim(), LetterboxdHours: Math.min(168, Math.max(1, Number($('#LetterboxdHours').value) || 6)), LetterboxdToken: $('#LetterboxdToken').value }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
@@ -1215,13 +1269,14 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', MistralApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'NimApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    for (const k of ['ApiKey', 'NimApiKey', 'CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'MistralApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
     $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); nimState();
     if (form === 'lookup-form') { engines = (settings.SearchEngines || []).map(e => ({ ...e })); renderEngines(); }
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
+    if (form === 'meaning-form' && sourceKeysChanged()) { embeddingModels = null; loadEmbeddingModels(); }
     if (form === 'lb-form') { $('#lbtoken-state').innerHTML = stateText(settings.HasLetterboxdToken); checkLetterboxd(true); }
   } catch (err) { note.className = 'note err'; note.textContent = `Not saved: ${err.message}`; }
   finally { savesInFlight--; }
