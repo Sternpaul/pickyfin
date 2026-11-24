@@ -485,6 +485,8 @@ public sealed class Meaning
     private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedOnceAsync(ServerSettings s, string model, string kind, List<string> texts, int variant, CancellationToken cancellationToken)
     {
         if (s.FreeOnly && FreeCaps.Blocked(s, model, texts) is { } capped) return (null, 429, $"HTTP 429: {capped}");
+        // stay inside the source's per-minute limit by waiting, not by being refused
+        await Pace.WaitAsync(model, texts.Count, CloudflareBudget.EstimateTokens(texts), cancellationToken);
         var client = _http.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(2);
         using var request = new HttpRequestMessage(HttpMethod.Post, Providers.EmbedUrl(s, model))

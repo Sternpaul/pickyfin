@@ -10,7 +10,7 @@ namespace Pickyfin.Server.Ai;
 /// - Cloudflare: 9,000 of the 10,000 free neurons a day (CloudflareBudget).
 /// - Voyage: 190 million of the 200 million free tokens per model, per key.
 /// - Jina: 9.5 million of the 10 million free tokens, per key.
-/// - Gemini: 900 texts a day; free only while the key's project has no billing account,
+/// - Gemini: 900 texts a day per model; free only while the key's project has no billing account,
 ///   which Pickyfin can't see, so the page says so.
 /// - NVIDIA: a trial without billing; nothing to count.
 /// Counts are kept in a small file in the data folder, so a restart doesn't start from zero.
@@ -50,7 +50,7 @@ public static class FreeCaps
         var p = Providers.Of(model);
         if (p == Providers.Voyage) return $"voyage|{KeyId(s, model)}|{Providers.ApiModel(model)}";
         if (p == Providers.Jina) return $"jina|{KeyId(s, model)}";
-        if (p == Providers.Gemini) return $"gemini|{KeyId(s, model)}|{GeminiDayStart:yyyy-MM-dd}";
+        if (p == Providers.Gemini) return $"gemini|{KeyId(s, model)}|{Providers.ApiModel(model)}|{GeminiDayStart:yyyy-MM-dd}";
         return null;
     }
 
@@ -103,7 +103,11 @@ public static class FreeCaps
         if (Providers.HasKey(s, Providers.Cloudflare))
             lines["cf:"] = $"Used today: {CloudflareBudget.UsedToday:N0} of {CloudflareBudget.DailyNeurons:N0} neurons (free: 10,000)";
         if (Providers.HasKey(s, Providers.Gemini))
-            lines["gemini:"] = $"Used today: {Used(Counter(s, "gemini:x")!):N0} of {GeminiTextsPerDay:N0} texts";
+        {
+            var gemini = models.Where(m => Providers.Of(m) == Providers.Gemini).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(m => $"{Providers.ApiModel(m)} {Used(Counter(s, m)!):N0}").ToList();
+            lines["gemini:"] = $"Used today, of {GeminiTextsPerDay:N0} texts per model (free: 1,000): " + (gemini.Count > 0 ? string.Join(", ", gemini) : "none yet");
+        }
         if (Providers.HasKey(s, Providers.Jina))
             lines["jina:"] = $"Used with this key: {Used(Counter(s, "jina:x")!):N0} of {JinaTokens:N0} tokens (free: 10,000,000)";
         if (Providers.HasKey(s, Providers.Voyage))

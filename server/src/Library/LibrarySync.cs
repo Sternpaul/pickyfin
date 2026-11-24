@@ -76,6 +76,15 @@ public sealed class LibrarySync
         var (hiddenSeries, backSeries) = await _store.MarkGoneAsync(series.Select(i => i.Id).ToHashSet(), MovieMetadata.SeriesKind, cancellationToken);
         hidden += hiddenSeries;
         back += backSeries;
+        // A title that's hidden only because Jellyfin gave it a new id (a swapped file) is the same title
+        foreach (var kind in new[] { MovieMetadata.MovieKind, MovieMetadata.SeriesKind })
+        {
+            var (moved, leftovers) = await _store.ResolveReplacedAsync(kind, cancellationToken);
+            hidden -= moved.Count + leftovers.Count;
+            if (moved.Count > 0) _logger.LogInformation("Library: {Count} title(s) are in Jellyfin again under a new id (a new file); their tags and meanings moved along: {Titles}", moved.Count, string.Join(", ", moved.Take(20)));
+            if (leftovers.Count > 0) _logger.LogInformation("Library: {Count} title(s) were replaced by a new file that already has its own tags; the old record is removed: {Titles}", leftovers.Count, string.Join(", ", leftovers.Take(20)));
+        }
+        hidden = Math.Max(0, hidden);
         if (hidden > 0) _logger.LogWarning("Library: {Count} title(s) are no longer in Jellyfin; hidden, and kept until you confirm their removal on the admin page", hidden);
         if (back > 0) _logger.LogInformation("Library: {Count} title(s) are back in Jellyfin, with their tags as before", back);
         var orphans = await _store.DeleteOrphanedEmbeddingsAsync(cancellationToken);

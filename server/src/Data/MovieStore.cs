@@ -130,6 +130,58 @@ public sealed class MovieStore
         return (hide.Count, back.Count);
     }
 
+    /// <summary>
+    /// A title Jellyfin now lists under a new id (the file was swapped or moved) is the same title:
+    /// a hidden title with the same TMDB or IMDb id as a listed one has been replaced.
+    /// - The new one has nothing of its own yet (not tagged, not edited): the old record moves to
+    ///   the new id, with its tags, edits, meanings and history, so nothing has to be done again.
+    /// - The new one already has its own tags: the old record is a leftover and goes.
+    /// Returns (moved over, leftovers removed), with the titles for the log.
+    /// </summary>
+    public async Task<(List<string> Moved, List<string> Removed)> ResolveReplacedAsync(string kind, CancellationToken cancellationToken = default)
+    {
+        await using var db = _database.Open();
+        var rows = await db.Movies.IgnoreQueryFilters().AsNoTracking().Where(m => m.Kind == kind && (m.TmdbId != null || m.ImdbId != null))
+            .Select(m => new { m.ItemId, m.Title, m.ReleaseYear, m.TmdbId, m.ImdbId, m.GoneSince, m.IsClassified, m.ManuallyEdited, m.Libraries }).ToListAsync(cancellationToken);
+        var live = rows.Where(r => r.GoneSince is null).ToList();
+        var moved = new List<string>();
+        var removed = new List<string>();
+        var taken = new HashSet<Guid>();
+        // the old records with the most work in them first
+        foreach (var old in rows.Where(r => r.GoneSince is not null).OrderByDescending(r => r.IsClassified).ThenByDescending(r => r.ManuallyEdited))
+        {
+            var match = live.FirstOrDefault(l => !taken.Contains(l.ItemId)
+                && ((old.TmdbId is { } t && l.TmdbId == t) || (!string.IsNullOrWhiteSpace(old.ImdbId) && string.Equals(l.ImdbId, old.ImdbId, StringComparison.OrdinalIgnoreCase))));
+            if (match is null) continue;
+            taken.Add(match.ItemId);
+            var title = $"{old.Title}{(old.ReleaseYear is { } y ? $" ({y})" : "")}";
+            // EF keeps ids as upper-case text
+            string Id(Guid g) => g.ToString().ToUpperInvariant();
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+            if (!match.IsClassified && !match.ManuallyEdited && old.IsClassified)
+            {
+                await db.Embeddings.Where(e => e.ItemId == match.ItemId).ExecuteDeleteAsync(cancellationToken);
+                await db.History.Where(h => h.ItemId == match.ItemId).ExecuteDeleteAsync(cancellationToken);
+                await db.Movies.IgnoreQueryFilters().Where(m => m.ItemId == match.ItemId).ExecuteDeleteAsync(cancellationToken);
+                // the key changes, which EF won't do: plain SQL
+                await db.Database.ExecuteSqlRawAsync("UPDATE Movies SET ItemId = {0}, GoneSince = NULL, Libraries = {1} WHERE ItemId = {2}",
+                    new object?[] { Id(match.ItemId), match.Libraries, Id(old.ItemId) }, cancellationToken);
+                await db.Database.ExecuteSqlRawAsync("UPDATE Embeddings SET ItemId = {0} WHERE ItemId = {1}", new object[] { Id(match.ItemId), Id(old.ItemId) }, cancellationToken);
+                await db.Database.ExecuteSqlRawAsync("UPDATE History SET ItemId = {0} WHERE ItemId = {1}", new object[] { Id(match.ItemId), Id(old.ItemId) }, cancellationToken);
+                moved.Add(title);
+            }
+            else
+            {
+                await db.Embeddings.Where(e => e.ItemId == old.ItemId).ExecuteDeleteAsync(cancellationToken);
+                await db.History.Where(h => h.ItemId == old.ItemId).ExecuteDeleteAsync(cancellationToken);
+                await db.Movies.IgnoreQueryFilters().Where(m => m.ItemId == old.ItemId).ExecuteDeleteAsync(cancellationToken);
+                removed.Add(title);
+            }
+            await tx.CommitAsync(cancellationToken);
+        }
+        return (moved, removed);
+    }
+
     /// <summary>The films waiting for the admin to confirm their removal.</summary>
     public async Task<List<MovieMetadata>> GetGoneAsync(CancellationToken cancellationToken = default)
     {

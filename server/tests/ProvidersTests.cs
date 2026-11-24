@@ -111,6 +111,25 @@ public class ProvidersTests
     }
 
     [Fact]
+    public async Task VoyageWaitsForItsMinuteInsteadOfBeingRefused()
+    {
+        Pace.Reset();
+        try
+        {
+            // two requests of 4,000 estimated tokens fit Voyage's minute (9,000 kept); a third has to wait
+            await Pace.WaitAsync("voyage:voyage-4", 4, 4000, default);
+            await Pace.WaitAsync("voyage:voyage-4-lite", 4, 4000, default);
+            var third = Pace.WaitAsync("voyage:voyage-4-large", 4, 4000, default);
+            await Task.Delay(300);
+            Assert.False(third.IsCompleted);
+            // other sources aren't held up by Voyage's minute
+            Assert.True(Pace.WaitAsync("gemini:gemini-embedding-001", 8, 8000, default).IsCompleted);
+            Assert.True(Pace.WaitAsync("cf:@cf/baai/bge-m3", 16, 50000, default).IsCompleted);
+        }
+        finally { Pace.Reset(); }
+    }
+
+    [Fact]
     public void FreeOnlyAllowsOnlyOpenRoutersFreeModels()
     {
         var on = new ServerSettings { FreeOnly = true };
@@ -138,7 +157,8 @@ public class ProvidersTests
             FreeCaps.Spend(s, "jina:jina-embeddings-v5-text-small", texts, (int)FreeCaps.JinaTokens);
             Assert.NotNull(FreeCaps.Blocked(s, "jina:jina-embeddings-v5-text-nano", texts)); // Jina's tokens are per key
             for (var i = 0; i < FreeCaps.GeminiTextsPerDay; i++) FreeCaps.Spend(s, "gemini:gemini-embedding-001", texts, null);
-            Assert.NotNull(FreeCaps.Blocked(s, "gemini:gemini-embedding-2", texts)); // per key and day
+            Assert.NotNull(FreeCaps.Blocked(s, "gemini:gemini-embedding-001", texts)); // per key, model and day
+            Assert.Null(FreeCaps.Blocked(s, "gemini:gemini-embedding-2", texts));
             Assert.Null(FreeCaps.Blocked(s, "nim:nvidia/nemotron-3.5-embed-8b", texts));
         }
         finally { FreeCaps.Reset(); }
@@ -189,9 +209,11 @@ public class ProvidersTests
             await using var check = database.Open();
             foreach (var model in s.EmbeddingModels.Where(m => !m.StartsWith("voyage:")))
                 Assert.Equal(20, await check.Embeddings.CountAsync(e => e.Model == model));
-            // Voyage without a card allows 3 requests a minute: 3 requests of 5 films this round, the rest next round
-            Assert.Equal(15, await check.Embeddings.CountAsync(e => e.Model == "voyage:voyage-4-lite"));
-            Assert.Equal(new[] { 5, 5, 5 }, fake.Calls.Where(c => c.Host == "api.voyageai.com").Select(c => c.Texts));
+            // Voyage without a card allows 3 requests and 10,000 tokens a minute for the account: one request of 4 films per model and round
+            Assert.Equal(4, await check.Embeddings.CountAsync(e => e.Model == "voyage:voyage-4-lite"));
+            Assert.Equal(new[] { 4 }, fake.Calls.Where(c => c.Host == "api.voyageai.com").Select(c => c.Texts));
+            // Gemini: 8 films a request
+            Assert.All(fake.Calls.Where(c => c.Host == "generativelanguage.googleapis.com"), c => Assert.True(c.Texts <= 8));
             Assert.All(fake.Calls.Where(c => c.Host == "api.voyageai.com"), c => Assert.Equal("voyage-key", c.Key));
             Assert.All(fake.Calls.Where(c => c.Host == "api.cloudflare.com"), c => Assert.Equal(("@cf/baai/bge-m3", "cf-token"), (c.Model, c.Key)));
             Assert.All(fake.Calls.Where(c => c.Host == "generativelanguage.googleapis.com"), c => Assert.Equal(("gemini-embedding-001", "gemini-key"), (c.Model, c.Key)));

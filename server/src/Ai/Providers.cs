@@ -22,11 +22,12 @@ public static class Providers
         "@cf/baai/bge-m3", "@cf/qwen/qwen3-embedding-0.6b", "@cf/google/embeddinggemma-300m", "@cf/pfnet/plamo-embedding-1b",
         "@cf/baai/bge-large-en-v1.5", "@cf/baai/bge-base-en-v1.5", "@cf/baai/bge-small-en-v1.5",
     });
-    public static readonly Source Gemini = new("gemini:", "Gemini", "https://aistudio.google.com/apikey", 16, new[] { "gemini-embedding-001", "gemini-embedding-2" });
+    // Gemini's free tier: 100 texts and 30,000 tokens a minute (see Pace): 8 films a request, 3 a round
+    public static readonly Source Gemini = new("gemini:", "Gemini", "https://aistudio.google.com/apikey", 8, new[] { "gemini-embedding-001", "gemini-embedding-2" }, PerRound: 3);
     public static readonly Source Jina = new("jina:", "Jina", "https://jina.ai/api-dashboard", 16, new[] { "jina-embeddings-v5-text-small", "jina-embeddings-v5-text-nano" });
 
-    // Without a card on file Voyage allows 3 requests and 10,000 tokens a minute: few films per request, three requests a round
-    public static readonly Source Voyage = new("voyage:", "Voyage", "https://dashboard.voyageai.com/organization/api-keys", 5, new[] { "voyage-4-large", "voyage-4", "voyage-4-lite" }, PerRound: 3);
+    // Without a card on file Voyage allows 3 requests and 10,000 tokens a minute for the whole account (see Pace): 4 films a request, one a round per model
+    public static readonly Source Voyage = new("voyage:", "Voyage", "https://dashboard.voyageai.com/organization/api-keys", 4, new[] { "voyage-4-large", "voyage-4", "voyage-4-lite" }, PerRound: 1);
 
     public static readonly Source[] All = { Nvidia, Cloudflare, Gemini, Jina, Voyage };
     /// <summary>The sources that only make vectors here (NVIDIA also talks; its list comes from NVIDIA).</summary>
