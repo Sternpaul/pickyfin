@@ -324,7 +324,7 @@
   .mr-step label { display: flex; gap: 8px; align-items: center; font-weight: 600; margin-bottom: 6px; }
   .mr-step input[type=text], .mr-step select { width: 100%; }
   .mr-pick { display: grid; grid-template-columns: 150px 1fr; gap: 8px; }
-  .mr-step.off .mr-pick, .mr-step.off .mr-key, .mr-step.off .note { display: none; }
+  .mr-step.off .mr-pick, .mr-step.off .mr-key, .mr-step.off .note, .mr-step.off .mr-reuse { display: none; }
   .mr-key { margin-top: 8px; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 8px; }
   .mr-key .inline { margin-top: 6px; }
   .mr-key input { flex: 1; min-width: 0; }
@@ -2755,7 +2755,12 @@ function mrDrawSteps() {
     box.innerHTML = mrStepList.map(st => `<div class="mr-step off" data-box="${st.key}">
       <label><input type="checkbox" data-step="${st.key}"> ${st.name}</label>
       <div class="mr-pick"></div><input type="text" data-other class="hidden" placeholder="${st.embed ? 'Embedding' : 'Model'} id, e.g. ${st.embed ? 'mistral:mistral-embed' : 'mistral:mistral-small-latest'}" style="margin-top:8px">
+      ${st.key === 'lookup' ? `<div class="seg mr-reuse" id="mr-reuse" style="margin-top:8px"><button type="button" data-v="search">Search the web again</button><button type="button" data-v="reuse">Use what's already found</button></div>
+      <div class="note" id="mr-reuse-note"></div>` : ''}
       <div class="mr-key hidden"></div><div class="note" data-price="${st.key}"></div></div>`).join('');
+    const reuseNote = v => { $('#mr-reuse-note').textContent = v === 'reuse' ? 'Titles that were looked up before are described again from that web text, with no new search; only titles without any are searched.' : 'Every chosen title is searched on the web again, then described again from what is found.'; };
+    seg($('#mr-reuse'), 'search', v => { reuseNote(v); mrLater(); });
+    reuseNote('search');
     mrStepList.forEach(st => { $(`[data-box="${st.key}"] input[type=checkbox]`).onchange = () => { mrDrawStep(st); mrLater(); }; });
   }
   mrStepList.forEach(mrDrawStep);
@@ -2785,6 +2790,7 @@ const mrRequest = () => {
     Redo: segValue($('#mr-redo')) === 'redo',
     Describe: step('describe'), Check: step('check'), Lookup: step('lookup'), Meaning: step('meaning'),
     Limit: limit === '' ? null : Math.max(0, Number(limit)),
+    ReuseWeb: segValue($('#mr-reuse')) === 'reuse',
   };
 };
 function mrPriceLine(key) {

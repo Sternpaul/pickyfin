@@ -222,6 +222,13 @@ public class ManualRunTests
             var check = estimate.Steps.Single();
             Assert.Equal(6, check.Titles); // the looked-up ones too; only the edited one is left out
             Assert.Equal("Left out: 1 edited or checked by you.", check.Why);
+
+            // step 3: search all again, or reuse the web text already found (only "Plain" has none)
+            var again = await run.EstimateAsync(new ManualRunRequest("all", null, null, Redo: true, null, null, Lookup: "acme/chat-paid", null, null), default);
+            var reuse = await run.EstimateAsync(new ManualRunRequest("all", null, null, Redo: true, null, null, Lookup: "acme/chat-paid", null, null, ReuseWeb: true), default);
+            Assert.Equal(6, again.WebSearches);
+            Assert.Equal(1, reuse.WebSearches);
+            Assert.True(reuse.Steps.Single().InTokens < again.Steps.Single().InTokens);
         }
         finally
         {

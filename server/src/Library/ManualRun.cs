@@ -9,8 +9,9 @@ namespace Pickyfin.Server.Library;
 /// <param name="Scope">"all" (every library that's on), "library" (the libraries in Libraries) or "selected" (the titles picked on the Movies and Series pages).</param>
 /// <param name="Redo">True: every chosen title goes through the steps again; false: only what's missing. Hand edits are never overwritten.</param>
 /// <param name="Limit">Dollars; the run stops before going past it. Null: no limit.</param>
+/// <param name="ReuseWeb">Step 3: describe again from the web text already found (no new search); only titles without any are searched.</param>
 public sealed record ManualRunRequest(string Scope, List<Guid>? Libraries, List<Guid>? Ids, bool Redo,
-    string? Describe, string? Check, string? Lookup, string? Meaning, double? Limit);
+    string? Describe, string? Check, string? Lookup, string? Meaning, double? Limit, bool ReuseWeb = false);
 
 /// <summary>
 /// A one-time run over chosen titles and steps with the models the admin picked, any source,
@@ -86,6 +87,9 @@ public sealed class ManualRun
 
     private static bool HandEdited(MovieMetadata m) => m.ManuallyEdited || m.Verified;
 
+    /// <summary>Step 3 uses this title's earlier web text instead of searching again.</summary>
+    private static bool Reuses(ManualRunRequest r, MovieMetadata m) => r.ReuseWeb && !string.IsNullOrWhiteSpace(m.WebNotes);
+
     /// <summary>The chosen titles.</summary>
     private async Task<List<MovieMetadata>> TitlesAsync(ManualRunRequest r, CancellationToken ct)
     {
@@ -152,11 +156,12 @@ public sealed class ManualRun
                 {
                     case "describe": input += ClassificationPrompt.Build(batch).Length / 3; output += batch.Length * 220; break;
                     case "check": input += ClassificationPrompt.BuildCheck(batch).Length / 3; output += batch.Length * 60; break;
-                    case "lookup": input += ClassificationPrompt.Build(batch).Length / 3 + batch.Length * 1500; output += batch.Length * 220; break;
+                    // the prompt holds the web text already found; a new search adds about 1,500 tokens a title
+                    case "lookup": input += ClassificationPrompt.Build(batch).Length / 3 + batch.Count(m => !Reuses(r, m)) * 1500; output += batch.Length * 220; break;
                     default: input += batch.Sum(m => Meaning.Sendable(Meaning.Document(m)).Length / 3 + 1); break;
                 }
             }
-            if (key == "lookup") searches = list.Count;
+            if (key == "lookup") searches = list.Count(m => !Reuses(r, m));
             var price = await Prices.ForAsync(model, _http, _logger, ct);
             steps.Add(new(key, name, model, Providers.Name(model), list.Count, input, output,
                 price is null ? null : Prices.Cost(price, (int)Math.Min(int.MaxValue, input), (int)Math.Min(int.MaxValue, output)),
@@ -277,8 +282,13 @@ public sealed class ManualRun
                                 case "describe": await _classifier.DescribeManualAsync(provider, batch, limit.Token); break;
                                 case "check": await _check.CheckManualAsync(provider, batch, limit.Token); break;
                                 case "lookup":
+                                    // described again from the web text already found: no search
+                                    var reuse = batch.Where(m => Reuses(r, m)).ToList();
+                                    if (reuse.Count > 0) await _classifier.DescribeAgainAsync(provider, reuse, limit.Token);
+                                    var search = batch.Where(m => !Reuses(r, m)).ToList();
+                                    if (search.Count == 0) break;
                                     if (_web.Blocked() is { } why) { step.Note = $"web lookups paused: {why}"; goto nextStep; }
-                                    await _classifier.LookUpAndTagManyAsync(provider, batch, limit.Token);
+                                    await _classifier.LookUpAndTagManyAsync(provider, search, limit.Token);
                                     break;
                             }
                         }
