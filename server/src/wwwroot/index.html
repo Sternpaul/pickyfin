@@ -2804,11 +2804,14 @@ async function mrEstimate() {
   let e; try { e = await call('POST', '/api/manual-run/estimate', req); } catch (err) { box.innerHTML = `<p class="note err">${esc(err.message)}</p>`; return; }
   const tok = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
   box.innerHTML = `<table><tr><th>Step</th><th>Model</th><th class="n">Titles</th><th class="n">Tokens in / out</th><th class="n">Cost</th></tr>
-    ${e.Steps.map(x => `<tr title="${esc(x.Note || '')}"><td>${esc(x.Name)}</td><td>${esc(x.Model)}</td><td class="n">${x.Titles.toLocaleString()}</td><td class="n">${tok(x.InTokens)} / ${tok(x.OutTokens)}</td><td class="n">${money(x.Cost)}</td></tr>`).join('')}
+    ${e.Steps.map(x => `<tr title="${esc(x.Note || '')}"><td>${esc(x.Name)}</td><td>${esc(x.Model)}</td><td class="n">${x.Titles.toLocaleString()}</td><td class="n">${x.Titles ? `${tok(x.InTokens)} / ${tok(x.OutTokens)}` : '–'}</td><td class="n">${x.Titles ? money(x.Cost) : 'nothing to do'}</td></tr>`).join('')}
     <tr class="total"><td colspan="4">${e.Titles.toLocaleString()} titles${e.WebSearches ? ` · ${e.WebSearches.toLocaleString()} web searches` : ''}</td><td class="n">${money(e.Known)}${e.Unpriced ? ' + unknown' : ''}</td></tr></table>
+    ${e.Steps.filter(x => x.Why).map(x => `<p class="note"><b>${esc(x.Name)}:</b> ${esc(x.Why)}</p>`).join('')}
     ${e.Unpriced ? '<p class="note">Some model has no known price: what it uses isn\'t in the total, and the spending limit can\'t count it.</p>' : ''}
+    ${req.Limit != null && e.Known > req.Limit ? `<p class="note err">The estimate is above your limit of $${req.Limit}: the run stops there, after about ${Math.max(1, Math.round(req.Limit / e.Known * 100))}% of it. Raise the limit to do it all.</p>` : ''}
+    ${!e.Problem && e.Steps.every(x => !x.Titles) ? '<p class="note err">Nothing to do with these choices.</p>' : ''}
     ${e.Problem ? `<p class="note err">${esc(e.Problem)}</p>` : ''}`;
-  $('#mr-start').disabled = !!e.Problem;
+  $('#mr-start').disabled = !!e.Problem || e.Steps.every(x => !x.Titles);
 }
 const mrLater = () => { clearTimeout(mrTimer); mrTimer = setTimeout(mrEstimate, 400); };
 async function openManualRun(scope) {

@@ -111,8 +111,32 @@ public sealed class ManualRun
         _ => titles.Where(m => m.IsClassified || afterDescribe).ToList(),
     };
 
-    public sealed record StepEstimate(string Step, string Name, string Model, string Source, int Titles, long InTokens, long OutTokens, double? Cost, string? Note);
+    /// <param name="Why">Why chosen titles are left out of this step (hand edits, already done, looked up), for the panel.</param>
+    public sealed record StepEstimate(string Step, string Name, string Model, string Source, int Titles, long InTokens, long OutTokens, double? Cost, string? Note, string? Why = null);
     public sealed record Estimate(int Titles, List<StepEstimate> Steps, double Known, bool Unpriced, int WebSearches, string? Problem);
+
+    /// <summary>The chosen titles a step leaves out, and why, in words; null when it takes them all.</summary>
+    private static string? WhyLeftOut(string step, List<MovieMetadata> titles, bool redo, bool afterDescribe, int taken)
+    {
+        if (taken == titles.Count) return null;
+        var reasons = new List<string>();
+        var hand = titles.Count(HandEdited);
+        if (hand > 0) reasons.Add($"{hand:N0} edited or checked by you");
+        var rest = titles.Where(m => !HandEdited(m)).ToList();
+        if (step != "describe" && !afterDescribe && rest.Count(m => !m.IsClassified) is > 0 and var undescribed) reasons.Add($"{undescribed:N0} not described yet");
+        rest = rest.Where(m => m.IsClassified || afterDescribe).ToList();
+        if (step == "check" && rest.Count(m => !string.IsNullOrEmpty(m.WebNotes)) is > 0 and var looked)
+        {
+            reasons.Add($"{looked:N0} looked up on the web, which the check leaves alone like the automatic step 2 (3 · Look up covers them)");
+            rest = rest.Where(m => string.IsNullOrEmpty(m.WebNotes)).ToList();
+        }
+        if (!redo)
+        {
+            var done = step switch { "describe" => rest.Count(m => m.IsClassified), "check" => rest.Count(m => m.Checked), "lookup" => rest.Count(m => m.WebNotes is not null), _ => 0 };
+            if (done > 0) reasons.Add($"{done:N0} already done (\"Everything again\" runs them anyway)");
+        }
+        return reasons.Count == 0 ? null : "Left out: " + string.Join("; ", reasons) + ".";
+    }
 
     /// <summary>What a run would do and cost, before it starts. Tokens are estimated from the real prompts (about three characters each).</summary>
     public async Task<Estimate> EstimateAsync(ManualRunRequest r, CancellationToken ct)
@@ -141,7 +165,8 @@ public sealed class ManualRun
             var price = await Prices.ForAsync(model, _http, _logger, ct);
             steps.Add(new(key, name, model, Providers.Name(model), list.Count, input, output,
                 price is null ? null : Prices.Cost(price, (int)Math.Min(int.MaxValue, input), (int)Math.Min(int.MaxValue, output)),
-                price?.Note ?? (price is null ? "price unknown: the spending limit can't count this model" : null)));
+                price?.Note ?? (price is null ? "price unknown: the spending limit can't count this model" : null),
+                WhyLeftOut(key, titles, r.Redo, describes && key != "describe", list.Count)));
         }
         string? problem = r.Scope == "library" && (r.Libraries is null || r.Libraries.Count == 0) ? "Tick at least one library."
             : titles.Count == 0 ? "No titles chosen." : steps.Count == 0 ? "No step chosen." : null;

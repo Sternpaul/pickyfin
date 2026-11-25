@@ -200,6 +200,39 @@ public class ManualRunTests
     }
 
     [Fact]
+    public async Task TheEstimateSaysWhyTitlesAreLeftOut()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pickyfin-manual-why-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        var s = ServerSettings.Current;
+        var before = (s.AIProvider, s.ApiKey);
+        try
+        {
+            OpenRouterModels.Reset(); Prices.Reset();
+            (s.AIProvider, s.ApiKey) = (AIProviderType.OpenRouter, "or-key");
+            var (run, database, _) = Build(dir);
+            await using (var db = database.Open())
+            {
+                for (var i = 0; i < 5; i++) db.Movies.Add(new MovieMetadata { ItemId = Guid.NewGuid(), Title = $"Looked up {i}", IsClassified = true, Checked = true, WebNotes = "From the web." });
+                db.Movies.Add(new MovieMetadata { ItemId = Guid.NewGuid(), Title = "Edited", IsClassified = true, ManuallyEdited = true });
+                db.Movies.Add(new MovieMetadata { ItemId = Guid.NewGuid(), Title = "Plain", IsClassified = true, Checked = true });
+                await db.SaveChangesAsync();
+            }
+            var estimate = await run.EstimateAsync(new ManualRunRequest("all", null, null, Redo: true, Describe: null, Check: "acme/chat-paid", null, null, null), default);
+            var check = estimate.Steps.Single();
+            Assert.Equal(1, check.Titles); // only "Plain": the edited one and the looked-up ones are left out
+            Assert.Contains("1 edited or checked by you", check.Why);
+            Assert.Contains("5 looked up on the web", check.Why);
+        }
+        finally
+        {
+            (s.AIProvider, s.ApiKey) = before;
+            OpenRouterModels.Reset(); Prices.Reset();
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
+    [Fact]
     public void MistralIsPaidAndItsAliasesAreListedOnce()
     {
         Assert.False(Providers.IsFree(new ServerSettings { FreeOnly = true }, "mistral:mistral-embed"));
