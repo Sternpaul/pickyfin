@@ -260,7 +260,10 @@ public sealed class ManualRun
                 step.Total = list.Count;
                 Jobs.Running(Key, Title, $"{step.Name} with {Meaning.Short(step.Model)}: 0 of {list.Count:N0}");
                 using var scope = RunContext.Use(new RunContext { ChatModel = step.Model, Used = Used, Allow = (m, i, o) => Fits(m, i, o), EarlierTagsAlways = true });
-                var provider = new OpenRouterProvider(_http.CreateClient(), _logs.CreateLogger<OpenRouterProvider>());
+                // the same time limit as the normal runs: a big model can take minutes for a batch of 20
+                var client = _http.CreateClient();
+                client.Timeout = TimeSpan.FromMinutes(10);
+                var provider = new OpenRouterProvider(client, _logs.CreateLogger<OpenRouterProvider>());
                 if (step.Key == "meaning")
                 {
                     var (done, stopped) = await _meaning.ManualAsync(step.Model, list.Select(m => m.ItemId).ToList(), r.Redo,

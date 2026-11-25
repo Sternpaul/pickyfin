@@ -184,7 +184,7 @@ namespace Pickyfin.Server.Ai
                         try
                         {
                             var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
-                            var content = body.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+                            var content = AnswerText(body.GetProperty("choices")[0].GetProperty("message").GetProperty("content"));
                             int? Tokens(string name) => body.TryGetProperty("usage", out var u) && u.ValueKind == JsonValueKind.Object && u.TryGetProperty(name, out var t) && t.TryGetInt32(out var n) ? n : null;
                             if (content.Trim().Length > 0) return new OpenRouterCallResult { Success = true, Content = content, InputTokens = Tokens("prompt_tokens"), OutputTokens = Tokens("completion_tokens") };
                             error = "empty answer";
@@ -225,6 +225,25 @@ namespace Pickyfin.Server.Ai
                 }
             }
             return new OpenRouterCallResult { Error = $"{error} ({TriesPerModel} tries)" };
+        }
+
+        /// <summary>
+        /// The answer's text. Usually a string; reasoning models (e.g. on Mistral) send a list of
+        /// pieces, [{"type":"thinking",…},{"type":"text","text":"…"}]: only the text pieces count.
+        /// </summary>
+        public static string AnswerText(JsonElement content)
+        {
+            if (content.ValueKind == JsonValueKind.String) return content.GetString() ?? "";
+            if (content.ValueKind != JsonValueKind.Array) return "";
+            var text = new StringBuilder();
+            foreach (var part in content.EnumerateArray())
+            {
+                if (part.ValueKind == JsonValueKind.String) { text.Append(part.GetString()); continue; }
+                if (part.ValueKind != JsonValueKind.Object) continue;
+                var type = part.TryGetProperty("type", out var t) ? t.GetString() : "text";
+                if (type is "text" or "output_text" && part.TryGetProperty("text", out var value) && value.ValueKind == JsonValueKind.String) text.Append(value.GetString());
+            }
+            return text.ToString();
         }
 
         private class OpenRouterCallResult

@@ -254,6 +254,15 @@ public class ManualRunTests
     }
 
     [Fact]
+    public void AnAnswerInPiecesIsReadForItsText()
+    {
+        using var pieces = JsonDocument.Parse("""[{"type":"thinking","thinking":[{"type":"text","text":"Let me think about m1."}]},{"type":"text","text":"{\"movies\":"},{"type":"text","text":"[]}"}]""");
+        Assert.Equal("{\"movies\":[]}", OpenRouterProvider.AnswerText(pieces.RootElement));
+        using var plain = JsonDocument.Parse("\"{\\\"ok\\\":true}\"");
+        Assert.Equal("{\"ok\":true}", OpenRouterProvider.AnswerText(plain.RootElement));
+    }
+
+    [Fact]
     public void MistralIsPaidAndItsAliasesAreListedOnce()
     {
         Assert.False(Providers.IsFree(new ServerSettings { FreeOnly = true }, "mistral:mistral-embed"));
