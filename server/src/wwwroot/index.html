@@ -952,6 +952,7 @@
           <div class="mx-top">
             <input type="search" id="matrix-find" list="matrix-titles" placeholder="Find a film…" autocomplete="off"><datalist id="matrix-titles"></datalist>
             <span class="mx-facts glass" id="matrix-kind"><button type="button" data-v="movie" class="on">Films</button><button type="button" data-v="series">Series</button><button type="button" data-v="all" title="Films and series on one map">Both</button></span>
+            <span class="mx-facts glass" id="matrix-mode" title="What the percentages measure"><button type="button" data-v="mixed" class="on" title="Tags and meaning, mixed as on Tuning: how picks see it">Tags + meaning</button><button type="button" data-v="meaning" title="Meaning only, the average of all models">Meaning</button><button type="button" data-v="model" title="Meaning only, from the model on the map">This model</button></span>
             <span class="mx-model glass hidden" id="matrix-facts"><select id="mx-model" aria-label="Embedding model"></select><button type="button" id="mx-manage-open" title="Manage the models' matrices">Manage…</button></span>
           </div>
           <div class="mx-legend" id="matrix-legend"></div>
@@ -1505,6 +1506,8 @@ $('#mx-manage-close').onclick = () => $('#mx-manage').close();
 
 async function loadMatrix() {
   wireMatrix();
+  // what the percentages measure; a picked film is looked at again the new way
+  seg($('#matrix-mode'), mx.mode || 'mixed', v => { mx.mode = v; if (mx.pick) pickFilm(mx.pick, false); });
   // Films and series are two matrices
   seg($('#matrix-kind'), mx.kind || 'movie', v => { if (v !== (mx.kind || 'movie')) { mx.kind = v; mx.pick = null; $('#matrix-find').value = ''; loadMatrix(); } });
   const q = new URLSearchParams({ kind: mx.kind || 'movie' }); if (mx.model) q.set('model', mx.model);
@@ -1695,7 +1698,7 @@ function showCard(i) {
   mx.hover = i; mx.circles[i].classList.add('hov');
   const p = mx.pts[i], rel = mx.films.find(f => f.ItemId === p.Id);
   card.innerHTML = `${mxImg(p.Id)}<div><b>${esc(p.Title)}</b><div class="sub">${[p.Year, p.Group].filter(Boolean).map(esc).join(' · ')}</div>`
-    + (rel ? `<span class="pct">${rel.Score}% match</span>` : p.Id === mx.pick ? '<span class="pct">picked</span>' : '') + '</div>';
+    + (rel ? `<span class="pct">${rel.Score}% ${(mx.mode || 'mixed') === 'mixed' ? 'match' : 'meaning'}</span>` : p.Id === mx.pick ? '<span class="pct">picked</span>' : '') + '</div>';
   card.classList.remove('hidden');
   // a film linked to the picked one: light up its line and its row in the list
   mxHighlight(rel ? p.Id : null);
@@ -1817,8 +1820,9 @@ async function pickFilm(id, move = true) {
   const main = mx.kind === 'all' ? 'all' : own;
   let r, cross = null;
   try {
-    [r, cross] = await Promise.all([call('GET', `/api/movies/${id}/related?kind=${main}`),
-      main === 'all' ? null : call('GET', `/api/movies/${id}/related?kind=${other}`).catch(() => null)]);
+    const how = `&mode=${mx.mode || 'mixed'}` + (mx.mode === 'model' && mx.data?.Model ? `&model=${encodeURIComponent(mx.data.Model)}` : '');
+    [r, cross] = await Promise.all([call('GET', `/api/movies/${id}/related?kind=${main}${how}`),
+      main === 'all' ? null : call('GET', `/api/movies/${id}/related?kind=${other}${how}`).catch(() => null)]);
   } catch { $('.mx-list', box).innerHTML = '<p class="note" style="padding:8px">Couldn\'t load its closest titles.</p>'; return; }
   if (mx.pick !== id) return;
   mx.films = r.Films;
@@ -1835,7 +1839,9 @@ async function pickFilm(id, move = true) {
         <span class="bar"><i style="width:${Math.max(2, f.Score)}%"></i></span><span class="why">${why(f)}</span></div>`).join('');
   const head = t => `<div class="mx-sec">${t}</div>`;
   const crossList = (cross?.Films || []).slice(0, 6);
-  $('.mx-list', box).innerHTML = (r.Meaning ? '' : '<p class="note" style="padding:4px 8px">Not matched by meaning yet, so compared by tags only.</p>')
+  const modeNote = { mixed: '', meaning: 'Meaning only: the average of all models, no tags.', model: `Meaning only, from ${esc((mx.data?.Model || '').replace(/^[^/:]+[/:]/, '').replace(/:free$/, ''))} alone.` }[mx.mode || 'mixed'];
+  $('.mx-list', box).innerHTML = (modeNote ? `<p class="note" style="padding:4px 8px">${modeNote}</p>` : '')
+    + (r.Meaning || (mx.mode || 'mixed') !== 'mixed' ? '' : '<p class="note" style="padding:4px 8px">Not matched by meaning yet, so compared by tags only.</p>')
     + (main !== 'all' && crossList.length ? head(`Closest ${own === 'series' ? 'series' : 'films'}`) : '')
     + (r.Films.length ? rows(r.Films) : '<p class="note" style="padding:8px">None yet: it needs its tags first.</p>')
     + (crossList.length ? head(`Closest ${other === 'series' ? 'series' : 'films'}`) + rows(crossList) : '');

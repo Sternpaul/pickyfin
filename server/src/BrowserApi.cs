@@ -279,7 +279,9 @@ public static class BrowserApi
         // kind: which titles to list ("movie", "series" or "all"); by default the same kind as this one.
         // A series' closest films are what it adds to someone's taste for film picks. With "all"
         // both kinds are in one list: each film ranked among films, each series among series.
-        admin.MapGet("/movies/{id:guid}/related", async (Guid id, string? kind, Database database, Meaning meaning, CancellationToken ct) =>
+        // mode: "mixed" (tags and meaning as set on Tuning, as picks use them), "meaning" (all models'
+        // average, no tags) or "model" (one model only: the one on the map), to compare models
+        admin.MapGet("/movies/{id:guid}/related", async (Guid id, string? kind, string? mode, string? model, Database database, Meaning meaning, CancellationToken ct) =>
         {
             var s = ServerSettings.Current;
             List<MovieMetadata> all;
@@ -296,13 +298,20 @@ public static class BrowserApi
                 {
                     var tags = engine.CalculateSimilarity(movie, m);
                     var near = weight > 0 ? snapshot.Score(id, m.ItemId) : null;
-                    return (Movie: m, Tags: tags, Near: near, Score: Meaning.Blend(tags, near, weight));
+                    double? score = mode switch
+                    {
+                        "meaning" => near,
+                        "model" => snapshot.For(model)?.Rank(id, m.ItemId, brief: false),
+                        _ => Meaning.Blend(tags, near, weight),
+                    };
+                    return (Movie: m, Tags: tags, Near: near, Score: score);
                 })
+                .Where(x => x.Score is not null)
                 .OrderByDescending(x => x.Score).Take(12)
                 .Select(x => (object)new
                 {
                     x.Movie.ItemId, x.Movie.Title, x.Movie.ReleaseYear, x.Movie.Kind,
-                    Score = (int)Math.Round(x.Score * 100), Tags = (int)Math.Round(x.Tags * 100),
+                    Score = (int)Math.Round(x.Score!.Value * 100), Tags = (int)Math.Round(x.Tags * 100),
                     Meaning = x.Near is { } near ? (int?)Math.Round(near * 100) : null,
                     // each model's own view, to see where they agree
                     By = weight > 0 ? snapshot.ScoreBy(id, x.Movie.ItemId).ToDictionary(b => Meaning.Short(b.Key), b => (int)Math.Round(b.Value * 100)) : new(),
@@ -310,7 +319,7 @@ public static class BrowserApi
                     Series = movie.CollectionId is { } c && x.Movie.CollectionId == c,
                 })
                 .ToList();
-            return Results.Ok(new { Meaning = snapshot.Has(id), Kind = wanted, Films = films });
+            return Results.Ok(new { Meaning = snapshot.Has(id), Kind = wanted, Mode = mode is "meaning" or "model" ? mode : "mixed", Model = mode == "model" ? snapshot.For(model)?.Model : null, Films = films });
         });
 
         admin.MapPut("/movies/{id:guid}", async (Guid id, MovieEdit edit, Database database, LibrarySync sync, JellyfinClient jellyfin, MovieHistory history, CancellationToken ct) =>

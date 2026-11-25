@@ -105,7 +105,8 @@ public sealed class ManualRun
     private static List<MovieMetadata> For(string step, List<MovieMetadata> titles, bool redo, bool afterDescribe) => step switch
     {
         "describe" => titles.Where(m => !HandEdited(m) && (redo || !m.IsClassified)).ToList(),
-        "check" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && (redo || !m.Checked)).ToList(),
+        // like the automatic step 2: a title looked up on the web isn't checked (the web text is the stronger evidence)
+        "check" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && string.IsNullOrEmpty(m.WebNotes) && (redo || !m.Checked)).ToList(),
         "lookup" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && (redo || m.WebNotes is null)).ToList(),
         _ => titles.Where(m => m.IsClassified || afterDescribe).ToList(),
     };
