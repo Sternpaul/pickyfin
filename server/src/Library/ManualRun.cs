@@ -6,10 +6,10 @@ using Pickyfin.Server.Data.Models;
 namespace Pickyfin.Server.Library;
 
 /// <summary>What the admin chose for a manual run.</summary>
-/// <param name="Scope">"all" (every library that's on), "library" (one library) or "selected" (the titles picked on the Movies and Series pages).</param>
+/// <param name="Scope">"all" (every library that's on), "library" (the libraries in Libraries) or "selected" (the titles picked on the Movies and Series pages).</param>
 /// <param name="Redo">True: every chosen title goes through the steps again; false: only what's missing. Hand edits are never overwritten.</param>
 /// <param name="Limit">Dollars; the run stops before going past it. Null: no limit.</param>
-public sealed record ManualRunRequest(string Scope, Guid? Library, List<Guid>? Ids, bool Redo,
+public sealed record ManualRunRequest(string Scope, List<Guid>? Libraries, List<Guid>? Ids, bool Redo,
     string? Describe, string? Check, string? Lookup, string? Meaning, double? Limit);
 
 /// <summary>
@@ -94,7 +94,8 @@ public sealed class ManualRun
         var s = ServerSettings.Current;
         return r.Scope switch
         {
-            "library" when r.Library is { } lib => all.Where(m => (m.Libraries ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Any(id => Guid.TryParse(id, out var g) && g == lib)).ToList(),
+            "library" => all.Where(m => (m.Libraries ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Any(id => Guid.TryParse(id, out var g) && (r.Libraries ?? new()).Contains(g))).ToList(),
             "selected" => all.Where(m => (r.Ids ?? new()).Contains(m.ItemId)).ToList(),
             _ => all.Where(m => !s.IsLibraryExcluded(m.Libraries)).ToList(),
         };
@@ -141,7 +142,8 @@ public sealed class ManualRun
                 price is null ? null : Prices.Cost(price, (int)Math.Min(int.MaxValue, input), (int)Math.Min(int.MaxValue, output)),
                 price?.Note ?? (price is null ? "price unknown: the spending limit can't count this model" : null)));
         }
-        string? problem = titles.Count == 0 ? "No titles chosen." : steps.Count == 0 ? "No step chosen." : null;
+        string? problem = r.Scope == "library" && (r.Libraries is null || r.Libraries.Count == 0) ? "Tick at least one library."
+            : titles.Count == 0 ? "No titles chosen." : steps.Count == 0 ? "No step chosen." : null;
         foreach (var step in steps)
             if (!Providers.HasKey(s, step.Model)) problem ??= $"{step.Name}: no {step.Source} key is set.";
         if (steps.Any(x => x.Step is "lookup") && !WebLookup.Configured) problem ??= "3 · Look up needs a web search engine (AI page, step 3).";

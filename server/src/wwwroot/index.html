@@ -317,6 +317,9 @@
   .mr-h { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 22px 0 10px; }
   .mr-scope { display: flex; flex-direction: column; gap: 8px; }
   .mr-scope label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .mr-libs { display: flex; flex-direction: column; gap: 6px; margin: 0 0 4px 26px; }
+  .mr-libs label { font-size: 14px; }
+  .mr-libs .note { margin-left: 2px; }
   .mr-steps { display: flex; flex-direction: column; gap: 14px; }
   .mr-step label { display: flex; gap: 8px; align-items: center; font-weight: 600; margin-bottom: 6px; }
   .mr-step input[type=text], .mr-step select { width: 100%; }
@@ -985,7 +988,8 @@
       <h3 class="mr-h">Titles</h3>
       <div class="mr-scope">
         <label><input type="radio" name="mr-scope" value="all" checked> The whole library <span class="note" id="mr-all-n"></span></label>
-        <label><input type="radio" name="mr-scope" value="library"> One library <select id="mr-lib"></select></label>
+        <label><input type="radio" name="mr-scope" value="library"> Selected libraries</label>
+        <div class="mr-libs" id="mr-libs"></div>
         <label><input type="radio" name="mr-scope" value="selected"> The titles selected on the Movies and Series pages <span class="note" id="mr-sel-n"></span></label>
       </div>
       <h3 class="mr-h">Steps and models</h3>
@@ -2722,7 +2726,7 @@ const mrRequest = () => {
   const step = k => $(`#mr-panel [data-step="${k}"]`)?.checked ? mrModelOf(k) : null;
   const limit = $('#mr-limit').value.trim();
   return {
-    Scope: $('#mr-panel input[name="mr-scope"]:checked').value, Library: $('#mr-lib').value || null, Ids: [...picked],
+    Scope: $('#mr-panel input[name="mr-scope"]:checked').value, Libraries: $$('#mr-libs input:checked').map(i => i.value), Ids: [...picked],
     Redo: segValue($('#mr-redo')) === 'redo',
     Describe: step('describe'), Check: step('check'), Lookup: step('lookup'), Meaning: step('meaning'),
     Limit: limit === '' ? null : Math.max(0, Number(limit)),
@@ -2758,7 +2762,12 @@ async function openManualRun(scope) {
   $('#mr-sel-n').textContent = picked.size ? `(${picked.size.toLocaleString()})` : '(none selected yet)';
   try {
     const libs = await call('GET', '/api/libraries');
-    $('#mr-lib').innerHTML = libs.map(l => `<option value="${l.Id}">${esc(l.Name)}</option>`).join('');
+    // keep what was ticked when the panel opens again
+    const ticked = new Set($$('#mr-libs input:checked').map(i => i.value));
+    $('#mr-libs').innerHTML = libs.map(l => `<label><input type="checkbox" value="${l.Id}"${ticked.has(l.Id) ? ' checked' : ''}> ${esc(l.Name)}
+      <span class="note">${((l.Movies || 0) + (l.Series || 0)).toLocaleString()}${l.Enabled ? '' : ' · switched off'}</span></label>`).join('') || '<span class="note">No libraries found.</span>';
+    // ticking a library chooses "Selected libraries"
+    $$('#mr-libs input').forEach(i => i.onchange = () => { $('#mr-panel input[name="mr-scope"][value="library"]').checked = true; mrLater(); });
     const n = libs.filter(l => l.Enabled).reduce((a, l) => a + (l.Movies || 0) + (l.Series || 0), 0);
     $('#mr-all-n').textContent = `(${n.toLocaleString()})`;
   } catch {}

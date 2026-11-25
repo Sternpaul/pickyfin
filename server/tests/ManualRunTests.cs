@@ -134,6 +134,41 @@ public class ManualRunTests
     }
 
     [Fact]
+    public async Task SeveralLibrariesCanBeChosen()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pickyfin-manual-libs-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        var s = ServerSettings.Current;
+        var before = (s.AIProvider, s.ApiKey);
+        try
+        {
+            OpenRouterModels.Reset(); Prices.Reset();
+            (s.AIProvider, s.ApiKey) = (AIProviderType.OpenRouter, "or-key");
+            var (run, database, _) = Build(dir);
+            Guid films = Guid.NewGuid(), anime = Guid.NewGuid(), docs = Guid.NewGuid();
+            await using (var db = database.Open())
+            {
+                db.Movies.AddRange(
+                    new MovieMetadata { ItemId = Guid.NewGuid(), Title = "A", IsClassified = true, Libraries = $"{films}" },
+                    new MovieMetadata { ItemId = Guid.NewGuid(), Title = "B", IsClassified = true, Libraries = $"{anime},{films}" },
+                    new MovieMetadata { ItemId = Guid.NewGuid(), Title = "C", IsClassified = true, Libraries = $"{anime}" },
+                    new MovieMetadata { ItemId = Guid.NewGuid(), Title = "D", IsClassified = true, Libraries = $"{docs}" });
+                await db.SaveChangesAsync();
+            }
+            ManualRunRequest For(params Guid[] libraries) => new("library", libraries.ToList(), null, Redo: true, null, null, null, Meaning: "acme/embed-paid", Limit: null);
+            Assert.Equal(2, (await run.EstimateAsync(For(films), default)).Titles);
+            Assert.Equal(3, (await run.EstimateAsync(For(films, anime), default)).Titles); // B counted once
+            Assert.Equal("Tick at least one library.", (await run.EstimateAsync(For(), default)).Problem);
+        }
+        finally
+        {
+            (s.AIProvider, s.ApiKey) = before;
+            OpenRouterModels.Reset(); Prices.Reset();
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
+    [Fact]
     public void MistralIsPaidAndItsAliasesAreListedOnce()
     {
         Assert.False(Providers.IsFree(new ServerSettings { FreeOnly = true }, "mistral:mistral-embed"));
