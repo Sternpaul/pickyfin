@@ -179,13 +179,18 @@ namespace Pickyfin.Server.Library
             return looked;
         }
 
-        /// <summary>A manual run's describing: one call for the batch, from the web text when the film has some.</summary>
+        /// <summary>
+        /// A manual run's describing, the same as the automatic step: one call for the batch (from the
+        /// web text when the film has some), the same history and issues, and the same web lookup
+        /// for titles that look off afterwards.
+        /// </summary>
         public async Task DescribeManualAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken)
         {
             var plain = batch.Where(m => string.IsNullOrEmpty(m.WebNotes)).ToList();
             var looked = batch.Where(m => !string.IsNullOrEmpty(m.WebNotes)).ToList();
             if (plain.Count > 0) await TagBatchAsync(provider, plain, cancellationToken);
             if (looked.Count > 0) await TagBatchAsync(provider, looked, cancellationToken, lookedUp: true);
+            await LookUpFlaggedAsync(provider, batch, cancellationToken);
         }
 
         /// <summary>Describes films again with everything known, with the step-3 model order (used by the re-check).</summary>

@@ -149,7 +149,7 @@ public sealed class SecondOpinion
         Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} titles to go{asideText}" : $"Up to date{asideText}", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
     }
 
-    /// <summary>A manual run's check: one call for the batch; returns how many look wrong.</summary>
+    /// <summary>A manual run's check, the same as the automatic step: issues, history, and the web lookup of what looks wrong. Returns how many look wrong.</summary>
     public async Task<int> CheckManualAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken)
     {
         var answer = await provider.CompleteJsonAsync(ClassificationPrompt.BuildCheck(batch), ServerSettings.Current.CheckModel, cancellationToken);
@@ -162,6 +162,7 @@ public sealed class SecondOpinion
         await _history.AddAsync(batch.Select(m => MovieHistory.Entry(m, "check", MovieHistory.ModelFor("check"), null,
             problems.TryGetValue(m, out var said) ? said : "Found nothing wrong")), cancellationToken);
         await _store.SaveMoviesAsync(batch, cancellationToken);
+        await _classifier.LookUpFlaggedAsync(provider, problems.Keys.ToList(), cancellationToken);
         return problems.Count;
     }
 
