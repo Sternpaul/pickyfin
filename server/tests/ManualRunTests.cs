@@ -169,6 +169,37 @@ public class ManualRunTests
     }
 
     [Fact]
+    public async Task EveryMistralModelHasAPriceFromTheCatalog()
+    {
+        using var doc = JsonDocument.Parse("""{"mistral/zai-glm-5-3-flash":{"input_cost_per_token":1.5e-07,"output_cost_per_token":5e-07,"mode":"chat"},"mistral/magistral-medium-latest":{"input_cost_per_token":1.5e-06,"output_cost_per_token":7.5e-06},"gemini/gemini-3-flash":{"input_cost_per_token":3e-07,"output_cost_per_token":2.5e-06},"openai/gpt-x":{"input_cost_per_token":1e-06},"sample_spec":{"input_cost_per_token":0}}""");
+        var catalog = Prices.Catalog(doc.RootElement);
+        Assert.Equal(3, catalog.Count); // only the sources Pickyfin asks
+        Prices.UseCatalog(catalog);
+        try
+        {
+            var http = new Factory(new PaidOpenRouter());
+            var glm = await Prices.ForAsync("mistral:zai-glm-5-3-flash", http, NullLogger.Instance, default);
+            Assert.Equal((0.15, 0.5), (glm!.In, glm.Out));
+            Assert.Contains("paid", glm.Note);
+            Assert.Equal(1.5, (await Prices.ForAsync("mistral:magistral-medium-latest", http, NullLogger.Instance, default))!.In);
+            Assert.Equal(0.3, (await Prices.ForAsync("gemini:gemini-3-flash", http, NullLogger.Instance, default))!.In);
+            // not in the catalog: the built-in table still knows Mistral's own families
+            Assert.Equal(0.10, (await Prices.ForAsync("mistral:mistral-embed", http, NullLogger.Instance, default))!.In);
+            Assert.Null(await Prices.ForAsync("mistral:some-new-model", http, NullLogger.Instance, default));
+        }
+        finally { Prices.UseCatalog(new()); }
+    }
+
+    [Fact]
+    public void CloudflaresOwnPriceListIsRead()
+    {
+        using var doc = JsonDocument.Parse("""{"data":[{"id":"@cf/baai/bge-m3","pricing":{"prompt":"0.000000012","completion":"0"}},{"id":"@cf/meta/llama-4-scout","pricing":{"prompt":"0.00000027","completion":"0.00000085"}},{"id":"@cf/x/no-price"}]}""");
+        var list = Prices.CloudflareList(doc.RootElement);
+        Assert.Equal(2, list.Count);
+        Assert.Equal((0.27, 0.85), (Math.Round(list["@cf/meta/llama-4-scout"].In, 4), Math.Round(list["@cf/meta/llama-4-scout"].Out, 4)));
+    }
+
+    [Fact]
     public void MistralIsPaidAndItsAliasesAreListedOnce()
     {
         Assert.False(Providers.IsFree(new ServerSettings { FreeOnly = true }, "mistral:mistral-embed"));

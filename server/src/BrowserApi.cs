@@ -258,13 +258,21 @@ public static class BrowserApi
                 On = Meaning.On(s),
                 Kind = wanted,
                 Model = part?.Model,
-                Models = snapshot.Parts.Select(x => new { Id = x.Model, Name = Meaning.Short(x.Model), Films = films.Count(f => x.Films.ContainsKey(f.ItemId)), x.Active }),
+                Models = snapshot.Parts.Select(x => new { Id = x.Model, Name = Meaning.Short(x.Model), Source = Providers.Name(x.Model), Films = films.Count(f => x.Films.ContainsKey(f.ItemId)), All = x.Films.Count, x.Active }),
                 Matched = points.Count,
                 Films = films.Count,
                 Weight = s.MeaningWeight,
                 Points = points,
                 All = films.OrderBy(f => f.Title).Select(f => new { Id = f.ItemId, f.Title, Year = f.ReleaseYear, f.Kind }),
             });
+        });
+
+        // Delete one model's matrix (the admin confirms on the page first)
+        admin.MapDelete("/matrix/models", async (string model, Meaning meaning, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(model)) return Results.BadRequest();
+            var (removed, takenOut, stillAutomatic) = await meaning.DeleteModelAsync(model, ct);
+            return Results.Ok(new { Removed = removed, TakenOut = takenOut, StillAutomatic = stillAutomatic });
         });
 
         // The titles closest to this one, by tags and meaning together: one row of the "matrix".

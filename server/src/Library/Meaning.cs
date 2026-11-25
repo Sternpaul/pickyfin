@@ -254,6 +254,34 @@ public sealed class Meaning
         return (done, null);
     }
 
+    /// <summary>
+    /// Deletes one model's matrix for good: every meaning it made, of films, series and people's
+    /// wishes. A model the admin put in the meaning order is taken out of it too, or it would be
+    /// built again. Returns how many meanings went, and whether it's still in the automatic order
+    /// (then it comes back unless the order is set by hand).
+    /// </summary>
+    public async Task<(int Removed, bool TakenOut, bool StillAutomatic)> DeleteModelAsync(string model, CancellationToken cancellationToken)
+    {
+        int removed;
+        await using (var db = _database.Open())
+            removed = await db.Embeddings.Where(e => e.Model == model).ExecuteDeleteAsync(cancellationToken);
+        Interlocked.Increment(ref _version);
+        lock (Resting) Resting.Remove(model);
+        var s = ServerSettings.Current;
+        var takenOut = false;
+        if (s.EmbeddingModels.Any(m => string.Equals(m, model, StringComparison.OrdinalIgnoreCase)))
+        {
+            var changed = s.Clone();
+            changed.EmbeddingModels = changed.EmbeddingModels.Where(m => !string.Equals(m, model, StringComparison.OrdinalIgnoreCase)).ToList();
+            ServerSettings.Save(changed);
+            takenOut = true;
+        }
+        var stillAutomatic = s.EmbeddingModelsAuto && Order(ServerSettings.Current).Contains(model, StringComparer.OrdinalIgnoreCase);
+        _logger.LogInformation("Meaning: the matrix of {Model} is deleted ({Count} meanings){Order}", model, removed,
+            takenOut ? "; it's out of the meaning order too" : stillAutomatic ? "; it's in the automatic order, so it will be built again" : "");
+        return (removed, takenOut, stillAutomatic);
+    }
+
     private static bool IsResting(string model)
     {
         if (Providers.RefusedWhy(model) is not null) return true;

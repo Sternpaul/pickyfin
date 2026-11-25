@@ -381,6 +381,19 @@
   #matrix-find { width: min(320px, 100%); border-radius: 999px; padding-left: 16px; }
   .mx-facts { display: flex; padding: 3px; border-radius: 999px; gap: 2px; overflow-x: auto; max-width: 100%; }
   .mx-facts:empty { display: none; }
+  .mx-model { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; max-width: 100%; }
+  .mx-model select { border: 0; background: transparent; color: var(--text); font: 500 12.5px var(--sans); padding: 5px 8px 5px 12px; border-radius: 999px; max-width: min(340px, 60vw); cursor: pointer; }
+  .mx-model button { border: 0; background: none; color: var(--muted); font: 500 12.5px var(--sans); padding: 5px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .mx-model button:hover, .mx-model select:hover { color: var(--text); }
+  dialog.mx-manage { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px 18px; background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  dialog.mx-manage::backdrop { background: var(--scrim); backdrop-filter: blur(2px); }
+  dialog.mx-manage h2 { margin: 0 0 8px; font-size: 19px; }
+  .mx-list { list-style: none; margin: 12px 0 16px; padding: 0; max-height: 55vh; overflow-y: auto; border-top: 1px solid var(--line); }
+  .mx-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--line); }
+  .mx-list .m { min-width: 0; overflow-wrap: anywhere; }
+  .mx-list .src { color: var(--faint); font-size: 12px; }
+  .mx-list .n { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mx-list .btn { height: 30px; font-size: 13px; padding: 0 12px; }
   .mx-facts button { border: 0; background: none; color: var(--muted); font: 500 12.5px var(--sans); padding: 5px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
   .mx-facts button span { color: var(--faint); margin-left: 3px; font-variant-numeric: tabular-nums; }
   .mx-facts button.on { background: var(--accent); color: var(--accent-ink); }
@@ -939,7 +952,7 @@
           <div class="mx-top">
             <input type="search" id="matrix-find" list="matrix-titles" placeholder="Find a film…" autocomplete="off"><datalist id="matrix-titles"></datalist>
             <span class="mx-facts glass" id="matrix-kind"><button type="button" data-v="movie" class="on">Films</button><button type="button" data-v="series">Series</button><button type="button" data-v="all" title="Films and series on one map">Both</button></span>
-            <span class="mx-facts" id="matrix-facts"></span>
+            <span class="mx-model glass hidden" id="matrix-facts"><select id="mx-model" aria-label="Embedding model"></select><button type="button" id="mx-manage-open" title="Manage the models' matrices">Manage…</button></span>
           </div>
           <div class="mx-legend" id="matrix-legend"></div>
           <div class="mx-zoom glass"><button type="button" data-z="in" title="Zoom in">+</button><button type="button" data-z="out" title="Zoom out">−</button><button type="button" data-z="fit" title="Show all films">⤢</button></div>
@@ -970,6 +983,12 @@
 </div>
 
 <div class="scrim hidden" id="scrim"></div>
+<dialog class="mx-manage" id="mx-manage" aria-labelledby="mx-manage-title">
+  <h2 id="mx-manage-title">Matrices</h2>
+  <p class="why">Each embedding model keeps its own matrix. Deleting one removes all its meanings for good (films, series and people's wishes); the averages then come from the other models. A model in your meaning order is taken out of it too, or it would be built again.</p>
+  <ul class="mx-list" id="mx-manage-list"></ul>
+  <div class="gone-acts"><button type="button" class="btn" id="mx-manage-close">Close</button></div>
+</dialog>
 <dialog class="gone" id="gone-dialog" aria-labelledby="gone-title">
   <form method="dialog">
     <h2 id="gone-title"></h2>
@@ -1460,6 +1479,30 @@ const mx = {
 const mxTitle = f => `${f.Title}${f.Year ? ` (${f.Year})` : ''}`;
 const mxImg = (id, cls = '') => `<img src="${posterUrl(id)}" alt="" class="${cls}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'noimg'}))">`;
 
+// ---- delete a model's matrix (asks first) ----
+function openMxManage(models) {
+  const list = [...models].sort((a, b) => (a.Source || '').localeCompare(b.Source || '') || a.Name.localeCompare(b.Name));
+  $('#mx-manage-list').innerHTML = list.length ? list.map(m => `<li><div class="m">${esc(m.Name.replace(/ \([^)]*\)$/, ''))} <span class="src">${esc(m.Source || 'OpenRouter')}${m.Active === false ? ' · not in use, no new films' : ''}</span></div>
+      <span class="n">${(m.All ?? m.Films).toLocaleString()} meanings</span>
+      <button type="button" class="btn danger" data-delete="${esc(m.Id)}">Delete</button></li>`).join('') : '<li><span class="note">No matrices yet.</span></li>';
+  $$('#mx-manage-list [data-delete]').forEach(b => b.onclick = async () => {
+    const m = list.find(x => x.Id === b.dataset.delete);
+    if (!confirm(`Delete the matrix of ${m.Id}?\n\nIts ${(m.All ?? m.Films).toLocaleString()} meanings are removed for good. Building it again means matching every title with this model again.${m.Active !== false ? '\n\nIt is still in use: if it is in your meaning order, it is taken out of it.' : ''}`)) return;
+    b.disabled = true;
+    try {
+      const res = await call('DELETE', '/api/matrix/models?model=' + encodeURIComponent(m.Id));
+      toast(`Deleted ${res.Removed.toLocaleString()} meanings of ${m.Name}` + (res.TakenOut ? '; taken out of the meaning order' : '') + (res.StillAutomatic ? '; it is in the automatic order, so it will be built again' : ''));
+      if (mx.model === m.Id) mx.model = null;
+      await loadMatrix();
+      openMxManage(mx.data?.Models || []);
+      if (res.TakenOut) loadSettings();
+    } catch (err) { toast(`Not deleted: ${err.message}`); b.disabled = false; }
+  });
+  const dlg = $('#mx-manage');
+  if (!dlg.open) dlg.showModal();
+}
+$('#mx-manage-close').onclick = () => $('#mx-manage').close();
+
 async function loadMatrix() {
   wireMatrix();
   // Films and series are two matrices
@@ -1471,9 +1514,15 @@ async function loadMatrix() {
   const model = d.Model ? d.Model.replace(/^[^/]+\//, '').replace(':free', '') : null;
   // one map per model: switch between them
   const models = (d.Models || []).filter(m => m.Films > 0);
-  $('#matrix-facts').innerHTML = models.map(m => `<button type="button" class="${m.Id === d.Model ? 'on' : ''}" data-model="${esc(m.Id)}" title="${esc(m.Id)}${m.Active === false ? ' · switched off or retired: its films still count, no new ones are added' : ''}">${esc(m.Name)}${m.Active === false ? ' <i>(no new films)</i>' : ''} <span>${m.Films.toLocaleString()}</span></button>`).join('');
-  $('#matrix-facts').classList.toggle('glass', models.length > 0);
-  $$('#matrix-facts button').forEach(b => b.onclick = () => { if (b.dataset.model !== d.Model) { mx.model = b.dataset.model; loadMatrix(); } });
+  // one dropdown, grouped by source, however many models there are
+  const bySource = {};
+  models.forEach(m => (bySource[m.Source || 'OpenRouter'] ||= []).push(m));
+  $('#mx-model').innerHTML = Object.entries(bySource).map(([src, list]) => `<optgroup label="${esc(src)}">${list.map(m =>
+    `<option value="${esc(m.Id)}"${m.Id === d.Model ? ' selected' : ''}>${esc(m.Name.replace(/ \([^)]*\)$/, ''))} · ${m.Films.toLocaleString()}${m.Active === false ? ' · no new films' : ''}</option>`).join('')}</optgroup>`).join('');
+  $('#matrix-facts').classList.toggle('hidden', !(d.Models || []).length);
+  $('#mx-model').classList.toggle('hidden', !models.length);
+  $('#mx-model').onchange = e => { mx.model = e.target.value; loadMatrix(); };
+  $('#mx-manage-open').onclick = () => openMxManage(d.Models || []);
   $('#matrix-about').innerHTML = !d.On
     ? 'Matching by meaning is off (AI page), so there is no map; films are compared by their tags only.'
     : `Every embedding model builds its own matrix${models.length > 1 ? ` (${models.length} so far)` : ''}; the map shows ${esc(model || 'one')} with ${d.Matched.toLocaleString()} of ${d.Films.toLocaleString()} described films. Switch models at the top of the map. `

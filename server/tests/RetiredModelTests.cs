@@ -61,4 +61,47 @@ public class RetiredModelTests
             try { Directory.Delete(dir, true); } catch { }
         }
     }
+
+    [Fact]
+    public async Task AModelsMatrixCanBeDeletedAndLeavesTheOrder()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pickyfin-delete-matrix-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        var s = ServerSettings.Current;
+        var before = (s.MeaningOn, s.AIProvider, s.ApiKey, s.EmbeddingModels.ToList(), s.EmbeddingModelsAuto);
+        try
+        {
+            ServerSettings.Load(dir);
+            s = ServerSettings.Current;
+            var database = new Database(dir);
+            var film = Guid.NewGuid();
+            await using (var db = database.Open())
+            {
+                db.Movies.Add(new MovieMetadata { ItemId = film, Title = "Heat", IsClassified = true });
+                foreach (var model in new[] { "mistral:mistral-embed", "a/live:free" })
+                    db.Embeddings.Add(new Embedding { ItemId = film, Kind = "film", Model = model, Hash = "h", Vector = Meaning.Pack(new[] { 1f, 2f }), At = DateTime.UtcNow });
+                db.Embeddings.Add(new Embedding { ItemId = Guid.NewGuid(), Kind = "brief", Model = "mistral:mistral-embed", Hash = "h", Vector = Meaning.Pack(new[] { 1f, 2f }), At = DateTime.UtcNow });
+                await db.SaveChangesAsync();
+            }
+            (s.MeaningOn, s.AIProvider, s.ApiKey, s.EmbeddingModelsAuto) = (true, AIProviderType.OpenRouter, "or", false);
+            s.EmbeddingModels = new List<string> { "a/live:free", "mistral:mistral-embed" };
+            var meaning = new Meaning(new NoHttp(), database, NullLogger<Meaning>.Instance);
+            Assert.Equal(2, (await meaning.SnapshotAsync(default)).Parts.Count);
+
+            var (removed, takenOut, stillAutomatic) = await meaning.DeleteModelAsync("mistral:mistral-embed", default);
+            Assert.Equal(2, removed);            // the film's meaning and the wish's
+            Assert.True(takenOut);
+            Assert.False(stillAutomatic);
+            Assert.Equal(new[] { "a/live:free" }, ServerSettings.Current.EmbeddingModels);
+            var parts = (await meaning.SnapshotAsync(default)).Parts;
+            Assert.Equal("a/live:free", Assert.Single(parts).Model); // the cached snapshot was dropped
+        }
+        finally
+        {
+            var now = ServerSettings.Current;
+            (now.MeaningOn, now.AIProvider, now.ApiKey, var models, now.EmbeddingModelsAuto) = before;
+            now.EmbeddingModels = models;
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
 }
