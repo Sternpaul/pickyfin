@@ -239,6 +239,21 @@ public class ManualRunTests
     }
 
     [Fact]
+    public void AManualDescribeSendsEveryTitlesEarlierTags()
+    {
+        var clean = new MovieMetadata { ItemId = Guid.NewGuid(), Title = "Heat", IsClassified = true, Checked = true, Subcategories = "[\"Heist\"]", Moods = "[\"tense\"]" };
+        // the automatic describe: a title without an issue or web text is described afresh
+        Assert.DoesNotContain("\"EarlierTags\":", ClassificationPrompt.Build(new[] { clean }));
+        // a manual run: its earlier tags and the review go along
+        using (RunContext.Use(new RunContext { EarlierTagsAlways = true }))
+        {
+            var prompt = ClassificationPrompt.Build(new[] { clean });
+            Assert.Contains("\"EarlierTags\":{\"Subcategories\":[\"Heist\"]", prompt);
+            Assert.Contains("found nothing wrong", prompt);
+        }
+    }
+
+    [Fact]
     public void MistralIsPaidAndItsAliasesAreListedOnce()
     {
         Assert.False(Providers.IsFree(new ServerSettings { FreeOnly = true }, "mistral:mistral-embed"));

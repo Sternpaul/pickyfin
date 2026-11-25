@@ -143,6 +143,8 @@ public sealed class ManualRun
         var titles = await TitlesAsync(r, ct);
         var s = ServerSettings.Current;
         var steps = new List<StepEstimate>();
+        // the prompts as the run will build them (earlier tags for every title)
+        using var prompts = RunContext.Use(new RunContext { EarlierTagsAlways = true });
         var describes = ModelFor(r, "describe") is not null;
         var searches = 0;
         foreach (var (key, name) in StepNames)
@@ -257,7 +259,7 @@ public sealed class ManualRun
                 var list = For(step.Key, titles, r.Redo, afterDescribe: false);
                 step.Total = list.Count;
                 Jobs.Running(Key, Title, $"{step.Name} with {Meaning.Short(step.Model)}: 0 of {list.Count:N0}");
-                using var scope = RunContext.Use(new RunContext { ChatModel = step.Model, Used = Used, Allow = (m, i, o) => Fits(m, i, o) });
+                using var scope = RunContext.Use(new RunContext { ChatModel = step.Model, Used = Used, Allow = (m, i, o) => Fits(m, i, o), EarlierTagsAlways = true });
                 var provider = new OpenRouterProvider(_http.CreateClient(), _logs.CreateLogger<OpenRouterProvider>());
                 if (step.Key == "meaning")
                 {

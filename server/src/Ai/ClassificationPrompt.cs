@@ -52,7 +52,7 @@ namespace Pickyfin.Server.Ai
             : m.EndYear is { } end && end != start ? $"{start}–{end}" : $"{start}";
 
         private static bool Reviewed(MovieMetadata m) =>
-            m.IsClassified && (m.Issue is not null || !string.IsNullOrWhiteSpace(m.WebNotes) || m.Recheck);
+            m.IsClassified && (m.Issue is not null || !string.IsNullOrWhiteSpace(m.WebNotes) || m.Recheck || RunContext.Active?.EarlierTagsAlways == true);
 
         private static string[] ReviewLines(MovieMetadata m) =>
             m.Issue is not null ? m.Issue.Split('\n')

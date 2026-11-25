@@ -11,6 +11,9 @@ public sealed class RunContext
     private static readonly AsyncLocal<RunContext?> Current = new();
     public static RunContext? Active => Current.Value;
 
+    /// <summary>A manual run: every title described again gets its earlier tags and review in the prompt, not only flagged or looked-up ones.</summary>
+    public bool EarlierTagsAlways { get; init; }
+
     /// <summary>The model for describing, checking and looking up in this scope.</summary>
     public string? ChatModel { get; init; }
     /// <summary>Called after each answer: model, input tokens, output tokens.</summary>
