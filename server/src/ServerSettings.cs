@@ -37,6 +37,8 @@ public sealed class ServerSettings
     public string GeminiApiKey { get; set; } = "";
     public string JinaApiKey { get; set; } = "";
     public string VoyageApiKey { get; set; } = "";
+    /// <summary>Mistral: paid only (normal runs with "Free only" off, and manual runs).</summary>
+    public string MistralApiKey { get; set; } = "";
     /// <summary>Some AI key is set: the provider's, or (with OpenRouter) an NVIDIA key for "nim:" models.</summary>
     [JsonIgnore] public bool HasAiKey => !string.IsNullOrWhiteSpace(ApiKey) || (AIProvider == AIProviderType.OpenRouter && !string.IsNullOrWhiteSpace(NimApiKey));
     public string ClassificationModel { get; set; } = "google/gemini-2.5-flash";
@@ -193,8 +195,6 @@ public sealed class ServerSettings
                 ? JsonSerializer.Deserialize<ServerSettings>(File.ReadAllText(_path), JsonOptions) ?? new()
                 : new ServerSettings();
             settings.ApplyEnvironment();
-            // Mistral was a source for a day: it isn't free, so it's gone, and so are its models
-            settings.EmbeddingModels.RemoveAll(m => m.StartsWith("mistral:", StringComparison.OrdinalIgnoreCase));
             // Meaning was held back before (capped, flat at the top) and 50% was the default: an
             // untouched 50 becomes the new default 70 once. Any other value is the admin's own choice.
             if (Upgrade(settings) && File.Exists(_path))

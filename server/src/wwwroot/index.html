@@ -312,6 +312,26 @@
   .drawer-body { padding: 26px 28px 40px; overflow-y: auto; flex: 1; }
   .drawer-foot { padding: 16px 28px; border-top: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .drawer-foot:empty { display: none; }
+  .drawer.mr { width: min(560px, 100vw); z-index: 10; box-shadow: -20px 0 60px -30px rgba(0,0,0,.6); }
+  .mr-warn { border: 1px solid var(--err); border-radius: 10px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; margin-bottom: 20px; }
+  .mr-h { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 22px 0 10px; }
+  .mr-scope { display: flex; flex-direction: column; gap: 8px; }
+  .mr-scope label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .mr-steps { display: flex; flex-direction: column; gap: 14px; }
+  .mr-step label { display: flex; gap: 8px; align-items: center; font-weight: 600; margin-bottom: 6px; }
+  .mr-step input[type=text] { width: 100%; }
+  .mr-step .note { margin-top: 4px; }
+  .mr-est table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .mr-est td, .mr-est th { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+  .mr-est td.n, .mr-est th.n { text-align: right; }
+  .mr-est .total td { font-weight: 650; border-bottom: 0; }
+  .mr-bar { height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; margin: 6px 0 14px; }
+  .mr-bar i { display: block; height: 100%; background: var(--accent); }
+  .film.picked .poster { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .film .pick { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.55); border: 2px solid #fff; display: none; }
+  .picking .film .pick { display: block; }
+  .film.picked .pick { background: var(--accent); }
+  .pick-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .film-top { display: grid; grid-template-columns: 150px 1fr; gap: 24px; margin-bottom: 30px; }
   .facts { display: flex; flex-direction: column; gap: 5px; font-size: 14px; color: var(--muted); }
   .facts b { color: var(--text); font-weight: 550; }
@@ -567,6 +587,7 @@
         <select id="m-trust"><option value="">Any source</option><option value="you">Checked by you</option><option value="web">Looked up on the web</option><option value="second">Second opinion agrees</option><option value="ai">AI only</option></select>
         <select id="m-sort"><option value="title">A–Z</option><option value="added">Recently added</option><option value="acclaim">Highest rated</option><option value="year">Newest film</option></select>
         <span class="count" id="m-count"></span>
+        <span class="pick-bar"><button type="button" class="btn quiet" data-picking="m">Select</button><button type="button" class="btn quiet hidden" data-pick-all="m">Select all shown</button><span class="note" data-picked="m"></span><button type="button" class="btn hidden" data-pick-run="m">Manual run…</button><button type="button" class="btn quiet hidden" data-pick-clear="m">Clear</button></span>
       </div>
       <div class="shelf" id="movies"></div>
       <div class="more"><button class="btn hidden" id="m-more">Show more</button></div>
@@ -586,6 +607,7 @@
         <select id="s-trust"><option value="">Any source</option><option value="you">Checked by you</option><option value="web">Looked up on the web</option><option value="second">Second opinion agrees</option><option value="ai">AI only</option></select>
         <select id="s-sort"><option value="title">A–Z</option><option value="added">Recently added</option><option value="acclaim">Highest rated</option><option value="year">Newest first</option></select>
         <span class="count" id="s-count"></span>
+        <span class="pick-bar"><button type="button" class="btn quiet" data-picking="s">Select</button><button type="button" class="btn quiet hidden" data-pick-all="s">Select all shown</button><span class="note" data-picked="s"></span><button type="button" class="btn hidden" data-pick-run="s">Manual run…</button><button type="button" class="btn quiet hidden" data-pick-clear="s">Clear</button></span>
       </div>
       <div class="shelf" id="series"></div>
       <div class="more"><button class="btn hidden" id="s-more">Show more</button></div>
@@ -621,6 +643,10 @@
         <div class="setting">
           <div><h3>Free only</h3><p class="why">Never a cent: only OpenRouter's free models are used, and every other source stops before its free allowance ends (each shows what it has used). Turn it off to allow paid models and use past the free limits.</p></div>
           <div class="control"><label class="switch"><input type="checkbox" id="FreeOnly"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>Manual run</h3><p class="why">One run through the titles and steps you choose, with any model from any source, paid or free. Apart from "Free only" and the model orders below. It shows an estimate first, and stops at the spending limit you set. Status shows it while it runs.</p></div>
+          <div class="control"><button type="button" class="btn" id="mr-open">Set up a manual run…</button></div>
         </div>
         <div class="setting">
           <div><h3>Provider</h3><p class="why">Any of these works. OpenRouter reaches most models with a single key.</p></div>
@@ -796,6 +822,9 @@
               <p class="note">200 million free tokens once for each voyage-4 model. Without a card on file it allows only 3 requests a minute and simply stops when the free tokens are used up. With a card it's fast, the free tokens count first, and after them the card is charged.</p>
               <p class="note usage" data-usage="voyage:"></p>
               <div class="inline"><input type="password" id="VoyageApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="VoyageApiKey">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Mistral</b> <span class="state" id="mistral-state"></span><a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note"><b>Paid.</b> Mistral's API has no free use; a Vibe Pro plan includes some API credit. Its models are used in manual runs, and in the normal runs only with "Free only" off. mistral-embed costs about $0.10 per million tokens.</p>
+              <div class="inline"><input type="password" id="MistralApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="MistralApiKey">Remove</button></div></div>
           </div></div>
         </div>
         <div class="setting">
@@ -942,6 +971,37 @@
     <div class="gone-acts"><button type="button" class="btn" id="gone-keep">Keep for now</button><button type="button" class="btn danger" id="gone-remove"></button></div>
   </form>
 </dialog>
+<aside class="drawer mr hidden" id="mr-panel" aria-label="Manual run" role="dialog">
+  <div class="drawer-head"><h2>Manual run</h2><button type="button" class="btn quiet" id="mr-close" aria-label="Close">✕</button></div>
+  <div class="drawer-body">
+    <div class="mr-warn"><b>This may not be free.</b> A manual run ignores "Free only" and uses the models you pick, paid ones too, charged to your accounts with those providers. Web searches in step 3 count against your search engines' allowances. The estimate is rough: tokens are guessed from the texts, and prices come from the providers' lists where Pickyfin knows them.</div>
+    <div id="mr-setup">
+      <h3 class="mr-h">Titles</h3>
+      <div class="mr-scope">
+        <label><input type="radio" name="mr-scope" value="all" checked> The whole library <span class="note" id="mr-all-n"></span></label>
+        <label><input type="radio" name="mr-scope" value="library"> One library <select id="mr-lib"></select></label>
+        <label><input type="radio" name="mr-scope" value="selected"> The titles selected on the Movies and Series pages <span class="note" id="mr-sel-n"></span></label>
+      </div>
+      <h3 class="mr-h">Steps and models</h3>
+      <div class="mr-steps">
+        <div class="mr-step"><label><input type="checkbox" data-step="describe"> 1 · Describe</label><input type="text" data-model="describe" list="mr-chat" placeholder="Model, e.g. mistral:mistral-small-latest"><div class="note" data-price="describe"></div></div>
+        <div class="mr-step"><label><input type="checkbox" data-step="check"> 2 · Check</label><input type="text" data-model="check" list="mr-chat" placeholder="Model"><div class="note" data-price="check"></div></div>
+        <div class="mr-step"><label><input type="checkbox" data-step="lookup"> 3 · Look up (web search, then describe again)</label><input type="text" data-model="lookup" list="mr-chat" placeholder="Model"><div class="note" data-price="lookup"></div></div>
+        <div class="mr-step"><label><input type="checkbox" data-step="meaning"> Matching by meaning</label><input type="text" data-model="meaning" list="mr-embed" placeholder="Embedding model, e.g. mistral:mistral-embed"><div class="note" data-price="meaning"></div></div>
+      </div>
+      <datalist id="mr-chat"></datalist><datalist id="mr-embed"></datalist>
+      <h3 class="mr-h">Titles already done</h3>
+      <div class="seg" id="mr-redo"><button type="button" data-v="missing">Only what's missing</button><button type="button" data-v="redo">Everything again</button></div>
+      <p class="note">Titles you edited or checked by hand are never overwritten.</p>
+      <h3 class="mr-h">Spending limit</h3>
+      <div class="inline" style="align-items:center"><span>$</span><input type="number" id="mr-limit" min="0" step="0.5" value="1" style="width:110px"><span class="note">Stops before going past it. Empty: no limit. Models without a known price aren't counted.</span></div>
+      <h3 class="mr-h">Estimate</h3>
+      <div id="mr-estimate" class="mr-est"><p class="note">Choose titles, steps and models.</p></div>
+    </div>
+    <div id="mr-progress" class="hidden"></div>
+  </div>
+  <div class="drawer-foot"><button type="button" class="btn danger" id="mr-start" disabled>Start</button><button type="button" class="btn hidden" id="mr-stop">Stop</button><span class="note" id="mr-note"></span></div>
+</aside>
 <aside class="drawer hidden" id="drawer" aria-modal="true" role="dialog">
   <div class="drawer-head"><h2 id="d-title"></h2><button class="icon-btn" id="d-close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="drawer-body" id="d-body"></div>
@@ -1067,6 +1127,7 @@ const sources = {
   'gemini:': { name: 'Gemini', has: () => settings?.HasGeminiApiKey, where: 'under "More sources" above' },
   'jina:': { name: 'Jina', has: () => settings?.HasJinaApiKey, where: 'under "More sources" above' },
   'voyage:': { name: 'Voyage', has: () => settings?.HasVoyageApiKey, where: 'under "More sources" above' },
+  'mistral:': { name: 'Mistral', paid: true, has: () => settings?.HasMistralApiKey, where: 'under "More sources" above' },
 };
 const sourceOf = id => Object.keys(sources).find(p => id.toLowerCase().startsWith(p));
 const isNim = id => sourceOf(id) === 'nim:';
@@ -1077,14 +1138,14 @@ const extraFor = key => {
   return Object.keys(sources).map(prefix => ({ prefix, ids: (embeddingModels || []).filter(m => m.Nim && sourceOf(m.Id) === prefix).map(m => m.Id) }));
 };
 let sourceKeysSeen = '';
-const sourceKeysNow = () => JSON.stringify([settings?.HasCloudflareApiToken, settings?.CloudflareAccountId, settings?.HasGeminiApiKey, settings?.HasJinaApiKey, settings?.HasVoyageApiKey]);
+const sourceKeysNow = () => JSON.stringify([settings?.HasCloudflareApiToken, settings?.CloudflareAccountId, settings?.HasGeminiApiKey, settings?.HasJinaApiKey, settings?.HasVoyageApiKey, settings?.HasMistralApiKey]);
 const sourceKeysChanged = () => { const now = sourceKeysNow(), changed = now !== sourceKeysSeen; sourceKeysSeen = now; return changed; };
 function nimState() {
   $('#nim-state').innerHTML = stateText(settings.HasNimApiKey);
   $('#nim-remove').classList.toggle('hidden', !settings.HasNimApiKey);
-  const has = { CloudflareApiToken: settings.HasCloudflareApiToken, GeminiApiKey: settings.HasGeminiApiKey, JinaApiKey: settings.HasJinaApiKey, VoyageApiKey: settings.HasVoyageApiKey };
+  const has = { CloudflareApiToken: settings.HasCloudflareApiToken, GeminiApiKey: settings.HasGeminiApiKey, JinaApiKey: settings.HasJinaApiKey, VoyageApiKey: settings.HasVoyageApiKey, MistralApiKey: settings.HasMistralApiKey };
   $('#cf-state').innerHTML = stateText(sources['cf:'].has(), 'saved', settings.HasCloudflareApiToken ? 'needs the account ID' : 'not set');
-  $('#gemini-state').innerHTML = stateText(has.GeminiApiKey); $('#jina-state').innerHTML = stateText(has.JinaApiKey); $('#voyage-state').innerHTML = stateText(has.VoyageApiKey);
+  $('#gemini-state').innerHTML = stateText(has.GeminiApiKey); $('#jina-state').innerHTML = stateText(has.JinaApiKey); $('#voyage-state').innerHTML = stateText(has.VoyageApiKey); $('#mistral-state').innerHTML = stateText(has.MistralApiKey);
   $$('[data-remove]').forEach(b => b.classList.toggle('hidden', !has[b.dataset.remove]));
   if (!sourceKeysSeen) sourceKeysSeen = sourceKeysNow();
   loadFreeUsage();
@@ -1121,7 +1182,7 @@ function modelStat(id, key) {
   const st = modelInfo?.Stats?.[id];
   const nim = isNim(id), same = m => m.toLowerCase() === id.toLowerCase(), src = sources[sourceOf(id)];
   if (settings && !(src ? src.has() : settings.HasApiKey)) return { text: `Needs the ${src ? src.name : 'OpenRouter'} key (${src ? src.where : 'top of the AI page'}); skipped`, bad: true };
-  const paid = settings?.FreeOnly !== false && !src && !settings?.CustomEndpoint && !/:free$/i.test(id) && id.toLowerCase() !== 'openrouter/free';
+  const paid = settings?.FreeOnly !== false && (src ? !!src.paid : !settings?.CustomEndpoint && !/:free$/i.test(id) && id.toLowerCase() !== 'openrouter/free');
   if (paid) return { text: 'Paid model: skipped while "Free only" is on (top of the AI page)', bad: true };
   const listed = src && !nim ? true : embeddingModels ? embeddingModels.some(m => same(m.Id)) : true;
   const offered = key === 'embed' ? listed
@@ -1157,7 +1218,7 @@ function renderChain(key) {
       <div class="acts"><button type="button" class="btn quiet" data-up="${i}" title="Try earlier" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn quiet" data-down="${i}" title="Try later" ${i === on.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="btn quiet" data-off="${i}" ${on.length === 1 ? 'disabled title="At least one model is needed"' : ''}>Turn off</button></div></li>`).join('')}</ol>
     ${off.length ? `<details${openOff[key] ? ' open' : ''}><summary class="note" style="cursor:pointer">Other free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter (${off.length}), turned off</summary><ul style="margin-top:6px">${off.map(m => `<li><div class="m">${esc(m)}${statHtml(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`
       : (key === 'embed' ? embeddingModels : modelInfo) ? '' : '<p class="note">Loading the models OpenRouter offers…</p>'}
-    ${extra.map(g => `<details data-src="${g.prefix}"${openOff[key + g.prefix] ? ' open' : ''}><summary class="note" style="cursor:pointer">${key === 'embed' ? 'Embedding models' : 'Models'} on ${sources[g.prefix].name} (${g.ids.length}), turned off${sources[g.prefix].has() ? '' : `: add the ${sources[g.prefix].name} key (${sources[g.prefix].where}) to use them`}</summary><ul style="margin-top:6px">${g.ids.map(m => `<li><div class="m">${modelLabel(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`).join('')}
+    ${extra.map(g => `<details data-src="${g.prefix}"${openOff[key + g.prefix] ? ' open' : ''}><summary class="note" style="cursor:pointer">${key === 'embed' ? 'Embedding models' : 'Models'} on ${sources[g.prefix].name} (${g.ids.length}), turned off${sources[g.prefix].paid ? ' · paid' : ''}${sources[g.prefix].has() ? '' : `: add the ${sources[g.prefix].name} key (${sources[g.prefix].where}) to use them`}</summary><ul style="margin-top:6px">${g.ids.map(m => `<li><div class="m">${modelLabel(m)}</div><button type="button" class="btn quiet" data-on="${esc(m)}">Turn on</button></li>`).join('')}</ul></details>`).join('')}
     <div class="inline"><input type="text" placeholder="Add another model, e.g. ${key === 'embed' ? 'baai/bge-m3' : 'google/gemini-2.5-flash'}" list="${key === 'embed' ? 'embed-all' : 'models-all'}"><button type="button" class="btn" data-add>Add</button></div>`;
   const move = mine((i, d) => { const [m] = on.splice(i, 1); on.splice(i + d, 0, m); renderChains(); });
   $$('[data-up]', box).forEach(b => b.onclick = () => move(Number(b.dataset.up), -1));
@@ -1184,7 +1245,7 @@ async function loadSettings() {
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
-  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'VoyageApiKey']) $('#' + k).value = '';
+  $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'VoyageApiKey', 'MistralApiKey']) $('#' + k).value = '';
   $('#CloudflareAccountId').value = settings.CloudflareAccountId || ''; $('#TmdbApiKey').value = ''; $('#OmdbApiKey').value = '';
   $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); $('#OmdbPerDay').value = settings.OmdbPerDay || 1000;
   $('#LetterboxdOn').checked = settings.LetterboxdOn !== false; $('#LetterboxdUrl').value = settings.LetterboxdUrl || ''; $('#LetterboxdHours').value = settings.LetterboxdHours || 6; $('#LetterboxdToken').value = '';
@@ -1243,7 +1304,7 @@ for (const k of ['BecausePeople', 'BecauseCountry', 'BecauseEra']) $('#' + k).ad
 $('#PicksPerRow').addEventListener('input', e => $('#picks-value').textContent = e.target.value);
 
 async function save(changes, note) {
-  const body = { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
+  const body = { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', VoyageApiKey: '', MistralApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...changes };
   try { settings = await call('PUT', '/api/settings', body); await loadSettings(); toast('Saved'); if (note) note.textContent = ''; return true; }
   catch (err) { if (note) { note.textContent = err.message; note.className = 'note err'; } return false; }
 }
@@ -1267,7 +1328,7 @@ const formValues = {
   'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
   'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed,
     CloudflareAccountId: $('#CloudflareAccountId').value.trim(), CloudflareApiToken: $('#CloudflareApiToken').value,
-    GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, VoyageApiKey: $('#VoyageApiKey').value }),
+    GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, VoyageApiKey: $('#VoyageApiKey').value, MistralApiKey: $('#MistralApiKey').value }),
   'lb-form': () => ({ LetterboxdOn: $('#LetterboxdOn').checked, LetterboxdUrl: $('#LetterboxdUrl').value.trim(), LetterboxdHours: Math.min(168, Math.max(1, Number($('#LetterboxdHours').value) || 6)), LetterboxdToken: $('#LetterboxdToken').value }),
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
@@ -1287,10 +1348,10 @@ async function saveNow(form) {
   const note = $(formNotes[form]);
   savesInFlight++;
   try {
-    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', VoyageApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
+    settings = await call('PUT', '/api/settings', { ...settings, ApiKey: '', NimApiKey: '', CloudflareApiToken: '', GeminiApiKey: '', JinaApiKey: '', VoyageApiKey: '', MistralApiKey: '', TmdbApiKey: '', OmdbApiKey: '', LetterboxdToken: '', JellyfinApiKey: '', ExaApiKey: '', ParallelApiKey: '', LinkupApiKey: '', TavilyApiKey: '', ...formValues[form]() });
     note.className = 'note ok'; note.textContent = `Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
     // Keys are stored, not shown: empty the field and show "saved"
-    for (const k of ['ApiKey', 'NimApiKey', 'CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'VoyageApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
+    for (const k of ['ApiKey', 'NimApiKey', 'CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'VoyageApiKey', 'MistralApiKey', 'ExaApiKey', 'ParallelApiKey', 'LinkupApiKey', 'TavilyApiKey', 'TmdbApiKey', 'OmdbApiKey', 'LetterboxdToken']) if ($('#' + k)?.value && formValues[form]()[k] !== undefined) $('#' + k).value = '';
     $('#key-state').innerHTML = stateText(settings.HasApiKey); $('#tmdb-state').innerHTML = stateText(settings.HasTmdbApiKey); $('#omdb-state').innerHTML = stateText(settings.HasOmdbApiKey); nimState();
     if (form === 'lookup-form') { engines = (settings.SearchEngines || []).map(e => ({ ...e })); renderEngines(); }
     if (form === 'lookup-form' || form === 'rescan-form') loadExaUsage();
@@ -1850,11 +1911,18 @@ function filmCard(m) {
     : m.Trust === 'web' ? '<div class="flag">✓ Looked up</div>'
     : m.Excluded ? '<div class="flag">Library off</div>' : '';
   const el = document.createElement('button');
-  el.className = 'film';
+  el.className = 'film' + (picked.has(m.Id) ? ' picked' : '');
+  el.dataset.id = m.Id;
   el.innerHTML = `${poster(m.Id, m.Title, flag)}
     <div><div class="t">${esc(m.Title)} <span class="y">${m.Aired ?? m.Year ?? ''}</span></div>
     <div class="m">${m.Kind === 'series' ? '<b>Series</b> · ' : ''}${esc([...m.Subcategories, ...m.Moods].slice(0, 3).join(', '))}</div></div>`;
-  el.addEventListener('click', () => openMovie(m.Id));
+  el.querySelector('.poster')?.insertAdjacentHTML('beforeend', '<span class="pick" aria-hidden="true"></span>');
+  el.addEventListener('click', () => {
+    if (!document.body.classList.contains('picking')) return openMovie(m.Id);
+    picked.has(m.Id) ? picked.delete(m.Id) : picked.add(m.Id);
+    el.classList.toggle('picked', picked.has(m.Id));
+    savePicked();
+  });
   return el;
 }
 async function loadShelf(sh, reset) {
@@ -1871,6 +1939,30 @@ async function loadShelf(sh, reset) {
   if (!r.Total) box.innerHTML = '<div class="empty" style="grid-column:1/-1">Nothing matches.</div>';
   f('more').classList.toggle('hidden', (sh.page + 1) * PAGE >= r.Total);
 }
+// Titles picked for a manual run, kept while the tab is open
+const picked = new Set((() => { try { return JSON.parse(sessionStorage.getItem('picked') || '[]'); } catch { return []; } })());
+function savePicked() {
+  try { sessionStorage.setItem('picked', JSON.stringify([...picked])); } catch {}
+  const on = document.body.classList.contains('picking');
+  $$('[data-picked]').forEach(el => el.textContent = picked.size ? `${picked.size.toLocaleString()} selected` : on ? 'Click posters to select them' : '');
+  $$('[data-pick-run]').forEach(b => b.classList.toggle('hidden', !picked.size));
+  $$('[data-pick-clear]').forEach(b => b.classList.toggle('hidden', !picked.size));
+  $$('[data-pick-all]').forEach(b => b.classList.toggle('hidden', !on));
+  $$('[data-picking]').forEach(b => b.textContent = on ? 'Done selecting' : 'Select');
+}
+$$('[data-picking]').forEach(b => b.onclick = () => { document.body.classList.toggle('picking'); savePicked(); });
+$$('[data-pick-clear]').forEach(b => b.onclick = () => { picked.clear(); $$('.film.picked').forEach(el => el.classList.remove('picked')); savePicked(); });
+$$('[data-pick-run]').forEach(b => b.onclick = () => openManualRun('selected'));
+$$('[data-pick-all]').forEach(b => b.onclick = async () => {
+  const sh = b.dataset.pickAll === 'm' ? shelves.movie : shelves.series;
+  const f = id => $(`#${sh.p}-${id}`);
+  const params = new URLSearchParams({ kind: sh.kind, q: f('q').value, state: segValue(f('state')) || 'all', tag: f('tag').value, trust: f('trust').value, idsOnly: 'true' });
+  if (f('lib').value) params.set('library', f('lib').value);
+  const r = await call('GET', '/api/movies?' + params);
+  r.Ids.forEach(id => picked.add(id));
+  $$(`${sh.box} .film`).forEach(el => el.classList.toggle('picked', picked.has(el.dataset.id)));
+  savePicked();
+});
 const loadMovies = reset => loadShelf(shelves.movie, reset);
 const loadSeries = reset => loadShelf(shelves.series, reset);
 for (const sh of Object.values(shelves)) {
@@ -2537,6 +2629,93 @@ async function openGone() {
   };
   if (!d.open) d.showModal();
 }
+
+// ---- manual run: chosen titles, steps and models, an estimate, a spending limit ----
+let mrModels = null, mrTimer = null, mrPoll = null;
+const money = v => v == null ? 'price unknown' : v === 0 ? 'free' : v < 0.0001 ? 'under $0.0001' : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`;
+const mrRequest = () => {
+  const step = k => $(`#mr-panel [data-step="${k}"]`).checked ? ($(`#mr-panel [data-model="${k}"]`).value.trim() || null) : null;
+  const limit = $('#mr-limit').value.trim();
+  return {
+    Scope: $('#mr-panel input[name="mr-scope"]:checked').value, Library: $('#mr-lib').value || null, Ids: [...picked],
+    Redo: segValue($('#mr-redo')) === 'redo',
+    Describe: step('describe'), Check: step('check'), Lookup: step('lookup'), Meaning: step('meaning'),
+    Limit: limit === '' ? null : Math.max(0, Number(limit)),
+  };
+};
+function mrPriceLine(key) {
+  const id = $(`#mr-panel [data-model="${key}"]`).value.trim(), el = $(`#mr-panel [data-price="${key}"]`);
+  if (!id) { el.textContent = ''; return; }
+  const m = [...(mrModels?.Chat || []), ...(mrModels?.Embedding || [])].find(x => x.Id.toLowerCase() === id.toLowerCase());
+  if (!m) { el.textContent = mrModels ? 'Not in the lists Pickyfin knows; it will be tried as written.' : ''; return; }
+  const p = m.Price;
+  el.textContent = `${m.Source}${m.HasKey ? '' : ' · no key set'} · ` + (p == null ? 'price unknown' : p.In === 0 && p.Out === 0 ? 'free' : `$${p.In} in / $${p.Out} out per million tokens`) + (p?.Note ? ` · ${p.Note}` : '');
+}
+async function mrEstimate() {
+  ['describe', 'check', 'lookup', 'meaning'].forEach(mrPriceLine);
+  const req = mrRequest(), box = $('#mr-estimate');
+  if (![req.Describe, req.Check, req.Lookup, req.Meaning].some(Boolean)) { box.innerHTML = '<p class="note">Tick a step and give it a model.</p>'; $('#mr-start').disabled = true; return; }
+  box.innerHTML = '<p class="note">Estimating…</p>';
+  let e; try { e = await call('POST', '/api/manual-run/estimate', req); } catch (err) { box.innerHTML = `<p class="note err">${esc(err.message)}</p>`; return; }
+  const tok = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
+  box.innerHTML = `<table><tr><th>Step</th><th>Model</th><th class="n">Titles</th><th class="n">Tokens in / out</th><th class="n">Cost</th></tr>
+    ${e.Steps.map(x => `<tr title="${esc(x.Note || '')}"><td>${esc(x.Name)}</td><td>${esc(x.Model)}</td><td class="n">${x.Titles.toLocaleString()}</td><td class="n">${tok(x.InTokens)} / ${tok(x.OutTokens)}</td><td class="n">${money(x.Cost)}</td></tr>`).join('')}
+    <tr class="total"><td colspan="4">${e.Titles.toLocaleString()} titles${e.WebSearches ? ` · ${e.WebSearches.toLocaleString()} web searches` : ''}</td><td class="n">${money(e.Known)}${e.Unpriced ? ' + unknown' : ''}</td></tr></table>
+    ${e.Unpriced ? '<p class="note">Some model has no known price: what it uses isn\'t in the total, and the spending limit can\'t count it.</p>' : ''}
+    ${e.Problem ? `<p class="note err">${esc(e.Problem)}</p>` : ''}`;
+  $('#mr-start').disabled = !!e.Problem;
+}
+const mrLater = () => { clearTimeout(mrTimer); mrTimer = setTimeout(mrEstimate, 400); };
+async function openManualRun(scope) {
+  $('#mr-panel').classList.remove('hidden');
+  if (scope) $(`#mr-panel input[name="mr-scope"][value="${scope}"]`).checked = true;
+  $('#mr-sel-n').textContent = picked.size ? `(${picked.size.toLocaleString()})` : '(none selected yet)';
+  try {
+    const libs = await call('GET', '/api/libraries');
+    $('#mr-lib').innerHTML = libs.map(l => `<option value="${l.Id}">${esc(l.Name)}</option>`).join('');
+    const n = libs.filter(l => l.Enabled).reduce((a, l) => a + (l.Movies || 0) + (l.Series || 0), 0);
+    $('#mr-all-n').textContent = `(${n.toLocaleString()})`;
+  } catch {}
+  if (!segValue($('#mr-redo'))) seg($('#mr-redo'), 'missing', mrLater);
+  showManualRun();
+  if (!mrModels) {
+    $('#mr-note').textContent = 'Loading the models…';
+    try { mrModels = await call('GET', '/api/manual-run/models'); } catch { mrModels = { Chat: [], Embedding: [] }; }
+    const opt = m => `<option value="${esc(m.Id)}">${esc(m.Source)}${m.Price ? (m.Price.In === 0 && m.Price.Out === 0 ? ' · free' : ` · $${m.Price.In}/$${m.Price.Out} per M`) : ''}</option>`;
+    $('#mr-chat').innerHTML = mrModels.Chat.map(opt).join('');
+    $('#mr-embed').innerHTML = mrModels.Embedding.map(opt).join('');
+    $('#mr-note').textContent = '';
+  }
+  mrEstimate();
+}
+async function showManualRun() {
+  let st; try { st = await call('GET', '/api/manual-run'); } catch { return; }
+  const running = !!st?.Running;
+  $('#mr-setup').classList.toggle('hidden', running);
+  $('#mr-start').classList.toggle('hidden', running); $('#mr-stop').classList.toggle('hidden', !running);
+  const box = $('#mr-progress');
+  box.classList.toggle('hidden', !st);
+  if (st) box.innerHTML = `<h3 class="mr-h">${running ? 'Running' : st.Ended ? esc(st.Ended) : 'Finished'}</h3>
+    <p>Spent about ${money(st.Spent)}${st.Unpriced ? ' plus models without a known price' : ''}${st.Limit != null ? ` of $${st.Limit}` : ''} · ${st.Titles.toLocaleString()} titles · ${st.Redo ? 'everything again' : 'only what was missing'}</p>
+    ${st.Steps.map(x => `<div><b>${esc(x.Name)}</b> with ${esc(x.Model)}: ${x.Done.toLocaleString()} of ${x.Total.toLocaleString()}${x.Note ? ` · <span class="err">${esc(x.Note)}</span>` : ''}</div>
+      <div class="mr-bar"><i style="width:${x.Total ? Math.round(x.Done / x.Total * 100) : 0}%"></i></div>`).join('')}
+    ${running ? '' : '<p class="note">Set up another run below.</p>'}`;
+  if (!running && st) $('#mr-setup').classList.remove('hidden');
+  clearTimeout(mrPoll);
+  if (running && !$('#mr-panel').classList.contains('hidden')) mrPoll = setTimeout(showManualRun, 3000);
+}
+$('#mr-open').onclick = () => openManualRun();
+$('#mr-close').onclick = () => { $('#mr-panel').classList.add('hidden'); clearTimeout(mrPoll); };
+$('#mr-panel').addEventListener('input', e => { if (e.target.matches('input, select')) mrLater(); });
+$('#mr-panel').addEventListener('change', e => { if (e.target.matches('input, select')) mrLater(); });
+$('#mr-start').onclick = async () => {
+  const req = mrRequest();
+  if (!confirm(`Start the manual run? It may cost money${req.Limit != null ? `, up to about $${req.Limit}` : ', with no spending limit'}.`)) return;
+  $('#mr-start').disabled = true;
+  try { await call('POST', '/api/manual-run/start', req); toast('Manual run started'); showManualRun(); loadStatus(); }
+  catch (err) { $('#mr-note').textContent = err.message; $('#mr-start').disabled = false; }
+};
+$('#mr-stop').onclick = async () => { await call('POST', '/api/manual-run/stop'); toast('Stopping after the current call'); setTimeout(showManualRun, 1500); };
 
 async function loadStatus() {
   try {

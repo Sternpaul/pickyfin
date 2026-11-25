@@ -177,7 +177,7 @@ public static class BrowserApi
         // ---------- movies ----------
 
         // kind: "movie" (default), "series" or "all"
-        admin.MapGet("/movies", async (string? q, string? state, Guid? library, string? tag, string? trust, string? sort, int? skip, int? take, string? kind,
+        admin.MapGet("/movies", async (string? q, string? state, Guid? library, string? tag, string? trust, string? sort, int? skip, int? take, string? kind, bool? idsOnly,
             MovieStore store, LibrarySync sync, JellyfinClient jellyfin, CancellationToken ct) =>
         {
             var names = await LibraryNamesAsync(sync, jellyfin, ct);
@@ -217,6 +217,8 @@ public static class BrowserApi
                 _ => movies.OrderBy(m => m.Title, StringComparer.OrdinalIgnoreCase),
             };
             var list = movies.ToList();
+            // every match's id, for "select all" before a manual run
+            if (idsOnly == true) return Results.Ok(new { Total = list.Count, Ids = list.Select(m => m.ItemId) });
             return Results.Ok(new
             {
                 Total = list.Count,

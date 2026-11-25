@@ -215,6 +215,45 @@ public sealed class Meaning
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> WarnedPaid = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// A manual run: these titles with this one model, whatever the order says. "Redo" embeds
+    /// them again even when nothing changed. Goes until done, stopped, or the model gives up;
+    /// returns how many were embedded and why it stopped early (null when it finished).
+    /// </summary>
+    public async Task<(int Done, string? Stopped)> ManualAsync(string model, IReadOnlyCollection<Guid> ids, bool redo, Action<int> progress, CancellationToken cancellationToken)
+    {
+        var s = ServerSettings.Current;
+        if (!Providers.HasKey(s, model)) return (0, $"no {Providers.Name(model)} key");
+        List<(Guid Id, string Kind, string Text, string Hash)> todo;
+        await using (var db = _database.Open())
+        {
+            var wanted = ids.ToHashSet();
+            var stored = (await db.Embeddings.AsNoTracking().Where(e => e.Model == model && e.Kind == "film").Select(e => new { e.ItemId, e.Hash }).ToListAsync(cancellationToken))
+                .ToDictionary(e => e.ItemId, e => e.Hash);
+            var films = (await db.Movies.AsNoTracking().Where(m => m.IsClassified).ToListAsync(cancellationToken)).Where(m => wanted.Contains(m.ItemId));
+            todo = films.Select(m => (Id: m.ItemId, Kind: "film", Text: Document(m)))
+                .Select(x => (x.Id, x.Kind, x.Text, Hash: Hash(model, x.Text)))
+                .Where(x => redo || !stored.TryGetValue(x.Id, out var h) || h != x.Hash).ToList();
+        }
+        lock (Resting) Resting.Remove(model);
+        var done = 0;
+        var quiet = 0;
+        while (done < todo.Count)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (count, outcome) = await RunWithAsync(s, model, todo.Skip(done).ToList(), cancellationToken);
+            done += count;
+            progress(done);
+            if (outcome == Outcome.Gone) return (done, $"{model} isn't available");
+            if (count > 0) { quiet = 0; continue; }
+            // busy: give it a few more minutes before giving up
+            if (++quiet >= 4) return (done, RestingWhy(model) ?? "the model keeps failing");
+            lock (Resting) Resting.Remove(model);
+            await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
+        }
+        return (done, null);
+    }
+
     private static bool IsResting(string model)
     {
         if (Providers.RefusedWhy(model) is not null) return true;
@@ -285,7 +324,7 @@ public sealed class Meaning
         {
             cancellationToken.ThrowIfCancellationRequested();
             var texts = chunk.Select(c => Sendable(c.Text)).ToList();
-            if (s.FreeOnly && FreeCaps.Blocked(s, model, texts) is { } capped)
+            if (s.FreeOnly && RunContext.Active is null && FreeCaps.Blocked(s, model, texts) is { } capped)
             {
                 RestForToday(model, capped);
                 return (done, Outcome.Paused);
@@ -484,7 +523,9 @@ public sealed class Meaning
 
     private async Task<(List<float[]>? Vectors, int Code, string? Error)> EmbedOnceAsync(ServerSettings s, string model, string kind, List<string> texts, int variant, CancellationToken cancellationToken)
     {
-        if (s.FreeOnly && FreeCaps.Blocked(s, model, texts) is { } capped) return (null, 429, $"HTTP 429: {capped}");
+        // a manual run is apart from "Free only": no caps, but still paced
+        if (s.FreeOnly && RunContext.Active is null && FreeCaps.Blocked(s, model, texts) is { } capped) return (null, 429, $"HTTP 429: {capped}");
+        RunContext.Check(model, CloudflareBudget.EstimateTokens(texts), 0, cancellationToken);
         // stay inside the source's per-minute limit by waiting, not by being refused
         await Pace.WaitAsync(model, texts.Count, CloudflareBudget.EstimateTokens(texts), cancellationToken);
         var client = _http.CreateClient();
@@ -508,6 +549,7 @@ public sealed class Meaning
             // OpenRouter sometimes answers 200 with an error inside
             if (vectors is null) return (null, ErrorCode(body) ?? 0, $"odd answer: {(body.Length > 200 ? body[..200] : body)}");
             FreeCaps.Spend(s, model, texts, UsedTokens(body));
+            RunContext.Active?.Used?.Invoke(model, UsedTokens(body) ?? CloudflareBudget.EstimateTokens(texts), 0);
             return (vectors, code, null);
         }
         catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)

@@ -12,6 +12,9 @@ public static class OpenRouterModels
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static Dictionary<string, bool>? _models; // id → supports JSON mode
     private static List<string> _ranked = new();      // ids, most tokens this week first
+    /// <summary>Price per million tokens in US dollars (input, output), from the live list.</summary>
+    public static IReadOnlyDictionary<string, (double In, double Out)> Prices { get; private set; } = new Dictionary<string, (double, double)>();
+    public static IReadOnlyList<string> All => _ranked;
     private static DateTime _fetched, _failed;
     private static readonly ConcurrentDictionary<string, DateTime> GoneUntil = new(StringComparer.OrdinalIgnoreCase);
 
@@ -74,6 +77,7 @@ public static class OpenRouterModels
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
             var models = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             var ranked = new List<string>();
+            var prices = new Dictionary<string, (double, double)>(StringComparer.OrdinalIgnoreCase);
             foreach (var m in doc.RootElement.GetProperty("data").EnumerateArray())
             {
                 var id = m.GetProperty("id").GetString();
@@ -81,11 +85,13 @@ public static class OpenRouterModels
                 var json = !m.TryGetProperty("supported_parameters", out var p) || p.ValueKind != JsonValueKind.Array
                     || p.EnumerateArray().Any(x => x.GetString() is "response_format" or "structured_outputs");
                 models[id] = json;
+                if (PriceOf(m) is { } price) prices[id] = price;
                 ranked.Add(id);
             }
             if (models.Count == 0) return _models;
             _models = models;
             _ranked = ranked;
+            Prices = prices;
             _fetched = DateTime.UtcNow;
             return _models;
         }
@@ -97,4 +103,17 @@ public static class OpenRouterModels
         }
         finally { Gate.Release(); }
     }
+
+    /// <summary>A model's "pricing" (dollars per token, as text) as dollars per million tokens.</summary>
+    public static (double In, double Out)? PriceOf(JsonElement model)
+    {
+        if (!model.TryGetProperty("pricing", out var p) || p.ValueKind != JsonValueKind.Object) return null;
+        static double? Read(JsonElement p, string name) =>
+            p.TryGetProperty(name, out var v) && double.TryParse(v.ValueKind == JsonValueKind.String ? v.GetString() : v.GetRawText(),
+                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) && d >= 0 ? d * 1_000_000 : null;
+        return Read(p, "prompt") is { } i ? (i, Read(p, "completion") ?? 0) : null;
+    }
+
+    /// <summary>For tests: forget the live list.</summary>
+    internal static void Reset() { _models = null; _ranked = new(); Prices = new Dictionary<string, (double, double)>(); _fetched = default; _failed = default; }
 }

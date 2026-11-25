@@ -179,6 +179,15 @@ namespace Pickyfin.Server.Library
             return looked;
         }
 
+        /// <summary>A manual run's describing: one call for the batch, from the web text when the film has some.</summary>
+        public async Task DescribeManualAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken)
+        {
+            var plain = batch.Where(m => string.IsNullOrEmpty(m.WebNotes)).ToList();
+            var looked = batch.Where(m => !string.IsNullOrEmpty(m.WebNotes)).ToList();
+            if (plain.Count > 0) await TagBatchAsync(provider, plain, cancellationToken);
+            if (looked.Count > 0) await TagBatchAsync(provider, looked, cancellationToken, lookedUp: true);
+        }
+
         /// <summary>Describes films again with everything known, with the step-3 model order (used by the re-check).</summary>
         public Task DescribeAgainAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken) =>
             TagBatchAsync(provider, batch, cancellationToken, lookedUp: true);

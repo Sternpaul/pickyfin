@@ -149,6 +149,22 @@ public sealed class SecondOpinion
         Jobs.Idle(Key, Title, left > 0 ? $"{left:N0} titles to go{asideText}" : $"Up to date{asideText}", left > 0 ? DateTime.UtcNow.AddMinutes(5) : null);
     }
 
+    /// <summary>A manual run's check: one call for the batch; returns how many look wrong.</summary>
+    public async Task<int> CheckManualAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken)
+    {
+        var answer = await provider.CompleteJsonAsync(ClassificationPrompt.BuildCheck(batch), ServerSettings.Current.CheckModel, cancellationToken);
+        var problems = Parse(answer, batch) ?? throw new InvalidOperationException("couldn't read the model's answer");
+        foreach (var movie in batch)
+        {
+            movie.Checked = true;
+            if (problems.TryGetValue(movie, out var line)) movie.Issue = Issues.Add(movie.Issue, line);
+        }
+        await _history.AddAsync(batch.Select(m => MovieHistory.Entry(m, "check", MovieHistory.ModelFor("check"), null,
+            problems.TryGetValue(m, out var said) ? said : "Found nothing wrong")), cancellationToken);
+        await _store.SaveMoviesAsync(batch, cancellationToken);
+        return problems.Count;
+    }
+
     private static string Short(string message) => message.Length <= 160 ? message : message[..160] + "…";
 
     /// <summary>Movie → one line for the Issues page; null when the answer couldn't be read.</summary>

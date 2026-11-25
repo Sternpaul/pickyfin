@@ -50,6 +50,7 @@ builder.Services.AddSingleton<OmdbScores>();
 builder.Services.AddSingleton<LetterboxdRatings>();
 builder.Services.AddSingleton<TmdbDetails>();
 builder.Services.AddSingleton<Meaning>();
+builder.Services.AddSingleton<ManualRun>();
 builder.Services.AddSingleton<MovieHistory>();
 builder.Services.AddSingleton(sp => new TmdbKeywordService(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb"),
@@ -145,7 +146,7 @@ api.MapGet("/me", (HttpContext http) =>
 
 // ---------- status ----------
 
-admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, MovieHistory history, CancellationToken ct) =>
+admin.MapGet("/status", async (RefreshService worker, LibrarySync library, MovieStore store, Database database, LogBuffer log, MovieHistory history, ManualRun manual, CancellationToken ct) =>
 {
     var s = ServerSettings.Current;
     int rescanned = 0, rescanOf = 0, seriesRescanned = 0, seriesRescanOf = 0;
@@ -273,6 +274,24 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         };
     }
     var lookupKey = lookupAll is { Running: true } ? "lookupall" : "sweep";
+    object ManualRow(ManualRun.RunState mr)
+    {
+        var done = mr.Steps.Sum(x => x.Done);
+        var of = mr.Steps.Sum(x => x.Total);
+        var spent = $"about ${mr.Spent:0.####}{(mr.Unpriced ? " + unpriced" : "")}{(mr.Limit is { } l ? $" of ${l:0.##}" : "")}";
+        var steps = string.Join(" · ", mr.Steps.Select(x => $"{x.Name} ({Meaning.Short(x.Model)}) {x.Done:N0}/{x.Total:N0}{(x.Note is null ? "" : $": {x.Note}")}"));
+        return new
+        {
+            Key = ManualRun.Key, Title = ManualRun.Title,
+            State = mr.Running ? "running" : mr.Ended is null || mr.Ended == "Stopped by hand" ? "idle" : "paused",
+            Badge = mr.Running ? null : mr.Ended is null ? "Done" : mr.Ended == "Stopped by hand" ? "Stopped" : "Ended",
+            Text = (mr.Running ? Jobs.Get(ManualRun.Key)?.Now ?? "Running" : mr.Ended ?? "Finished") + $" · {spent} · {steps}",
+            Next = (DateTime?)null,
+            RunningFor = mr.Running ? (int)(DateTime.UtcNow - mr.Started).TotalSeconds : 0,
+            Done = (int?)done, Of = (int?)of, Queued = 0, Tip = (string?)null, At = (DateTime?)mr.Started,
+            SeriesDone = (int?)null, SeriesOf = (int?)null,
+        };
+    }
     var queue = new[]
     {
         Row("library", "Library sync", true, ""),
@@ -313,7 +332,8 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
         Series = seriesTotal,
         Classified = classified,
         Issues = issues,
-        Queue = queue,
+        // a manual run shows first, once one was started
+        Queue = manual.State is { } mr ? new object[] { ManualRow(mr) }.Concat(queue).ToArray() : queue,
         Log = log.Lines.Reverse().Take(80),
     });
 });
@@ -369,7 +389,7 @@ admin.MapGet("/ai/embedding-models", async (IHttpClientFactory http, ILoggerFact
     foreach (var source in Providers.EmbeddingOnly)
         others.AddRange(await Providers.EmbeddingModelsAsync(http.CreateClient(), ServerSettings.Current, source, logs.CreateLogger(source.Name), ct));
     var nim = Nim.Embedding.Concat(others)
-        .Select(id => new { Id = id, Name = Meaning.Short(id), Free = true, PerMillion = 0.0, Nim = true, Provider = Providers.Name(id) }).ToList();
+        .Select(id => new { Id = id, Name = Meaning.Short(id), Free = Providers.Of(id)?.Paid != true, PerMillion = 0.0, Nim = true, Provider = Providers.Name(id) }).ToList();
     try
     {
         var client = http.CreateClient();
@@ -410,6 +430,43 @@ admin.MapGet("/ai/models", async (IHttpClientFactory http, ILoggerFactory logs, 
         OpenRouterModels.AutoCount,
     });
 });
+
+// ---------- manual run: chosen titles, steps and models, any source, with an estimate and a spending limit ----------
+admin.MapGet("/manual-run/models", async (IHttpClientFactory http, ILoggerFactory logs, CancellationToken ct) =>
+{
+    var s = ServerSettings.Current;
+    var log = logs.CreateLogger("Manual run");
+    await OpenRouterModels.GetAsync(http.CreateClient(), log, ct);
+    await Nim.GetAsync(http.CreateClient(), log, ct);
+    async Task<object> Entry(string id) => new
+    {
+        Id = id, Source = Providers.Name(id), Name = Providers.ApiModel(id), HasKey = Providers.HasKey(s, id),
+        Price = await Prices.ForAsync(id, http, log, ct),
+    };
+    var chat = new List<string>(OpenRouterModels.All);
+    chat.AddRange(Nim.Chat);
+    foreach (var source in Providers.All.Where(p => p.Chat && p != Providers.Nvidia))
+        chat.AddRange(await Providers.ModelsAsync(http.CreateClient(), s, source, chat: true, log, ct));
+    var embed = new List<string>();
+    try
+    {
+        var client = http.CreateClient(); client.Timeout = TimeSpan.FromSeconds(20);
+        using var doc = System.Text.Json.JsonDocument.Parse(await client.GetStringAsync("https://openrouter.ai/api/v1/models?output_modalities=embeddings&sort=top-weekly", ct));
+        embed.AddRange(doc.RootElement.GetProperty("data").EnumerateArray().Select(m => m.GetProperty("id").GetString() ?? "").Where(x => x.Length > 0));
+    }
+    catch (Exception error) when (error is not OperationCanceledException) { log.LogDebug("Couldn't read OpenRouter's embedding models: {Error}", error.Message); }
+    embed.AddRange(Nim.Embedding);
+    foreach (var source in Providers.EmbeddingOnly)
+        embed.AddRange(await Providers.ModelsAsync(http.CreateClient(), s, source, chat: false, log, ct));
+    var chatEntries = new List<object>(); foreach (var id in chat.Distinct(StringComparer.OrdinalIgnoreCase)) chatEntries.Add(await Entry(id));
+    var embedEntries = new List<object>(); foreach (var id in embed.Distinct(StringComparer.OrdinalIgnoreCase)) embedEntries.Add(await Entry(id));
+    return Results.Ok(new { Chat = chatEntries, Embedding = embedEntries });
+});
+admin.MapPost("/manual-run/estimate", async (ManualRunRequest request, ManualRun run, CancellationToken ct) => Results.Ok(await run.EstimateAsync(request, ct)));
+admin.MapPost("/manual-run/start", async (ManualRunRequest request, ManualRun run, CancellationToken ct) =>
+    await run.StartAsync(request, ct) is { } problem ? Results.Problem(problem, statusCode: 400) : Results.Ok(run.State));
+admin.MapPost("/manual-run/stop", (ManualRun run) => Results.Ok(new { Stopped = run.Stop() }));
+admin.MapGet("/manual-run", (ManualRun run) => Results.Ok(run.State));
 
 // ---------- run a step again for the whole library ----------
 // Films a step would touch: described, not edited or checked by you, in a library that's on
@@ -531,7 +588,7 @@ admin.MapPut("/settings", async (SettingsView view, RefreshService worker, Datab
     // A new model or key deserves a try right away, not after the pause from the last error
     var keysChanged = before.FreeOnly != settings.FreeOnly || before.ApiKey != settings.ApiKey || before.NimApiKey != settings.NimApiKey
         || before.CloudflareAccountId != settings.CloudflareAccountId || before.CloudflareApiToken != settings.CloudflareApiToken
-        || before.GeminiApiKey != settings.GeminiApiKey || before.JinaApiKey != settings.JinaApiKey || before.VoyageApiKey != settings.VoyageApiKey;
+        || before.GeminiApiKey != settings.GeminiApiKey || before.JinaApiKey != settings.JinaApiKey || before.VoyageApiKey != settings.VoyageApiKey || before.MistralApiKey != settings.MistralApiKey;
     if (keysChanged) Providers.ResetRefused();
     if (before.CheckModel != settings.CheckModel || keysChanged || before.CheckEnabled != settings.CheckEnabled
         || !before.CheckModels.SequenceEqual(settings.CheckModels) || before.CheckModelsAuto != settings.CheckModelsAuto)
@@ -685,6 +742,8 @@ record SettingsView
     public bool HasJinaApiKey { get; init; }
     public string? JinaApiKey { get; init; }
     public bool? FreeOnly { get; init; }
+    public bool HasMistralApiKey { get; init; }
+    public string? MistralApiKey { get; init; }
     public bool HasVoyageApiKey { get; init; }
     public string? VoyageApiKey { get; init; }
     public string ClassificationModel { get; init; } = "";
@@ -766,6 +825,7 @@ record SettingsView
         HasGeminiApiKey = !string.IsNullOrWhiteSpace(s.GeminiApiKey),
         HasJinaApiKey = !string.IsNullOrWhiteSpace(s.JinaApiKey),
         HasVoyageApiKey = !string.IsNullOrWhiteSpace(s.VoyageApiKey),
+        HasMistralApiKey = !string.IsNullOrWhiteSpace(s.MistralApiKey),
         FreeOnly = s.FreeOnly,
         ClassificationModel = s.ClassificationModel,
         ChatModel = s.ChatModel,
@@ -848,6 +908,7 @@ record SettingsView
         s.GeminiApiKey = Key(GeminiApiKey, s.GeminiApiKey);
         s.JinaApiKey = Key(JinaApiKey, s.JinaApiKey);
         s.VoyageApiKey = Key(VoyageApiKey, s.VoyageApiKey);
+        s.MistralApiKey = Key(MistralApiKey, s.MistralApiKey);
         if (FreeOnly is { } freeOnly) s.FreeOnly = freeOnly;
         if (CloudflareAccountId is not null) s.CloudflareAccountId = CloudflareAccountId.Trim();
         s.ClassificationModel = ClassificationModel.Trim();

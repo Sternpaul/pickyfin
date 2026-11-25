@@ -73,18 +73,23 @@ namespace Pickyfin.Server.Ai
         // - 401/403: the key is wrong; stop
         private async Task<string> CallApiWithFallbackAsync(Func<List<string>> order, string prompt, bool forceJson, string step, CancellationToken cancellationToken)
         {
-            if (!Providers.AnyKey(Config))
+            // A manual run asks the one model the admin chose, paid or not
+            var run = RunContext.Active;
+            if (run is null && !Providers.AnyKey(Config))
                 throw new InvalidOperationException("No API key is set: add an OpenRouter or NVIDIA key on the AI page.");
 
             var live = string.IsNullOrWhiteSpace(Config.CustomEndpoint) ? await OpenRouterModels.GetAsync(_httpClient, _logger, cancellationToken) : null;
-            var models = order(); // after the live list, so an automatic order is current
+            var models = run?.ChatModel is { } chosen ? new List<string> { chosen } : order(); // after the live list, so an automatic order is current
             var nim = models.Any(Nim.Is) ? await Nim.GetAsync(_httpClient, _logger, cancellationToken) : null;
             // Models of a provider with no key are left out quietly: it's the admin's choice which keys to set
             var keyed = models.Where(m => Providers.HasKey(Config, m)).ToList();
             // "Free only": paid models are left out, said once per model
-            foreach (var paid in keyed.Where(m => !Providers.IsFree(Config, m)))
-                if (WarnedPaid.TryAdd(paid, true)) _logger.LogInformation("{Provider}: '{Model}' isn't a free model; skipped while \"Free only\" is on.", Providers.Name(paid), paid);
-            keyed = keyed.Where(m => Providers.IsFree(Config, m)).ToList();
+            if (run is null)
+            {
+                foreach (var paid in keyed.Where(m => !Providers.IsFree(Config, m)))
+                    if (WarnedPaid.TryAdd(paid, true)) _logger.LogInformation("{Provider}: '{Model}' isn't a free model; skipped while \"Free only\" is on.", Providers.Name(paid), paid);
+                keyed = keyed.Where(m => Providers.IsFree(Config, m)).ToList();
+            }
             var usable = keyed.Where(m => (Nim.Is(m) ? nim is null || nim.Contains(m, StringComparer.OrdinalIgnoreCase) : !Providers.IsOpenRouter(m) || live is null || live.ContainsKey(m))
                 && !OpenRouterModels.IsGone(m) && Providers.RefusedWhy(m) is null).ToList();
             foreach (var skipped in keyed.Except(usable))
@@ -107,6 +112,7 @@ namespace Pickyfin.Server.Ai
                     if (result.Success)
                     {
                         OpenRouterModels.Record(model, null);
+                        run?.Used?.Invoke(model, result.InputTokens ?? Math.Max(1, prompt.Length / 3), result.OutputTokens ?? Math.Max(1, result.Content.Length / 3));
                         OpenRouterModels.LastAnswered[step] = (model, DateTime.UtcNow);
                         if (i > 0) _logger.LogWarning(Providers.Name(model) + ": answered by '{Model}' (number {Index} in your order).", model, i + 1);
                         return result.Content;
@@ -141,6 +147,7 @@ namespace Pickyfin.Server.Ai
             for (var attempt = 1; attempt <= TriesPerModel; attempt++)
             {
                 Activity.Detail = $"model {position}: {model}, try {attempt} of {TriesPerModel}";
+                RunContext.Check(model, Math.Max(1, prompt.Length / 3), Math.Max(200, prompt.Length / 12), cancellationToken);
                 if (attempt > 1)
                     _logger.LogInformation(Providers.Name(model) + ": '{Model}' try {Attempt} of {Max} ({Error})", model, attempt, TriesPerModel, error);
 
@@ -178,7 +185,8 @@ namespace Pickyfin.Server.Ai
                         {
                             var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
                             var content = body.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
-                            if (content.Trim().Length > 0) return new OpenRouterCallResult { Success = true, Content = content };
+                            int? Tokens(string name) => body.TryGetProperty("usage", out var u) && u.ValueKind == JsonValueKind.Object && u.TryGetProperty(name, out var t) && t.TryGetInt32(out var n) ? n : null;
+                            if (content.Trim().Length > 0) return new OpenRouterCallResult { Success = true, Content = content, InputTokens = Tokens("prompt_tokens"), OutputTokens = Tokens("completion_tokens") };
                             error = "empty answer";
                         }
                         catch (Exception ex) when (ex is KeyNotFoundException or JsonException or InvalidOperationException or IndexOutOfRangeException)
@@ -223,6 +231,7 @@ namespace Pickyfin.Server.Ai
         {
             public bool Success;
             public string Content = string.Empty;
+            public int? InputTokens, OutputTokens;
             public bool AbortChain;
             public bool Gone;
             public string Error = string.Empty;
