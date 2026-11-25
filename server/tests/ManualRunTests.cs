@@ -220,9 +220,8 @@ public class ManualRunTests
             }
             var estimate = await run.EstimateAsync(new ManualRunRequest("all", null, null, Redo: true, Describe: null, Check: "acme/chat-paid", null, null, null), default);
             var check = estimate.Steps.Single();
-            Assert.Equal(1, check.Titles); // only "Plain": the edited one and the looked-up ones are left out
-            Assert.Contains("1 edited or checked by you", check.Why);
-            Assert.Contains("5 looked up on the web", check.Why);
+            Assert.Equal(6, check.Titles); // the looked-up ones too; only the edited one is left out
+            Assert.Equal("Left out: 1 edited or checked by you.", check.Why);
         }
         finally
         {

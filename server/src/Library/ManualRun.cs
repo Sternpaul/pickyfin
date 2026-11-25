@@ -105,8 +105,8 @@ public sealed class ManualRun
     private static List<MovieMetadata> For(string step, List<MovieMetadata> titles, bool redo, bool afterDescribe) => step switch
     {
         "describe" => titles.Where(m => !HandEdited(m) && (redo || !m.IsClassified)).ToList(),
-        // like the automatic step 2: a title looked up on the web isn't checked (the web text is the stronger evidence)
-        "check" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && string.IsNullOrEmpty(m.WebNotes) && (redo || !m.Checked)).ToList(),
+        // unlike the automatic step 2, a manual check takes looked-up titles too: the admin chose to check them (the web text goes along)
+        "check" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && (redo || !m.Checked)).ToList(),
         "lookup" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && (redo || m.WebNotes is null)).ToList(),
         _ => titles.Where(m => m.IsClassified || afterDescribe).ToList(),
     };
@@ -125,11 +125,6 @@ public sealed class ManualRun
         var rest = titles.Where(m => !HandEdited(m)).ToList();
         if (step != "describe" && !afterDescribe && rest.Count(m => !m.IsClassified) is > 0 and var undescribed) reasons.Add($"{undescribed:N0} not described yet");
         rest = rest.Where(m => m.IsClassified || afterDescribe).ToList();
-        if (step == "check" && rest.Count(m => !string.IsNullOrEmpty(m.WebNotes)) is > 0 and var looked)
-        {
-            reasons.Add($"{looked:N0} looked up on the web, which the check leaves alone like the automatic step 2 (3 · Look up covers them)");
-            rest = rest.Where(m => string.IsNullOrEmpty(m.WebNotes)).ToList();
-        }
         if (!redo)
         {
             var done = step switch { "describe" => rest.Count(m => m.IsClassified), "check" => rest.Count(m => m.Checked), "lookup" => rest.Count(m => m.WebNotes is not null), _ => 0 };
