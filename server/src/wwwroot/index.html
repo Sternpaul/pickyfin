@@ -319,7 +319,13 @@
   .mr-scope label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .mr-steps { display: flex; flex-direction: column; gap: 14px; }
   .mr-step label { display: flex; gap: 8px; align-items: center; font-weight: 600; margin-bottom: 6px; }
-  .mr-step input[type=text] { width: 100%; }
+  .mr-step input[type=text], .mr-step select { width: 100%; }
+  .mr-pick { display: grid; grid-template-columns: 150px 1fr; gap: 8px; }
+  .mr-step.off .mr-pick, .mr-step.off .mr-key, .mr-step.off .note { display: none; }
+  .mr-key { margin-top: 8px; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 8px; }
+  .mr-key .inline { margin-top: 6px; }
+  .mr-key input { flex: 1; min-width: 0; }
+  @media (max-width: 560px) { .mr-pick { grid-template-columns: 1fr; } }
   .mr-step .note { margin-top: 4px; }
   .mr-est table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   .mr-est td, .mr-est th { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
@@ -983,13 +989,7 @@
         <label><input type="radio" name="mr-scope" value="selected"> The titles selected on the Movies and Series pages <span class="note" id="mr-sel-n"></span></label>
       </div>
       <h3 class="mr-h">Steps and models</h3>
-      <div class="mr-steps">
-        <div class="mr-step"><label><input type="checkbox" data-step="describe"> 1 · Describe</label><input type="text" data-model="describe" list="mr-chat" placeholder="Model, e.g. mistral:mistral-small-latest"><div class="note" data-price="describe"></div></div>
-        <div class="mr-step"><label><input type="checkbox" data-step="check"> 2 · Check</label><input type="text" data-model="check" list="mr-chat" placeholder="Model"><div class="note" data-price="check"></div></div>
-        <div class="mr-step"><label><input type="checkbox" data-step="lookup"> 3 · Look up (web search, then describe again)</label><input type="text" data-model="lookup" list="mr-chat" placeholder="Model"><div class="note" data-price="lookup"></div></div>
-        <div class="mr-step"><label><input type="checkbox" data-step="meaning"> Matching by meaning</label><input type="text" data-model="meaning" list="mr-embed" placeholder="Embedding model, e.g. mistral:mistral-embed"><div class="note" data-price="meaning"></div></div>
-      </div>
-      <datalist id="mr-chat"></datalist><datalist id="mr-embed"></datalist>
+      <div class="mr-steps" id="mr-steps"></div>
       <h3 class="mr-h">Titles already done</h3>
       <div class="seg" id="mr-redo"><button type="button" data-v="missing">Only what's missing</button><button type="button" data-v="redo">Everything again</button></div>
       <p class="note">Titles you edited or checked by hand are never overwritten.</p>
@@ -2632,9 +2632,94 @@ async function openGone() {
 
 // ---- manual run: chosen titles, steps and models, an estimate, a spending limit ----
 let mrModels = null, mrTimer = null, mrPoll = null;
+// Each step: a source first, then one of its models. Talking models for steps 1–3, embedding models for meaning.
+const mrStepList = [
+  { key: 'describe', name: '1 · Describe', embed: false },
+  { key: 'check', name: '2 · Check', embed: false },
+  { key: 'lookup', name: '3 · Look up (web search, then describe again)', embed: false },
+  { key: 'meaning', name: 'Matching by meaning', embed: true },
+];
+// key fields per source; Cloudflare also needs its account ID
+const mrSources = {
+  OpenRouter: { has: () => settings?.HasApiKey, fields: [['ApiKey', 'OpenRouter API key']], url: 'https://openrouter.ai/settings/keys', embed: true, chat: true },
+  NVIDIA: { has: () => settings?.HasNimApiKey, fields: [['NimApiKey', 'NVIDIA key (nvapi-…)']], url: 'https://build.nvidia.com/settings/api-keys', embed: true, chat: true },
+  Cloudflare: { has: () => settings?.HasCloudflareApiToken && !!settings?.CloudflareAccountId, fields: [['CloudflareAccountId', 'Account ID', 'text'], ['CloudflareApiToken', 'API token']], url: 'https://dash.cloudflare.com/profile/api-tokens', embed: true, chat: true },
+  Gemini: { has: () => settings?.HasGeminiApiKey, fields: [['GeminiApiKey', 'Gemini API key']], url: 'https://aistudio.google.com/apikey', embed: true, chat: true },
+  Mistral: { has: () => settings?.HasMistralApiKey, fields: [['MistralApiKey', 'Mistral API key']], url: 'https://console.mistral.ai/api-keys', embed: true, chat: true },
+  Jina: { has: () => settings?.HasJinaApiKey, fields: [['JinaApiKey', 'Jina API key']], url: 'https://jina.ai/api-dashboard', embed: true, chat: false },
+  Voyage: { has: () => settings?.HasVoyageApiKey, fields: [['VoyageApiKey', 'Voyage API key']], url: 'https://dashboard.voyageai.com/organization/api-keys', embed: true, chat: false },
+};
+const mrChoice = {}; // step → { source, model }
+function mrModelsOf(step, source) {
+  const list = step.embed ? mrModels?.Embedding : mrModels?.Chat;
+  return (list || []).filter(m => m.Source === source);
+}
+function mrDrawStep(step) {
+  const box = $(`#mr-steps [data-box="${step.key}"]`);
+  const on = $('input[type=checkbox]', box).checked;
+  box.classList.toggle('off', !on);
+  const c = mrChoice[step.key] ||= { source: 'OpenRouter', model: '' };
+  const src = mrSources[c.source];
+  const models = mrModelsOf(step, c.source);
+  const priceText = m => !m.Price ? '' : m.Price.In === 0 && m.Price.Out === 0 ? ' · free' : ` · $${m.Price.In} / $${m.Price.Out} per M`;
+  if (c.model && c.model !== '__other' && !models.some(m => m.Id === c.model)) c.model = '';
+  $('.mr-pick', box).innerHTML = `<select data-src>${Object.keys(mrSources).filter(k => step.embed ? mrSources[k].embed : mrSources[k].chat).map(k => `<option${k === c.source ? ' selected' : ''}>${k}</option>`).join('')}</select>
+    <select data-model><option value="">${!mrModels ? 'Loading the models…' : models.length ? `Choose a model (${models.length})` : src.has() ? 'No models listed' : 'Add the key below to list its models'}</option>
+      ${models.map(m => `<option value="${esc(m.Id)}"${m.Id === c.model ? ' selected' : ''}>${esc(m.Name)}${priceText(m)}</option>`).join('')}
+      <option value="__other"${c.model === '__other' ? ' selected' : ''}>Another model (type its id)…</option></select>`;
+  const other = $('input[data-other]', box);
+  other.classList.toggle('hidden', c.model !== '__other');
+  // no key for this source: ask for it here
+  const keyBox = $('.mr-key', box);
+  keyBox.classList.toggle('hidden', !!src.has());
+  if (!src.has()) keyBox.innerHTML = `<div><b>${c.source} needs a key.</b> <a href="${src.url}" target="_blank" rel="noopener">Get one</a>. It's saved like the keys on the AI page.</div>
+    <div class="inline">${src.fields.map(([f, label, type]) => `<input type="${type || 'password'}" data-key="${f}" placeholder="${label}" autocomplete="off"${f === 'CloudflareAccountId' ? ` value="${esc(settings?.CloudflareAccountId || '')}"` : ''}>`).join('')}<button type="button" class="btn" data-save-key>Save key</button></div>
+    <div class="note" data-key-note></div>`;
+  $('[data-src]', box).onchange = e => { c.source = e.target.value; c.model = ''; mrDrawStep(step); mrLater(); };
+  $('[data-model]', box).onchange = e => { c.model = e.target.value; mrDrawStep(step); mrLater(); if (c.model === '__other') $('input[data-other]', box).focus(); };
+  const saveKey = $('[data-save-key]', box);
+  if (saveKey) saveKey.onclick = async () => {
+    const changes = {};
+    $$('[data-key]', keyBox).forEach(i => { if (i.value.trim()) changes[i.dataset.key] = i.value.trim(); });
+    if (!Object.keys(changes).length) return;
+    saveKey.disabled = true;
+    if (await save(changes, $('[data-key-note]', keyBox))) {
+      // a new key can list more models
+      mrModels = null; embeddingModels = null; loadEmbeddingModels();
+      await mrLoadModels();
+    } else saveKey.disabled = false;
+  };
+}
+function mrDrawSteps() {
+  const box = $('#mr-steps');
+  if (!box.children.length) {
+    box.innerHTML = mrStepList.map(st => `<div class="mr-step off" data-box="${st.key}">
+      <label><input type="checkbox" data-step="${st.key}"> ${st.name}</label>
+      <div class="mr-pick"></div><input type="text" data-other class="hidden" placeholder="${st.embed ? 'Embedding' : 'Model'} id, e.g. ${st.embed ? 'mistral:mistral-embed' : 'mistral:mistral-small-latest'}" style="margin-top:8px">
+      <div class="mr-key hidden"></div><div class="note" data-price="${st.key}"></div></div>`).join('');
+    mrStepList.forEach(st => { $(`[data-box="${st.key}"] input[type=checkbox]`).onchange = () => { mrDrawStep(st); mrLater(); }; });
+  }
+  mrStepList.forEach(mrDrawStep);
+}
+async function mrLoadModels() {
+  mrDrawSteps();
+  try { mrModels = await call('GET', '/api/manual-run/models'); } catch { mrModels = { Chat: [], Embedding: [] }; }
+  mrDrawSteps();
+  mrEstimate();
+}
+// the model a step will use: the chosen one, or the id typed for "another model" (written with its source's prefix)
+const mrPrefixes = { OpenRouter: '', NVIDIA: 'nim:', Cloudflare: 'cf:', Gemini: 'gemini:', Mistral: 'mistral:', Jina: 'jina:', Voyage: 'voyage:' };
+function mrModelOf(key) {
+  const c = mrChoice[key]; if (!c?.model) return null;
+  if (c.model !== '__other') return c.model;
+  const typed = $(`#mr-steps [data-box="${key}"] input[data-other]`).value.trim();
+  if (!typed) return null;
+  const pre = mrPrefixes[c.source];
+  return pre && !typed.toLowerCase().startsWith(pre) ? pre + typed : typed;
+}
 const money = v => v == null ? 'price unknown' : v === 0 ? 'free' : v < 0.0001 ? 'under $0.0001' : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`;
 const mrRequest = () => {
-  const step = k => $(`#mr-panel [data-step="${k}"]`).checked ? ($(`#mr-panel [data-model="${k}"]`).value.trim() || null) : null;
+  const step = k => $(`#mr-panel [data-step="${k}"]`)?.checked ? mrModelOf(k) : null;
   const limit = $('#mr-limit').value.trim();
   return {
     Scope: $('#mr-panel input[name="mr-scope"]:checked').value, Library: $('#mr-lib').value || null, Ids: [...picked],
@@ -2644,7 +2729,8 @@ const mrRequest = () => {
   };
 };
 function mrPriceLine(key) {
-  const id = $(`#mr-panel [data-model="${key}"]`).value.trim(), el = $(`#mr-panel [data-price="${key}"]`);
+  const id = mrModelOf(key) || '', el = $(`#mr-panel [data-price="${key}"]`);
+  if (!el) return;
   if (!id) { el.textContent = ''; return; }
   const m = [...(mrModels?.Chat || []), ...(mrModels?.Embedding || [])].find(x => x.Id.toLowerCase() === id.toLowerCase());
   if (!m) { el.textContent = mrModels ? 'Not in the lists Pickyfin knows; it will be tried as written.' : ''; return; }
@@ -2678,15 +2764,7 @@ async function openManualRun(scope) {
   } catch {}
   if (!segValue($('#mr-redo'))) seg($('#mr-redo'), 'missing', mrLater);
   showManualRun();
-  if (!mrModels) {
-    $('#mr-note').textContent = 'Loading the models…';
-    try { mrModels = await call('GET', '/api/manual-run/models'); } catch { mrModels = { Chat: [], Embedding: [] }; }
-    const opt = m => `<option value="${esc(m.Id)}">${esc(m.Source)}${m.Price ? (m.Price.In === 0 && m.Price.Out === 0 ? ' · free' : ` · $${m.Price.In}/$${m.Price.Out} per M`) : ''}</option>`;
-    $('#mr-chat').innerHTML = mrModels.Chat.map(opt).join('');
-    $('#mr-embed').innerHTML = mrModels.Embedding.map(opt).join('');
-    $('#mr-note').textContent = '';
-  }
-  mrEstimate();
+  if (!mrModels) await mrLoadModels(); else { mrDrawSteps(); mrEstimate(); }
 }
 async function showManualRun() {
   let st; try { st = await call('GET', '/api/manual-run'); } catch { return; }
@@ -2706,8 +2784,7 @@ async function showManualRun() {
 }
 $('#mr-open').onclick = () => openManualRun();
 $('#mr-close').onclick = () => { $('#mr-panel').classList.add('hidden'); clearTimeout(mrPoll); };
-$('#mr-panel').addEventListener('input', e => { if (e.target.matches('input, select')) mrLater(); });
-$('#mr-panel').addEventListener('change', e => { if (e.target.matches('input, select')) mrLater(); });
+$('#mr-panel').addEventListener('input', e => { if (e.target.matches('input, select') && !e.target.matches('[data-key]')) mrLater(); });
 $('#mr-start').onclick = async () => {
   const req = mrRequest();
   if (!confirm(`Start the manual run? It may cost money${req.Limit != null ? `, up to about $${req.Limit}` : ', with no spending limit'}.`)) return;
