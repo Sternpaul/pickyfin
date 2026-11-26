@@ -80,6 +80,8 @@ public sealed class ServerSettings
     public bool LookupModelsAuto { get; set; } = true;
     /// <summary>Step 4: re-check every film (fresh lookup, described again) every this many months. 0 = off.</summary>
     public int RescanMonths { get; set; }
+    /// <summary>A title new to Pickyfin is re-checked this many days after it was first described, then joins the normal schedule. 0: no early re-check.</summary>
+    public int FirstRecheckDays { get; set; } = 30;
     /// <summary>A re-check pass started by hand: every film re-checked before this time is due again.</summary>
     public DateTime? RescanPassStarted { get; set; }
     /// <summary>How many films "describe every film again" queued, for the progress on Status.</summary>

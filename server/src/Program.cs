@@ -295,22 +295,22 @@ admin.MapGet("/status", async (RefreshService worker, LibrarySync library, Movie
     var queue = new[]
     {
         Row("library", "Library sync", true, ""),
-        Row("picks", "Rows for each person", true, ""),
-        // While a "describe again" pass runs, count what this pass has done
-        Row("tagging", "1 · Describe", hasKey, "Off: no AI key", queuedAgain > 0 ? Math.Max(0, classified - queuedAgain) : classified, total, queuedAgain,
-            Tip("describe", "Described with"), series: (seriesClassified, seriesTotal)),
-        Row("second", "2 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified, tip: Tip("check", "Checked with"), series: (seriesReviewed, seriesClassified)),
-        Row(lookupKey, "3 · Look up", WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto || lookupAll is { Running: true }),
+        Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total,
+            rest: $"Up to date · {total - detailed:N0} title{(total - detailed == 1 ? "" : "s")} without a TMDB or IMDb id in Jellyfin", series: (seriesDetailed, seriesTotal)),
+        Row(lookupKey, "1 · Look up", WebLookup.Configured && (s.WebLookupsPerDay > 0 || s.WebLookupAuto || lookupAll is { Running: true }),
             WebLookup.Configured ? "Off" : "Off: no web search set up", lookedUp, classified, tip: Tip("lookup", "Described again from the web with"), series: (seriesLookedUp, seriesClassified)),
-        Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with"), series: (seriesRescanned, seriesRescanOf)),
+        // While a "describe again" pass runs, count what this pass has done
+        Row("tagging", "2 · Describe", hasKey, "Off: no AI key", queuedAgain > 0 ? Math.Max(0, classified - queuedAgain) : classified, total, queuedAgain,
+            Tip("describe", "Described with"), series: (seriesClassified, seriesTotal)),
+        Row("second", "3 · Check", s.CheckEnabled && hasKey, "Off", reviewed, classified, tip: Tip("check", "Checked with"), series: (seriesReviewed, seriesClassified)),
+        Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip, series: (seriesEmbedded, seriesClassified)),
+        Row("rescan", "4 · Re-check", (s.RescanMonths > 0 || s.RescanPassStarted is not null || s.FirstRecheckDays > 0) && hasKey, "Off", rescanned, rescanOf, tip: Tip("rescan", "Re-checked with"), series: (seriesRescanned, seriesRescanOf)),
         Row(OmdbScores.Key, OmdbScores.Title, !string.IsNullOrWhiteSpace(s.OmdbApiKey), "Off: no OMDb key", scored, total, series: (seriesScored, seriesTotal)),
         // Letterboxd has films only
         Row(LetterboxdRatings.Key, LetterboxdRatings.Title, s.LetterboxdOn, "Off", LetterboxdRatings.Last is { Reached: true } ? lbRated : null, LetterboxdRatings.Last is { Reached: true } ? films : null,
             tip: $"From letterboxd-collector at {LetterboxdRatings.Address(s)}" + (LetterboxdRatings.Last is { } lbLast ? $"\n{lbLast.Message}" + (lbLast.WithRating is { } wr ? $"; it has ratings for {wr:N0} films" : "") : ""),
             rest: $"Up to date · {films - lbRated:N0} film{(films - lbRated == 1 ? " has" : "s have")} no Letterboxd rating in the collector (yet)"),
-        Row(TmdbDetails.Key, TmdbDetails.Title, !string.IsNullOrWhiteSpace(s.TmdbApiKey), "Off: no TMDB key", detailed, total,
-            rest: $"Up to date · {total - detailed:N0} title{(total - detailed == 1 ? "" : "s")} without a TMDB or IMDb id in Jellyfin", series: (seriesDetailed, seriesTotal)),
-        Row(Meaning.Key, Meaning.Title, Meaning.On(s), s.AIProvider == AIProviderType.OpenRouter ? "Off" : "Off: needs OpenRouter", embedded, classified, tip: meaningTip, series: (seriesEmbedded, seriesClassified)),
+        Row("picks", "Rows for each person", true, ""),
     };
 
     int gone;
@@ -484,7 +484,7 @@ admin.MapGet("/steps/again", async (Database database, MovieStore store, Cancell
     return Results.Ok(new
     {
         Describe = films.Count, DescribeQueued = await store.CountRedoAsync(ct),
-        Check = films.Count(m => string.IsNullOrEmpty(m.WebNotes)), CheckPending = films.Count(m => string.IsNullOrEmpty(m.WebNotes) && !m.Checked),
+        Check = films.Count, CheckPending = films.Count(m => !m.Checked),
         Lookup = films.Count, LookupPassStarted = s.RescanPassStarted,
         LookupPerDay = s.RescanMonths > 0 ? Rescan.PerDay(films.Count, s.RescanMonths) : Rescan.ManualPace(s),
     });
@@ -502,20 +502,20 @@ admin.MapPost("/steps/{step}/again", async (string step, Database database, Refr
             count = await db.Movies.Where(m => ids.Contains(m.ItemId)).ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, true), ct);
             var redo = ServerSettings.Current.Clone(); redo.RedoDescribeTotal = count; ServerSettings.Save(redo);
             MovieClassifier.RetryNow();
-            log.LogInformation("Step 1 runs again: {Count} titles queued to be described again, 8 calls per round", count);
+            log.LogInformation("Step 2 runs again: {Count} titles queued to be described again, 8 calls per round", count);
             break;
         case "check":
-            // Looked-up films are past the second opinion; the web text is the stronger evidence
-            count = await db.Movies.Where(m => ids.Contains(m.ItemId) && (m.WebNotes == null || m.WebNotes == "")).ExecuteUpdateAsync(u => u.SetProperty(m => m.Checked, false), ct);
+            // every described title gets the second opinion again, looked up or not
+            count = await db.Movies.Where(m => ids.Contains(m.ItemId)).ExecuteUpdateAsync(u => u.SetProperty(m => m.Checked, false), ct);
             SecondOpinion.ResetPause();
-            log.LogInformation("Step 2 runs again: {Count} titles to be checked again", count);
+            log.LogInformation("Step 3 runs again: {Count} titles to be checked again", count);
             break;
         case "lookup":
             var settings = ServerSettings.Current.Clone();
             settings.RescanPassStarted = DateTime.UtcNow;
             ServerSettings.Save(settings);
             count = ids.Count;
-            log.LogInformation("Steps 3 and 4 run again: a re-check pass over {Count} titles starts now", count);
+            log.LogInformation("Step 4 runs again: a re-check pass over {Count} titles starts now", count);
             break;
         default:
             return Results.NotFound();
@@ -531,7 +531,7 @@ admin.MapPost("/steps/{step}/stop", async (string step, Database database, ILogg
     {
         await using var db = database.Open();
         var count = await db.Movies.Where(m => m.RedoDescribe).ExecuteUpdateAsync(u => u.SetProperty(m => m.RedoDescribe, false), ct);
-        log.LogInformation("Step 1: stopped describing again; {Count} titles taken out of the queue", count);
+        log.LogInformation("Step 2: stopped describing again; {Count} titles taken out of the queue", count);
         return Results.Ok(new { Count = count });
     }
     if (step == "lookup")
@@ -539,7 +539,7 @@ admin.MapPost("/steps/{step}/stop", async (string step, Database database, ILogg
         var settings = ServerSettings.Current.Clone();
         settings.RescanPassStarted = null;
         ServerSettings.Save(settings);
-        log.LogInformation("Steps 3 and 4: the pass started by hand is stopped");
+        log.LogInformation("Step 4: the pass started by hand is stopped");
         return Results.Ok(new { Count = 0 });
     }
     return Results.NotFound();
@@ -788,6 +788,7 @@ record SettingsView
     public List<string>? LookupModels { get; init; }
     public bool? LookupModelsAuto { get; init; }
     public int RescanMonths { get; init; }
+    public int? FirstRecheckDays { get; init; }
     public bool HasExaApiKey { get; init; }
     public string? ExaApiKey { get; init; }
     public string WebSearchProvider { get; init; } = "exa";
@@ -866,6 +867,7 @@ record SettingsView
         LookupModels = OpenRouterModels.LookupOrder(s),
         LookupModelsAuto = s.LookupModelsAuto,
         RescanMonths = s.RescanMonths,
+        FirstRecheckDays = s.FirstRecheckDays,
         HasExaApiKey = !string.IsNullOrWhiteSpace(s.ExaApiKey),
         WebSearchProvider = s.WebSearchProvider,
         HasParallelApiKey = !string.IsNullOrWhiteSpace(s.ParallelApiKey),
@@ -953,6 +955,7 @@ record SettingsView
         if (s.AIProvider == AIProviderType.OpenRouter && LookupModels is { Count: > 0 } lookup) s.LookupModels = Clean(lookup);
         if (LookupModelsAuto is { } lookupAuto) s.LookupModelsAuto = lookupAuto;
         s.RescanMonths = RescanMonths is 0 or 1 or 3 or 6 or 12 ? RescanMonths : 0;
+        if (FirstRecheckDays is { } firstDays) s.FirstRecheckDays = Math.Clamp(firstDays, 0, 365);
         s.WebLookupAuto = WebLookupAuto;
         s.WebLookupBudget = Math.Clamp(WebLookupBudget, 0, 1000);
         s.WebLookupsPerDay = Math.Clamp(WebLookupsPerDay, 0, 2000);

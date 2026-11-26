@@ -7,7 +7,7 @@ namespace Pickyfin.Server.Library;
 
 /// <summary>
 /// Step 4: now and then every film goes through the gold standard again. A fresh web lookup
-/// (new reviews, new consensus on Wikipedia, Letterboxd, IMDb…), then the step-3 model describes it
+/// (new reviews, new consensus on Wikipedia, Letterboxd, IMDb…), then the order for describing again describes it
 /// again from everything, keeping what fits and changing only what's clearly wrong. Spread evenly
 /// over the chosen interval, so the Exa spend is steady and each pass ends when the next one starts.
 /// Films you edited or marked as checked are left alone.
@@ -68,14 +68,25 @@ public sealed class Rescan
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         var s = ServerSettings.Current;
-        if (s.RescanMonths <= 0 && s.RescanPassStarted is null) { Jobs.Idle(Key, Title, "Off"); return; }
         if (!s.HasAiKey) { Jobs.Idle(Key, Title, "Off: no AI key"); return; }
 
         var movies = (await _store.GetAllTitlesAsync(cancellationToken)).Where(Eligible).ToList();
+        var now = DateTime.UtcNow;
+        // New titles: their first re-check comes a few weeks after they arrived, whatever the schedule says
+        var firstDue = movies.Where(m => m.FirstRecheckDue is { } d && d <= now).OrderBy(m => m.FirstRecheckDue).ToList();
+        var waiting = movies.Count(m => m.FirstRecheckDue > now);
+        if (s.RescanMonths <= 0 && s.RescanPassStarted is null && firstDue.Count == 0)
+        {
+            Jobs.Idle(Key, Title, waiting > 0 ? $"Off; {waiting:N0} new title(s) get their first re-check later" : "Off",
+                movies.Where(m => m.FirstRecheckDue > now).Select(m => m.FirstRecheckDue).Min());
+            return;
+        }
         var cutoff = Cutoff(s);
-        var due = movies.Where(m => m.Rescanned is null || m.Rescanned < cutoff)
+        var scheduled = s.RescanMonths > 0 || s.RescanPassStarted is not null;
+        var due = firstDue.Concat(!scheduled ? Enumerable.Empty<MovieMetadata>() : movies
+            .Where(m => m.FirstRecheckDue is null && (m.Rescanned is null || m.Rescanned < cutoff))
             .OrderBy(m => m.IsSeries) // films first
-            .ThenBy(m => m.Rescanned ?? DateTime.MinValue).ThenBy(m => m.Popularity).ToList();
+            .ThenBy(m => m.Rescanned ?? DateTime.MinValue).ThenBy(m => m.Popularity)).ToList();
         var perDay = s.RescanMonths > 0 ? PerDay(movies.Count, s.RescanMonths) : ManualPace(s);
         var startOfDay = DateTime.UtcNow.Date;
         var doneToday = movies.Count(m => m.Rescanned >= startOfDay);
@@ -94,7 +105,8 @@ public sealed class Rescan
             Jobs.Idle(Key, Title, "Pass done", next);
             return;
         }
-        if (doneToday >= perDay)
+        // a new title's first re-check doesn't wait for today's share
+        if (doneToday >= perDay && firstDue.Count == 0)
         {
             Jobs.Idle(Key, Title, $"Today's {perDay} done", tomorrow);
             return;
@@ -107,7 +119,7 @@ public sealed class Rescan
             return;
         }
 
-        var batch = due.Take(Math.Min(PerRound, perDay - doneToday)).ToList();
+        var batch = firstDue.Take(PerRound).Concat(due.Skip(firstDue.Count).Take(Math.Max(0, Math.Min(PerRound - Math.Min(PerRound, firstDue.Count), perDay - doneToday)))).ToList();
         Jobs.Running(Key, Title, Titles.Count(batch));
         var before = batch.ToDictionary(m => m.ItemId, Tags);
 
@@ -131,7 +143,8 @@ public sealed class Rescan
                 }
             }
 
-        foreach (var movie in batch) { movie.Recheck = true; movie.Rescanned = DateTime.UtcNow; }
+        // after this, the normal schedule
+        foreach (var movie in batch) { movie.Recheck = true; movie.Rescanned = DateTime.UtcNow; movie.FirstRecheckDue = null; }
         var provider = _ai.GetProvider();
         try
         {

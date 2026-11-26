@@ -59,7 +59,7 @@ public sealed class SecondOpinion
 
         List<MovieMetadata> all;
         await using (var db = _database.Open())
-            all = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.Checked && !m.ManuallyEdited && (m.WebNotes == null || m.WebNotes == "")).ToListAsync(cancellationToken);
+            all = await db.Movies.AsNoTracking().Where(m => m.IsClassified && !m.Checked && !m.ManuallyEdited && !m.Verified).ToListAsync(cancellationToken);
         all = all.Where(m => !settings.IsLibraryExcluded(m.Libraries)).ToList();
         var now = DateTime.UtcNow;
         foreach (var expired in SetAsideUntil.Where(x => x.Value <= now).Select(x => x.Key).ToList()) { SetAsideUntil.Remove(expired); FailedTimes.Remove(expired); }
@@ -138,7 +138,7 @@ public sealed class SecondOpinion
                 await _store.SaveMoviesAsync(batch, cancellationToken);
                 _logger.LogInformation("Second opinion on titles {Start}–{End}: {Count} look wrong", i + 1, i + batch.Count, problems.Count);
 
-                await _classifier.LookUpFlaggedAsync(provider, problems.Keys.ToList(), cancellationToken);
+                await ResolveAsync(provider, problems, cancellationToken);
                 TaggingEta.BatchDone();
             }
         }
@@ -162,8 +162,49 @@ public sealed class SecondOpinion
         await _history.AddAsync(batch.Select(m => MovieHistory.Entry(m, "check", MovieHistory.ModelFor("check"), null,
             problems.TryGetValue(m, out var said) ? said : "Found nothing wrong")), cancellationToken);
         await _store.SaveMoviesAsync(batch, cancellationToken);
-        await _classifier.LookUpFlaggedAsync(provider, problems.Keys.ToList(), cancellationToken);
+        await ResolveAsync(provider, problems, cancellationToken);
         return problems.Count;
+    }
+
+    /// <summary>
+    /// After an objection the title is described once more, with the objection in the prompt
+    /// (and a web lookup first when it has no web text yet). Then it stays checked: if the
+    /// tags the check called wrong are still there, its objection stays in Issues for the admin.
+    /// </summary>
+    private async Task ResolveAsync(IAIProvider provider, Dictionary<MovieMetadata, string> problems, CancellationToken cancellationToken)
+    {
+        if (problems.Count == 0) return;
+        var wrong = problems.ToDictionary(p => p.Key, p => WrongTags(p.Value));
+        var noWeb = problems.Keys.Where(m => string.IsNullOrEmpty(m.WebNotes)).ToList();
+        var withWeb = problems.Keys.Where(m => !string.IsNullOrEmpty(m.WebNotes)).ToList();
+        try
+        {
+            if (noWeb.Count > 0) await _classifier.LookUpAndTagManyAsync(provider, noWeb, cancellationToken);
+            if (withWeb.Count > 0)
+                using (Activity.Begin($"Describing {Titles.Count(withWeb)} again after the second opinion: waiting for {provider.Name}"))
+                    await _classifier.DescribeAgainAsync(provider, withWeb, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning("Second opinion: describing again after its objections failed ({Error}); the objections stay in Issues", ex.Message);
+        }
+        foreach (var (movie, line) in problems)
+        {
+            movie.Checked = true; // checked once, described once more: done
+            var tags = movie.SubcategorySet.Items.Concat(movie.MoodSet.Items).ToList();
+            var still = wrong[movie].Where(w => tags.Contains(w, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (still.Count > 0) movie.Issue = Issues.Add(movie.Issue, line);
+        }
+        await _store.SaveMoviesAsync(problems.Keys, cancellationToken);
+        var kept = problems.Count(p => wrong[p.Key].Any(w => p.Key.SubcategorySet.Items.Concat(p.Key.MoodSet.Items).Contains(w, StringComparer.OrdinalIgnoreCase)));
+        _logger.LogInformation("Second opinion: {Count} title(s) described again after its objections; {Kept} still carry a tag it called wrong (in Issues)", problems.Count, kept);
+    }
+
+    /// <summary>The tags an objection line names: Second opinion: "A", "B" doesn't fit; …</summary>
+    internal static List<string> WrongTags(string line)
+    {
+        var head = line.Split(" doesn't fit")[0];
+        return System.Text.RegularExpressions.Regex.Matches(head, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
     }
 
     private static string Short(string message) => message.Length <= 160 ? message : message[..160] + "…";

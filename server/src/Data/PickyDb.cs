@@ -230,6 +230,7 @@ public sealed class Database
         AddColumn("Movies", "Format", "TEXT NULL");
         AddColumn("Movies", "LastWatched", "TEXT NULL");
         AddColumn("Movies", "SeriesKinds", "TEXT NULL");
+        AddColumn("Movies", "FirstRecheckDue", "TEXT NULL");
         AddColumn("Users", "UseLetterboxd", "INTEGER NOT NULL DEFAULT 1");
         AddColumn("Users", "LetterboxdUsername", "TEXT NULL");
         AddColumn("Users", "LetterboxdWatchlistUrl", "TEXT NULL");

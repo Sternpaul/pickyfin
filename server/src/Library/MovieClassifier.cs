@@ -108,9 +108,14 @@ namespace Pickyfin.Server.Library
                         var started = DateTime.UtcNow;
                         TaggingEta.BatchStarted(unclassified.Count - i);
                         Jobs.Running("tagging", "Describing films and series", $"Titles {i + 1}–{i + batch.Count} of {unclassified.Count} ({Titles.Count(batch)})");
+                        // Step 1: every title is looked up on the web before any AI describes it
+                        await LookUpFirstAsync(batch, cancellationToken);
+                        var isNew = batch.Where(m => !m.IsClassified).Select(m => m.ItemId).ToHashSet();
                         using (Activity.Begin($"Describing titles {i + 1}–{i + batch.Count} of {unclassified.Count}: waiting for {provider.Name}"))
                             await TagBatchAsync(provider, batch, cancellationToken);
                         _logger.LogInformation("{Provider} answered in {Seconds}s", provider.Name, (int)(DateTime.UtcNow - started).TotalSeconds);
+                        await ScheduleFirstRecheckAsync(batch.Where(m => isNew.Contains(m.ItemId) && m.IsClassified).ToList(), cancellationToken);
+                        // titles the lookup couldn't reach (allowances used up) still get one when they look off
                         await LookUpFlaggedAsync(provider, batch, cancellationToken);
                         TaggingEta.BatchDone();
                         _errorsInARow = 0;
@@ -136,6 +141,50 @@ namespace Pickyfin.Server.Library
             }
             _logger.LogInformation("Describing finished");
             Jobs.Idle("tagging", "Describing films and series", "Up to date");
+        }
+
+        /// <summary>
+        /// Step 1: titles without web text are looked up before they're described, so every model
+        /// after it (describe, check) has what the web says. When the search engines have used
+        /// their allowances, the title is described without it and looked up later.
+        /// </summary>
+        /// <param name="again">Search titles that were looked up before too (a manual run); when nothing new is found, the earlier web text stays.</param>
+        public async Task LookUpFirstAsync(List<MovieMetadata> batch, CancellationToken cancellationToken, bool again = false)
+        {
+            if (!WebLookup.Configured) return;
+            var looked = new List<MovieMetadata>();
+            try
+            {
+            foreach (var movie in batch.Where(m => (again || m.WebNotes is null) && !m.ManuallyEdited && !m.Verified))
+            {
+                if (_web.Blocked() is { } why) { _logger.LogInformation("Looking up first: paused ({Why}); the rest are described without it and looked up later", why); return; }
+                try
+                {
+                    string found;
+                    using (Activity.Begin($"Looking up {movie.Title} on the web"))
+                        found = await _web.FindAsync(movie, cancellationToken) ?? "";
+                    await RecordLookupAsync(movie, found, cancellationToken);
+                    if (found.Length > 0 || movie.WebNotes is null) movie.WebNotes = found;
+                    looked.Add(movie);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning("Web lookup failed for {Title}: {Error}; described without it", movie.Title, ex.Message);
+                    return;
+                }
+            }
+            }
+            // what was found is kept, also if describing fails afterwards
+            finally { if (looked.Count > 0) await _movieStore.SaveMoviesAsync(looked, CancellationToken.None); }
+        }
+
+        /// <summary>New titles: the first re-check comes FirstRecheckDays after they were first described.</summary>
+        private async Task ScheduleFirstRecheckAsync(List<MovieMetadata> described, CancellationToken cancellationToken)
+        {
+            var days = ServerSettings.Current.FirstRecheckDays;
+            if (days <= 0 || described.Count == 0) return;
+            foreach (var m in described) m.FirstRecheckDue = DateTime.UtcNow.AddDays(days);
+            await _movieStore.SaveMoviesAsync(described, cancellationToken);
         }
 
         /// <summary>
@@ -193,7 +242,7 @@ namespace Pickyfin.Server.Library
             await LookUpFlaggedAsync(provider, batch, cancellationToken);
         }
 
-        /// <summary>Describes films again with everything known, with the step-3 model order (used by the re-check).</summary>
+        /// <summary>Describes titles again with everything known, with the order for describing again (re-check, after the check's objections).</summary>
         public Task DescribeAgainAsync(IAIProvider provider, List<MovieMetadata> batch, CancellationToken cancellationToken) =>
             TagBatchAsync(provider, batch, cancellationToken, lookedUp: true);
 

@@ -30,9 +30,8 @@ public sealed class WebSweep
     public static bool Wanted(Data.Models.MovieMetadata m) =>
         m.IsClassified && m.WebNotes is null && !m.ManuallyEdited && !m.Verified && !ServerSettings.Current.IsLibraryExcluded(m.Libraries);
 
-    /// <summary>Step 3 comes after step 2: with the second opinion on, a film waits until it has been checked (flagged films can go any time).</summary>
-    public static bool Ready(Data.Models.MovieMetadata m) =>
-        !ServerSettings.Current.CheckEnabled || m.Checked || m.Issue is not null;
+    /// <summary>Looking up comes first (step 1): a title without web text is looked up whether or not it was checked.</summary>
+    public static bool Ready(Data.Models.MovieMetadata m) => true;
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -47,7 +46,7 @@ public sealed class WebSweep
         var todo = (await _store.GetAllTitlesAsync(cancellationToken)).Where(Wanted).ToList();
         if (todo.Count == 0) { Jobs.Idle(key, title, "Up to date"); return; }
         var ready = todo.Where(Ready).ToList();
-        if (ready.Count == 0) { Jobs.Idle(key, title, "Waiting for step 2 to check them", DateTime.UtcNow.AddMinutes(5)); return; }
+
         Jobs.Running(key, title, $"{Math.Min(PerRound, left)} titles");
         var batch = ready
             .OrderBy(m => m.IsSeries) // films first

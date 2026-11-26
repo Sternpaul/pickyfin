@@ -313,6 +313,9 @@
   .drawer-foot { padding: 16px 28px; border-top: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .drawer-foot:empty { display: none; }
   .drawer.mr { width: min(560px, 100vw); z-index: 10; box-shadow: -20px 0 60px -30px rgba(0,0,0,.6); }
+  .pipeline { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; max-width: 860px; color: var(--muted); line-height: 1.5; }
+  .pipeline li { padding-left: 14px; border-left: 2px solid var(--line); }
+  .pipeline b { color: var(--text); }
   .mr-warn { border: 1px solid var(--err); border-radius: 10px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; margin-bottom: 20px; }
   .mr-h { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 22px 0 10px; }
   .mr-scope { display: flex; flex-direction: column; gap: 8px; }
@@ -659,7 +662,16 @@
     <section data-page="ai" class="hidden">
       <div class="page-head"><div>
         <h1>AI</h1>
-        <p>Every film goes through three steps: <b>1 · Describe</b> (an AI describes it from what it knows), <b>2 · Check</b> (a second AI reviews the tags) and <b>3 · Look up</b> (a web search finds real text, and an AI describes the film again from everything: the web text, both opinions, Jellyfin's genres and TMDB's keywords). Optionally, <b>4 · Re-check</b> runs step 3 again on every film now and then. Status shows how far each step is. Changes on this page save on their own.</p>
+        <p>Every title, old or new, goes through the same steps. Status shows how far each one is, and each title's history shows what every step did. Changes on this page save on their own.</p>
+        <ol class="pipeline">
+          <li><b>Library sync</b>: Jellyfin's facts: plot (Jellyfin's overview), genres, cast, director, year.</li>
+          <li><b>Keywords</b>: precise keywords from TMDB (with a TMDB key).</li>
+          <li><b>1 · Look up</b>: a web search (Wikipedia and your search engines) finds what is written about the title: plot, reviews, reception. Done first, so every model after it knows what the web knows, also about films too new or too niche for it.</li>
+          <li><b>2 · Describe</b>: an AI tags the title from everything: Jellyfin's facts, the keywords and the web text. It also says whether it knew the title itself.</li>
+          <li><b>3 · Check</b>: a second AI reviews the tags with the same facts. When it objects, the title is described once more with its objection in mind; if a tag it called wrong stays, the title goes to Issues for you.</li>
+          <li><b>Matching by meaning</b>: each embedding model turns the whole description into a "meaning", so titles that mean similar things are related even without shared tags.</li>
+          <li><b>4 · Re-check</b>: later the title is looked up again and described again from what is new. A title new to Pickyfin gets this a few weeks after it arrived; after that, on the schedule you set.</li>
+        </ol>
       </div></div>
       <form id="ai-form" class="settings">
         <div class="setting">
@@ -693,74 +705,7 @@
           <div class="control"><input type="text" id="CustomEndpoint" placeholder="Provider default"></div>
         </div>
 
-        <h2 class="group-title">1 · Describe</h2>
-        <div class="setting" id="describe-single">
-          <div><h3>Model for describing</h3><p class="why">Runs once per title, 20 titles per call; a fast, cheap model is fine.</p></div>
-          <div class="control"><input type="text" id="ClassificationModel" list="models"></div>
-        </div>
-        <div class="setting openrouter-only">
-          <div><h3>Model order</h3><p class="why">Tried from the top. Each model gets 3 tries (waiting a little between them when it's busy or failing), then the next one takes over. Turn off the ones that keep failing. The numbers count calls since the server last started.</p></div>
-          <div class="control"><div class="chain" id="describe-chain"></div></div>
-        </div>
-        <details class="again" data-step="describe"><summary>Advanced: describe every film again</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
         <div class="setting-foot"><button class="btn" type="button" id="test-ai">Test connection</button><span class="note" id="ai-note"></span></div>
-      </form>
-
-      <h2 class="group-title">2 · Check</h2>
-      <form id="check-form" class="settings">
-        <div class="setting">
-          <div><h3>Second opinion</h3><p class="why">A different model reviews every title's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged titles show up under Issues.</p></div>
-          <div class="control">
-            <label class="switch"><input type="checkbox" id="CheckEnabled"><span></span></label>
-            <div id="check-single"><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="models"></div>
-          </div>
-        </div>
-        <div class="setting openrouter-only">
-          <div><h3>Model order</h3><p class="why">Same as for describing: from the top, 3 tries each. Best with different models than describing, so they catch different mistakes.</p></div>
-          <div class="control"><div class="chain" id="check-chain"></div></div>
-        </div>
-        <details class="again" data-step="check"><summary>Advanced: check every film again</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
-        <div class="setting-foot"><span class="note" id="check-note"></span></div>
-      </form>
-
-      <h2 class="group-title">3 · Look up on the web</h2>
-      <form id="lookup-form" class="settings">
-        <p class="why" style="margin:0 0 4px;max-width:72ch">A web search finds real text about each film (Wikipedia, Letterboxd, reviews…), and an AI describes the film again from that text together with both earlier opinions.</p>
-        <div class="setting">
-          <div><h3>Search engines</h3><p class="why">Tried from the top. Each lookup goes to the first engine that's on and still has allowance left (per day or per month, and a dollar limit for paid ones); when one fails or finds nothing, the next takes over. So "Exa 40 a day, then Linkup, then Parallel" uses Exa first each day until its 40 are used.</p></div>
-          <div class="control"><ol class="engines" id="engines"></ol></div>
-        </div>
-        <div class="setting">
-          <div><h3>Wikipedia</h3><p class="why">The film's Wikipedia article (summary, plot, reception) added to every lookup, free and without a key. While it's on, the engines above are told to leave Wikipedia out, so their pages are other sources. <span id="wiki-usage"></span></p></div>
-          <div class="control"><label class="switch"><input type="checkbox" id="WikipediaOn"><span></span></label></div>
-        </div>
-        <div class="setting">
-          <div><h3>Engines per lookup</h3><p class="why">How many engines answer each lookup. More engines, more pages for the AI to judge by; each one counts against its own allowance.</p></div>
-          <div class="control"><div><div class="seg" id="SearchPerLookup"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button></div></div></div>
-        </div>
-        <div class="setting">
-          <div><h3>Look up flagged titles right away</h3><p class="why">When the AI doesn't know a title, or something looks off, look it up and describe it again at once. Each title is looked up once.</p></div>
-          <div class="control"><label class="switch"><input type="checkbox" id="WebLookupAuto"><span></span></label></div>
-        </div>
-        <div class="setting">
-          <div><h3>Look up the whole library</h3><p class="why">Slowly works through every title, a few every few minutes: flagged titles first, then lesser-known ones. With the second opinion on, a title waits until it has been checked, so all three steps happen in order. <span id="sweep-estimate"></span></p></div>
-          <div class="control"><div class="inline" style="align-items:center"><input type="number" id="WebLookupsPerDay" min="0" step="5" style="width:110px"><span class="note">films a day (0 = off)</span></div></div>
-        </div>
-        <div class="setting openrouter-only">
-          <div><h3>Model order for describing again</h3><p class="why">By default the same order as step 1. Set it apart if you want a stronger model only for looked-up films; they're few, so even a paid model costs little here.</p></div>
-          <div class="control"><div class="chain" id="lookup-chain"></div></div>
-        </div>
-        <div class="setting-foot"><span class="note" id="lookup-note"></span></div>
-      </form>
-
-      <h2 class="group-title">4 · Re-check everything</h2>
-      <form id="rescan-form" class="settings">
-        <div class="setting">
-          <div><h3>How often</h3><p class="why">Every film goes through step 3 again: a fresh web lookup (new reviews, new consensus on Wikipedia, Letterboxd, IMDb…), then the step-3 model describes it again from everything collected. It keeps tags that still fit and changes only what's clearly wrong. Spread evenly over the time you choose, so each pass ends as the next begins. Films you edited or marked as checked are left alone. <span id="rescan-estimate"></span></p></div>
-          <div class="control"><div><div class="seg" id="RescanMonths"><button type="button" data-v="0">Off</button><button type="button" data-v="1">Every month</button><button type="button" data-v="3">3 months</button><button type="button" data-v="6">6 months</button><button type="button" data-v="12">Year</button></div></div></div>
-        </div>
-        <details class="again" data-step="lookup"><summary>Advanced: look up and describe every film again now</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
-        <div class="setting-foot"><span class="note" id="rescan-note"></span></div>
       </form>
 
       <h2 class="group-title">Keywords and scores</h2>
@@ -778,6 +723,118 @@
           <div class="control"><input type="number" id="OmdbPerDay" min="1" step="100" style="width:7em"></div>
         </div>
         <div class="setting-foot"><span class="note" id="tmdb-note"></span></div>
+      </form>
+
+      <h2 class="group-title">1 · Look up on the web</h2>
+      <form id="lookup-form" class="settings">
+        <p class="why" style="margin:0 0 4px;max-width:72ch">A web search finds real text about each film (Wikipedia, Letterboxd, reviews…), and an AI describes the film again from that text together with both earlier opinions.</p>
+        <div class="setting">
+          <div><h3>Search engines</h3><p class="why">Tried from the top. Each lookup goes to the first engine that's on and still has allowance left (per day or per month, and a dollar limit for paid ones); when one fails or finds nothing, the next takes over. So "Exa 40 a day, then Linkup, then Parallel" uses Exa first each day until its 40 are used.</p></div>
+          <div class="control"><ol class="engines" id="engines"></ol></div>
+        </div>
+        <div class="setting">
+          <div><h3>Wikipedia</h3><p class="why">The film's Wikipedia article (summary, plot, reception) added to every lookup, free and without a key. While it's on, the engines above are told to leave Wikipedia out, so their pages are other sources. <span id="wiki-usage"></span></p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="WikipediaOn"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>Engines per lookup</h3><p class="why">How many engines answer each lookup. More engines, more pages for the AI to judge by; each one counts against its own allowance.</p></div>
+          <div class="control"><div><div class="seg" id="SearchPerLookup"><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button></div></div></div>
+        </div>
+        <div class="setting">
+          <div><h3>Look up flagged titles right away</h3><p class="why">Every title is looked up before it's described. When that couldn't happen (every search engine had used its allowance) and the AI then doesn't know the title, or something looks off, it's looked up as soon as possible and described again.</p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="WebLookupAuto"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>Look up the whole library</h3><p class="why">Slowly works through every title, a few every few minutes: titles that have no web text yet, flagged ones first, then lesser-known ones; each is then described again from what was found. New titles don't need it: they're looked up first. <span id="sweep-estimate"></span></p></div>
+          <div class="control"><div class="inline" style="align-items:center"><input type="number" id="WebLookupsPerDay" min="0" step="5" style="width:110px"><span class="note">films a day (0 = off)</span></div></div>
+        </div>
+        <div class="setting openrouter-only">
+          <div><h3>Model order for describing again</h3><p class="why">Describes a title again when there's something new: after the check's objections, after a later lookup, and in the re-check. By default the same order as step 2; set it apart for a stronger model here.</p></div>
+          <div class="control"><div class="chain" id="lookup-chain"></div></div>
+        </div>
+        <div class="setting-foot"><span class="note" id="lookup-note"></span></div>
+      </form>
+
+      <h2 class="group-title">2 · Describe</h2>
+      <form id="describe-form" class="settings">
+        <div class="setting" id="describe-single">
+          <div><h3>Model for describing</h3><p class="why">Runs once per title, 20 titles per call, with the web text from step 1 in front of it; a fast, cheap model is fine.</p></div>
+          <div class="control"><input type="text" id="ClassificationModel" list="models"></div>
+        </div>
+        <div class="setting openrouter-only">
+          <div><h3>Model order</h3><p class="why">Gives each title its tags from everything step 1 collected. Tried from the top. Each model gets 3 tries (waiting a little between them when it's busy or failing), then the next one takes over. Turn off the ones that keep failing. The numbers count calls since the server last started.</p></div>
+          <div class="control"><div class="chain" id="describe-chain"></div></div>
+        </div>
+        <details class="again" data-step="describe"><summary>Advanced: describe every title again</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
+        <div class="setting-foot"><span class="note" id="describe-note"></span></div>
+      </form>
+
+      <h2 class="group-title">3 · Check</h2>
+      <form id="check-form" class="settings">
+        <div class="setting">
+          <div><h3>Second opinion</h3><p class="why">A different model reviews every title's tags, 40 at a time, and names only what looks wrong. Much quicker than describing. Flagged titles show up under Issues.</p></div>
+          <div class="control">
+            <label class="switch"><input type="checkbox" id="CheckEnabled"><span></span></label>
+            <div id="check-single"><label class="field-label" for="CheckModel">Model (same provider and key as above)</label><input type="text" id="CheckModel" list="models"></div>
+          </div>
+        </div>
+        <div class="setting openrouter-only">
+          <div><h3>Model order</h3><p class="why">Same as for describing: from the top, 3 tries each. Best with different models than describing, so they catch different mistakes.</p></div>
+          <div class="control"><div class="chain" id="check-chain"></div></div>
+        </div>
+        <details class="again" data-step="check"><summary>Advanced: check every title again</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
+        <div class="setting-foot"><span class="note" id="check-note"></span></div>
+      </form>
+
+      <h2 class="group-title">Matching by meaning</h2>
+      <form id="meaning-form" class="settings">
+        <div class="setting">
+          <div><h3>Match titles by meaning</h3><p class="why">Turns each title's whole description (plot, tags, what the web says) and each person's description into a "meaning". Titles that mean similar things are related even without shared tags. Runs on your OpenRouter key, and on any of the sources below you add a key for; free models cost nothing. Explore the result on the Matrix page.</p></div>
+          <div class="control"><label class="switch"><input type="checkbox" id="MeaningOn"><span></span></label></div>
+        </div>
+        <div class="setting">
+          <div><h3>More sources</h3><p class="why">Each is optional. With a key, its embedding models appear in the model order below, next to OpenRouter's and NVIDIA's (NVIDIA's key is on the AI page). Each note says when it stays free. Keys are stored on this server only; leave a field empty to keep the saved key.</p></div>
+          <div class="control"><div class="sources">
+            <div class="source"><div class="src-head"><b>Cloudflare</b> <span class="state" id="cf-state"></span><a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">get a token</a></div>
+              <p class="note">Free up to 10,000 "neurons" a day for the whole account (about 9 million tokens with BGE-M3); on the Workers Paid plan, more is billed. Pickyfin stops at 9,000 a day and goes on after 00:00 UTC, so it stays free either way. Doesn't keep what is sent. The token needs the "Workers AI" permission; the account ID is on the Workers AI page.</p>
+              <p class="note usage" data-usage="cf:"></p>
+              <div class="inline"><input type="text" id="CloudflareAccountId" placeholder="Account ID" autocomplete="off"><input type="password" id="CloudflareApiToken" placeholder="API token" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="CloudflareApiToken">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Gemini</b> <span class="state" id="gemini-state"></span><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note">Free only while the key's Google project has no billing account: AI Studio's Projects page should say "Free" under Billing Tier. With billing linked, every request is charged. Free use allows about 1,000 requests a day. Outside the EU, UK and Switzerland, Google may use free-tier text to improve its products.</p>
+              <p class="note usage" data-usage="gemini:"></p>
+              <div class="inline"><input type="password" id="GeminiApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="GeminiApiKey">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Jina</b> <span class="state" id="jina-state"></span><a href="https://jina.ai/api-dashboard" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note">10 million free tokens once (a few passes over a library); after that it stops unless you buy more. Its free models are for non-commercial use.</p>
+              <p class="note usage" data-usage="jina:"></p>
+              <div class="inline"><input type="password" id="JinaApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="JinaApiKey">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Voyage</b> <span class="state" id="voyage-state"></span><a href="https://dashboard.voyageai.com/organization/api-keys" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note">200 million free tokens once for each voyage-4 model. Without a card on file it allows only 3 requests a minute and simply stops when the free tokens are used up. With a card it's fast, the free tokens count first, and after them the card is charged.</p>
+              <p class="note usage" data-usage="voyage:"></p>
+              <div class="inline"><input type="password" id="VoyageApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="VoyageApiKey">Remove</button></div></div>
+            <div class="source"><div class="src-head"><b>Mistral</b> <span class="state" id="mistral-state"></span><a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">get a key</a></div>
+              <p class="note"><b>Paid.</b> Mistral's API has no free use; a Vibe Pro plan includes some API credit. Its models are used in manual runs, and in the normal runs only with "Free only" off. mistral-embed costs about $0.10 per million tokens.</p>
+              <div class="inline"><input type="password" id="MistralApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="MistralApiKey">Remove</button></div></div>
+          </div></div>
+        </div>
+        <div class="setting">
+          <div><h3>Model order</h3><p class="why">Every model in the order matches all titles and builds its own matrix (meanings from different models can't be mixed, so each keeps its own). How close two titles are is the average over the models that know both, which is steadier than any one model. A busy model is tried three times, then skipped for that round while the others carry on; a model OpenRouter no longer offers drops out. More models means more requests, so the first ones fill up first. <span id="meaning-models-note"></span></p></div>
+          <div class="control"><div class="chain" id="embed-chain"></div><datalist id="embed-all"></datalist></div>
+        </div>
+        <div class="setting-foot"><span class="note" id="meaning-note"></span></div>
+      </form>
+
+      <h2 class="group-title">4 · Re-check</h2>
+      <form id="rescan-form" class="settings">
+        <div class="setting">
+          <div><h3>First re-check of new titles</h3><p class="why">A title new to Pickyfin (new in Jellyfin, whatever its release year) is re-checked this many days after it was first described: by then the web usually knows more about it, especially about new releases. After that it follows the schedule below. 0: no early re-check.</p></div>
+          <div class="control"><div class="inline" style="align-items:center"><input type="number" id="FirstRecheckDays" min="0" max="365" step="1" style="width:90px"><span class="note">days</span></div></div>
+        </div>
+        <div class="setting">
+          <div><h3>How often</h3><p class="why">Every title is looked up again (new reviews, new consensus on Wikipedia, Letterboxd, IMDb…) and described again from everything collected, with the order for describing again. It keeps tags that still fit and changes only what's clearly wrong. Spread evenly over the time you choose, so each pass ends as the next begins. Films you edited or marked as checked are left alone. <span id="rescan-estimate"></span></p></div>
+          <div class="control"><div><div class="seg" id="RescanMonths"><button type="button" data-v="0">Off</button><button type="button" data-v="1">Every month</button><button type="button" data-v="3">3 months</button><button type="button" data-v="6">6 months</button><button type="button" data-v="12">Year</button></div></div></div>
+        </div>
+        <details class="again" data-step="lookup"><summary>Advanced: look up and describe every title again now</summary><div class="again-body"><p class="why"></p><div class="inline" style="align-items:center"><button type="button" class="btn go"></button><button type="button" class="btn quiet stop hidden">Stop</button><span class="note"></span></div></div></details>
+        <div class="setting-foot"><span class="note" id="rescan-note"></span></div>
       </form>
 
       <h2 class="group-title">Letterboxd</h2>
@@ -819,42 +876,6 @@
         <div class="setting-foot"><button type="button" class="btn quiet" id="lb-check">Check connection</button> <span class="note" id="lb-note"></span></div>
       </form>
 
-      <h2 class="group-title">Matching by meaning</h2>
-      <form id="meaning-form" class="settings">
-        <div class="setting">
-          <div><h3>Match titles by meaning</h3><p class="why">Turns each title's whole description (plot, tags, what the web says) and each person's description into a "meaning". Titles that mean similar things are related even without shared tags. Runs on your OpenRouter key, and on any of the sources below you add a key for; free models cost nothing. Explore the result on the Matrix page.</p></div>
-          <div class="control"><label class="switch"><input type="checkbox" id="MeaningOn"><span></span></label></div>
-        </div>
-        <div class="setting">
-          <div><h3>More sources</h3><p class="why">Each is optional. With a key, its embedding models appear in the model order below, next to OpenRouter's and NVIDIA's (NVIDIA's key is on the AI page). Each note says when it stays free. Keys are stored on this server only; leave a field empty to keep the saved key.</p></div>
-          <div class="control"><div class="sources">
-            <div class="source"><div class="src-head"><b>Cloudflare</b> <span class="state" id="cf-state"></span><a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">get a token</a></div>
-              <p class="note">Free up to 10,000 "neurons" a day for the whole account (about 9 million tokens with BGE-M3); on the Workers Paid plan, more is billed. Pickyfin stops at 9,000 a day and goes on after 00:00 UTC, so it stays free either way. Doesn't keep what is sent. The token needs the "Workers AI" permission; the account ID is on the Workers AI page.</p>
-              <p class="note usage" data-usage="cf:"></p>
-              <div class="inline"><input type="text" id="CloudflareAccountId" placeholder="Account ID" autocomplete="off"><input type="password" id="CloudflareApiToken" placeholder="API token" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="CloudflareApiToken">Remove</button></div></div>
-            <div class="source"><div class="src-head"><b>Gemini</b> <span class="state" id="gemini-state"></span><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note">Free only while the key's Google project has no billing account: AI Studio's Projects page should say "Free" under Billing Tier. With billing linked, every request is charged. Free use allows about 1,000 requests a day. Outside the EU, UK and Switzerland, Google may use free-tier text to improve its products.</p>
-              <p class="note usage" data-usage="gemini:"></p>
-              <div class="inline"><input type="password" id="GeminiApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="GeminiApiKey">Remove</button></div></div>
-            <div class="source"><div class="src-head"><b>Jina</b> <span class="state" id="jina-state"></span><a href="https://jina.ai/api-dashboard" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note">10 million free tokens once (a few passes over a library); after that it stops unless you buy more. Its free models are for non-commercial use.</p>
-              <p class="note usage" data-usage="jina:"></p>
-              <div class="inline"><input type="password" id="JinaApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="JinaApiKey">Remove</button></div></div>
-            <div class="source"><div class="src-head"><b>Voyage</b> <span class="state" id="voyage-state"></span><a href="https://dashboard.voyageai.com/organization/api-keys" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note">200 million free tokens once for each voyage-4 model. Without a card on file it allows only 3 requests a minute and simply stops when the free tokens are used up. With a card it's fast, the free tokens count first, and after them the card is charged.</p>
-              <p class="note usage" data-usage="voyage:"></p>
-              <div class="inline"><input type="password" id="VoyageApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="VoyageApiKey">Remove</button></div></div>
-            <div class="source"><div class="src-head"><b>Mistral</b> <span class="state" id="mistral-state"></span><a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">get a key</a></div>
-              <p class="note"><b>Paid.</b> Mistral's API has no free use; a Vibe Pro plan includes some API credit. Its models are used in manual runs, and in the normal runs only with "Free only" off. mistral-embed costs about $0.10 per million tokens.</p>
-              <div class="inline"><input type="password" id="MistralApiKey" placeholder="API key" autocomplete="off"><button type="button" class="btn quiet hidden" data-remove="MistralApiKey">Remove</button></div></div>
-          </div></div>
-        </div>
-        <div class="setting">
-          <div><h3>Model order</h3><p class="why">Every model in the order matches all titles and builds its own matrix (meanings from different models can't be mixed, so each keeps its own). How close two titles are is the average over the models that know both, which is steadier than any one model. A busy model is tried three times, then skipped for that round while the others carry on; a model OpenRouter no longer offers drops out. More models means more requests, so the first ones fill up first. <span id="meaning-models-note"></span></p></div>
-          <div class="control"><div class="chain" id="embed-chain"></div><datalist id="embed-all"></datalist></div>
-        </div>
-        <div class="setting-foot"><span class="note" id="meaning-note"></span></div>
-      </form>
     </section>
 
     <!-- TUNING -->
@@ -1003,7 +1024,7 @@
 <aside class="drawer mr hidden" id="mr-panel" aria-label="Manual run" role="dialog">
   <div class="drawer-head"><h2>Manual run</h2><button type="button" class="btn quiet" id="mr-close" aria-label="Close">✕</button></div>
   <div class="drawer-body">
-    <div class="mr-warn"><b>This may not be free.</b> A manual run ignores "Free only" and uses the models you pick, paid ones too, charged to your accounts with those providers. Web searches in step 3 count against your search engines' allowances. The estimate is rough: tokens are guessed from the texts, and prices come from the providers' lists where Pickyfin knows them.</div>
+    <div class="mr-warn"><b>This may not be free.</b> A manual run ignores "Free only" and uses the models you pick, paid ones too, charged to your accounts with those providers. Web searches in step 1 count against your search engines' allowances. The estimate is rough: tokens are guessed from the texts, and prices come from the providers' lists where Pickyfin knows them.</div>
     <div id="mr-setup">
       <h3 class="mr-h">Titles</h3>
       <div class="mr-scope">
@@ -1189,7 +1210,7 @@ $('#nim-remove').onclick = async () => {
 };
 // Automatic order: the most used free models on OpenRouter this week (the second opinion moves describing's first to the end)
 function autoChain(key) {
-  if (key === 'lookup') return [...chains.describe]; // step 3 follows step 1 unless set apart
+  if (key === 'lookup') return [...chains.describe]; // describing again follows step 2 unless set apart
   if (key === 'embed') return freeFor('embed').slice(0, modelInfo?.AutoCount || 5);
   const top = (modelInfo?.Free || []).slice(0, modelInfo?.AutoCount || 5);
   if (key === 'describe' || !top.length) return top;
@@ -1233,7 +1254,7 @@ function renderChain(key) {
   const extra = extraFor(key).map(g => ({ ...g, ids: g.ids.filter(m => !on.some(x => x.toLowerCase() === m.toLowerCase())) })).filter(g => g.ids.length);
   const statHtml = m => { const s = modelStat(m, key); return `<div class="stat${s.bad ? ' bad' : ''}">${esc(s.text)}</div>`; };
   const head = key === 'lookup' ? (chainsAuto[key]
-    ? `<p class="note" style="margin:0">Same as step 1, describing. Changing anything gives step 3 its own order.</p>`
+    ? `<p class="note" style="margin:0">Same as step 2, describing. Changing anything gives describing again its own order.</p>`
     : `<div class="inline" style="align-items:center"><span class="note">Its own order.</span><button type="button" class="btn quiet" data-auto>Back to the same as describing</button></div>`)
     : chainsAuto[key]
     ? `<p class="note" style="margin:0">Automatic: the ${modelInfo?.AutoCount || 5} most used free ${key === 'embed' ? 'embedding ' : ''}models on OpenRouter this week, most used first${key === 'check' ? '; the first one for describing goes last, so a different model reviews' : ''}. Other sources' models are only used when you add them. Changing anything makes it your own order.</p>`
@@ -1267,6 +1288,7 @@ async function loadSettings() {
   $('#MeaningOn').checked = settings.MeaningOn !== false;
   $('#FreeOnly').checked = settings.FreeOnly !== false;
   seg($('#RescanMonths'), String(settings.RescanMonths || 0), rescanEstimate);
+  $('#FirstRecheckDays').value = settings.FirstRecheckDays ?? 30;
   renderChains();
   for (const k of ['ChatModel', 'ClassificationModel', 'CustomEndpoint']) $('#' + k).value = settings[k] || '';
   $('#ApiKey').value = ''; $('#NimApiKey').value = ''; for (const k of ['CloudflareApiToken', 'GeminiApiKey', 'JinaApiKey', 'VoyageApiKey', 'MistralApiKey']) $('#' + k).value = '';
@@ -1336,8 +1358,8 @@ async function save(changes, note) {
 const formValues = {
   'ai-form': () => ({
     FreeOnly: $('#FreeOnly').checked, AIProvider: segValue($('#provider-seg')), ApiKey: $('#ApiKey').value, NimApiKey: $('#NimApiKey').value,
-    ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value,
-    ...(segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }) }),
+    ChatModel: $('#ChatModel').value, CustomEndpoint: $('#CustomEndpoint').value }),
+  'describe-form': () => (segValue($('#provider-seg')) === 'OpenRouter' ? { ClassificationModels: chains.describe, ClassificationModel: chains.describe[0] || '', ClassificationModelsAuto: chainsAuto.describe } : { ClassificationModel: $('#ClassificationModel').value }),
   'check-form': () => ({
     CheckEnabled: $('#CheckEnabled').checked,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { CheckModels: chains.check, CheckModel: chains.check[0] || '', CheckModelsAuto: chainsAuto.check } : { CheckModel: $('#CheckModel').value }) }),
@@ -1349,7 +1371,7 @@ const formValues = {
     ParallelMode: ($('#ParallelMode') && segValue($('#ParallelMode'))) || settings.ParallelMode || 'advanced',
     WebLookupAuto: $('#WebLookupAuto').checked, WebLookupsPerDay: Number($('#WebLookupsPerDay').value) || 0,
     ...(segValue($('#provider-seg')) === 'OpenRouter' ? { LookupModels: chains.lookup, LookupModelsAuto: chainsAuto.lookup } : {}) }),
-  'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0 }),
+  'rescan-form': () => ({ RescanMonths: Number(segValue($('#RescanMonths'))) || 0, FirstRecheckDays: Math.max(0, Math.min(365, Number($('#FirstRecheckDays').value) || 0)) }),
   'meaning-form': () => ({ MeaningOn: $('#MeaningOn').checked, EmbeddingModels: chains.embed, EmbeddingModelsAuto: chainsAuto.embed,
     CloudflareAccountId: $('#CloudflareAccountId').value.trim(), CloudflareApiToken: $('#CloudflareApiToken').value,
     GeminiApiKey: $('#GeminiApiKey').value, JinaApiKey: $('#JinaApiKey').value, VoyageApiKey: $('#VoyageApiKey').value, MistralApiKey: $('#MistralApiKey').value }),
@@ -1357,7 +1379,7 @@ const formValues = {
   'tmdb-form': () => ({ TmdbApiKey: $('#TmdbApiKey').value, OmdbApiKey: $('#OmdbApiKey').value, OmdbPerDay: Number($('#OmdbPerDay').value) || 1000 }),
   'rows-form': () => tuningValues(),
 };
-const formNotes = { 'lb-form': '#lb-note', 'meaning-form': '#meaning-note', 'ai-form': '#ai-note', 'check-form': '#check-note', 'lookup-form': '#lookup-note', 'rescan-form': '#rescan-note', 'tmdb-form': '#tmdb-note', 'rows-form': '#rows-note' };
+const formNotes = { 'describe-form': '#describe-note', 'lb-form': '#lb-note', 'meaning-form': '#meaning-note', 'ai-form': '#ai-note', 'check-form': '#check-note', 'lookup-form': '#lookup-note', 'rescan-form': '#rescan-note', 'tmdb-form': '#tmdb-note', 'rows-form': '#rows-note' };
 const saveTimers = {};
 let savesInFlight = 0;
 const savePending = () => savesInFlight > 0 || Object.values(saveTimers).some(Boolean);
@@ -1391,7 +1413,7 @@ for (const form of Object.keys(formValues)) {
   // The pill buttons (seg) change on click, not on "change"
   el.addEventListener('click', e => { if (e.target.closest('.seg button')) setTimeout(() => autoSave(form), 0); });
 }
-const chainForms = { describe: 'ai-form', check: 'check-form', lookup: 'lookup-form', embed: 'meaning-form' };
+const chainForms = { describe: 'describe-form', check: 'check-form', lookup: 'lookup-form', embed: 'meaning-form' };
 // Leaving while a change is still on its way: send it first, or warn when closing the tab
 window.addEventListener('beforeunload', e => { if (savePending()) { e.preventDefault(); e.returnValue = ''; } });
 const tuningValues = () => ({
@@ -1421,8 +1443,8 @@ window.addEventListener('beforeunload', e => { if (hasUnsaved()) { e.preventDefa
 
 // ---------- a film's history ----------
 const historyLabels = {
-  describe: '1 · Described', 'describe-again': '1 · Described again', check: '2 · Second opinion', genre: 'Genre check',
-  web: '3 · Web lookup', redescribe: '3 · Described again from everything', recheck: '4 · Re-check', you: 'You',
+  describe: '2 · Described', 'describe-again': '2 · Described again', check: '3 · Second opinion', genre: 'Genre check',
+  web: '1 · Web lookup', redescribe: 'Described again from everything', recheck: '4 · Re-check', you: 'You',
 };
 function tagDiff(before, after) {
   const list = k => [...(after?.[k] || [])], was = k => [...(before?.[k] || [])];
@@ -2199,7 +2221,7 @@ $('#iss-all').addEventListener('click', async e => {
   catch (err) { toast(err.message); e.target.disabled = false; }
 });
 // Parallel's mode and limit only matter with a key (without one it's free and fast)
-// ---- web search engines (AI page, step 3)
+// ---- web search engines (AI page, step 1)
 let engines = [], wikipediaAlways = true;
 const keyIds = { exa: 'ExaApiKey', parallel: 'ParallelApiKey', linkup: 'LinkupApiKey', tavily: 'TavilyApiKey' };
 const readyEngines = () => (settings?.SearchEngines || []).filter(e => e.On && (!e.NeedsKey || e.HasKey));
@@ -2260,12 +2282,12 @@ async function loadAgain() {
   const each = sweepInfo?.Web?.Lookups ? sweepInfo.Web.Dollars / sweepInfo.Web.Lookups : 0.007;
   const info = {
     describe: {
-      why: `Every described film (${n(a.Describe)}; not the ones you edited or marked as checked) is described again with the step-1 order: 8 calls, 160 films, per round, so picks never wait. The AI sees everything already known, web text included. Afterwards the second opinion checks them again, and flagged films can be looked up. About ${n(Math.ceil(a.Describe / 20))} calls in all; nothing with free models.`,
+      why: `Every described film (${n(a.Describe)}; not the ones you edited or marked as checked) is described again with the step-2 order: 8 calls, 160 films, per round, so picks never wait. The AI sees everything already known, web text included. Afterwards the second opinion checks them again, and flagged films can be looked up. About ${n(Math.ceil(a.Describe / 20))} calls in all; nothing with free models.`,
       go: `Describe ${n(a.Describe)} films again`, running: a.DescribeQueued > 0, status: a.DescribeQueued ? `${n(a.DescribeQueued)} still queued` : '',
       confirm: `Describe ${n(a.Describe)} films again? It takes a while; Status shows how far it is.`,
     },
     check: {
-      why: `The second opinion reviews every film again (${n(a.Check)}). Films that were looked up on the web are skipped; their web text is stronger evidence than another AI's memory. Needs the second opinion switched on.`,
+      why: `The second opinion reviews every title again (${n(a.Check)}), with its web text. Objections are handled as usual: described once more, and into Issues when a wrong tag stays. Needs the second opinion switched on.`,
       go: `Check ${n(a.Check)} films again`, running: false, status: a.CheckPending ? `${n(a.CheckPending)} not checked yet` : '',
       confirm: `Have the second opinion check ${n(a.Check)} films again?`,
     },
@@ -2693,9 +2715,9 @@ async function openGone() {
 let mrModels = null, mrTimer = null, mrPoll = null;
 // Each step: a source first, then one of its models. Talking models for steps 1–3, embedding models for meaning.
 const mrStepList = [
-  { key: 'describe', name: '1 · Describe', embed: false },
-  { key: 'check', name: '2 · Check', embed: false },
-  { key: 'lookup', name: '3 · Look up (web search, then describe again)', embed: false },
+  { key: 'lookup', name: '1 · Look up (web search; then describe again, unless step 2 runs too)', embed: false },
+  { key: 'describe', name: '2 · Describe', embed: false },
+  { key: 'check', name: '3 · Check', embed: false },
   { key: 'meaning', name: 'Matching by meaning', embed: true },
 ];
 // key fields per source; Cloudflare also needs its account ID

@@ -61,6 +61,12 @@ namespace Pickyfin.Server.Data.Models
         public bool Verified { get; set; }
         /// <summary>When step 4 last re-checked this film (fresh lookup, described again). Null = not yet.</summary>
         public DateTime? Rescanned { get; set; }
+        /// <summary>
+        /// A title new to Pickyfin gets its first re-check this soon (FirstRecheckDays after it was
+        /// first described): the web knows more about it a few weeks on. Until then it isn't
+        /// re-checked; after it, the normal schedule. Null: the normal schedule only.
+        /// </summary>
+        public DateTime? FirstRecheckDue { get; set; }
         /// <summary>Queued to be described again (step 1 run again for the whole library).</summary>
         public bool RedoDescribe { get; set; }
         /// <summary>Critics' score 0–100 from the web (Rotten Tomatoes Tomatometer, else Metacritic), when the text has one.</summary>

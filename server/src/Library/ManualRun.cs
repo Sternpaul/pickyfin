@@ -9,7 +9,7 @@ namespace Pickyfin.Server.Library;
 /// <param name="Scope">"all" (every library that's on), "library" (the libraries in Libraries) or "selected" (the titles picked on the Movies and Series pages).</param>
 /// <param name="Redo">True: every chosen title goes through the steps again; false: only what's missing. Hand edits are never overwritten.</param>
 /// <param name="Limit">Dollars; the run stops before going past it. Null: no limit.</param>
-/// <param name="ReuseWeb">Step 3: describe again from the web text already found (no new search); only titles without any are searched.</param>
+/// <param name="ReuseWeb">Step 1: describe again from the web text already found (no new search); only titles without any are searched.</param>
 public sealed record ManualRunRequest(string Scope, List<Guid>? Libraries, List<Guid>? Ids, bool Redo,
     string? Describe, string? Check, string? Lookup, string? Meaning, double? Limit, bool ReuseWeb = false);
 
@@ -78,7 +78,7 @@ public sealed class ManualRun
     public RunState? State { get; private set; }
 
     private static readonly (string Key, string Name)[] StepNames =
-        { ("describe", "1 · Describe"), ("check", "2 · Check"), ("lookup", "3 · Look up"), ("meaning", "Meaning") };
+        { ("lookup", "1 · Look up"), ("describe", "2 · Describe"), ("check", "3 · Check"), ("meaning", "Meaning") };
 
     private static string? ModelFor(ManualRunRequest r, string step) => step switch
     {
@@ -87,7 +87,7 @@ public sealed class ManualRun
 
     private static bool HandEdited(MovieMetadata m) => m.ManuallyEdited || m.Verified;
 
-    /// <summary>Step 3 uses this title's earlier web text instead of searching again.</summary>
+    /// <summary>Step 1 uses this title's earlier web text instead of searching again.</summary>
     private static bool Reuses(ManualRunRequest r, MovieMetadata m) => r.ReuseWeb && !string.IsNullOrWhiteSpace(m.WebNotes);
 
     /// <summary>The chosen titles.</summary>
@@ -109,7 +109,7 @@ public sealed class ManualRun
     private static List<MovieMetadata> For(string step, List<MovieMetadata> titles, bool redo, bool afterDescribe) => step switch
     {
         "describe" => titles.Where(m => !HandEdited(m) && (redo || !m.IsClassified)).ToList(),
-        // unlike the automatic step 2, a manual check takes looked-up titles too: the admin chose to check them (the web text goes along)
+        // every chosen title, looked up or not (the web text goes along)
         "check" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && (redo || !m.Checked)).ToList(),
         "lookup" => titles.Where(m => !HandEdited(m) && (m.IsClassified || afterDescribe) && (redo || m.WebNotes is null)).ToList(),
         _ => titles.Where(m => m.IsClassified || afterDescribe).ToList(),
@@ -146,6 +146,7 @@ public sealed class ManualRun
         // the prompts as the run will build them (earlier tags for every title)
         using var prompts = RunContext.Use(new RunContext { EarlierTagsAlways = true });
         var describes = ModelFor(r, "describe") is not null;
+
         var searches = 0;
         foreach (var (key, name) in StepNames)
         {
@@ -156,10 +157,12 @@ public sealed class ManualRun
             {
                 switch (key)
                 {
-                    case "describe": input += ClassificationPrompt.Build(batch).Length / 3; output += batch.Length * 220; break;
+                    case "describe": input += ClassificationPrompt.Build(batch).Length / 3 + (ModelFor(r, "lookup") is not null ? batch.Count(m => !Reuses(r, m)) * 1500 : 0); output += batch.Length * 220; break;
                     case "check": input += ClassificationPrompt.BuildCheck(batch).Length / 3; output += batch.Length * 60; break;
                     // the prompt holds the web text already found; a new search adds about 1,500 tokens a title
-                    case "lookup": input += ClassificationPrompt.Build(batch).Length / 3 + batch.Count(m => !Reuses(r, m)) * 1500; output += batch.Length * 220; break;
+                    case "lookup":
+                        if (describes) break; // only searching: step 2 describes from it
+                        input += ClassificationPrompt.Build(batch).Length / 3 + batch.Count(m => !Reuses(r, m)) * 1500; output += batch.Length * 220; break;
                     default: input += batch.Sum(m => Meaning.Sendable(Meaning.Document(m)).Length / 3 + 1); break;
                 }
             }
@@ -174,7 +177,7 @@ public sealed class ManualRun
             : titles.Count == 0 ? "No titles chosen." : steps.Count == 0 ? "No step chosen." : null;
         foreach (var step in steps)
             if (!Providers.HasKey(s, step.Model)) problem ??= $"{step.Name}: no {step.Source} key is set.";
-        if (steps.Any(x => x.Step is "lookup") && !WebLookup.Configured) problem ??= "3 · Look up needs a web search engine (AI page, step 3).";
+        if (steps.Any(x => x.Step is "lookup") && !WebLookup.Configured) problem ??= "1 · Look up needs a web search engine (AI page, step 1).";
         if (steps.Any(x => x.Step is not "meaning") && s.AIProvider != AIProviderType.OpenRouter) problem ??= "Describing, checking and looking up in a manual run need OpenRouter as the provider.";
         return new(titles.Count, steps, steps.Sum(x => x.Cost ?? 0), steps.Any(x => x.Cost is null), searches, problem);
     }
@@ -287,10 +290,16 @@ public sealed class ManualRun
                                 case "describe": await _classifier.DescribeManualAsync(provider, batch, limit.Token); break;
                                 case "check": await _check.CheckManualAsync(provider, batch, limit.Token); break;
                                 case "lookup":
+                                    var search = batch.Where(m => !Reuses(r, m)).ToList();
+                                    if (ModelFor(r, "describe") is not null)
+                                    {
+                                        // step 2 comes next and describes from it: only search here
+                                        await _classifier.LookUpFirstAsync(search, limit.Token, again: true);
+                                        break;
+                                    }
                                     // described again from the web text already found: no search
                                     var reuse = batch.Where(m => Reuses(r, m)).ToList();
                                     if (reuse.Count > 0) await _classifier.DescribeAgainAsync(provider, reuse, limit.Token);
-                                    var search = batch.Where(m => !Reuses(r, m)).ToList();
                                     if (search.Count == 0) break;
                                     if (_web.Blocked() is { } why) { step.Note = $"web lookups paused: {why}"; goto nextStep; }
                                     await _classifier.LookUpAndTagManyAsync(provider, search, limit.Token);
